@@ -11,6 +11,7 @@ mod resource;
 mod scheduler;
 mod state;
 mod system;
+#[macro_use]
 mod util;
 mod world;
 

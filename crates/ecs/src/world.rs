@@ -14,6 +14,9 @@ pub struct World {
     pub(crate) resources: Resources,
 }
 
+assert_send!(World);
+assert_sync!(World);
+
 impl World {
     pub fn new() -> Arc<World> {
         Arc::new(World::default())

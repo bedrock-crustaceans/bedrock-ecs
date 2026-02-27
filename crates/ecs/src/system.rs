@@ -9,12 +9,10 @@ use std::{
     sync::Arc
 };
 use std::any::Any;
-use crate::{
-    scheduler::{SystemDescriptor, SystemParamDescriptor},
-    sealed, World,
-};
+use crate::{assert_dyn_compatible, scheduler::{SystemDescriptor, SystemParamDescriptor}, sealed, World};
 
 pub unsafe trait System: Send + Sync {
+    /// Returns a type describing the system.
     fn descriptor(&self) -> SystemDescriptor;
 
     /// # Safety
@@ -33,8 +31,12 @@ pub unsafe trait System: Send + Sync {
     /// Runs any preparations before a system's first run.
     /// This is for example used to register all active event readers.
     fn init(&self, _world: &Arc<World>) {}
+
+    /// Destroys any associated data
     fn destroy(&self, _world: &Arc<World>) {}
 }
+
+assert_dyn_compatible!(System);
 
 /// Wrapper around a system function pointer to be able to store the function's params.
 pub struct FnContainer<P: SystemParams, R: SystemReturnable, F: ParameterizedSystem<P, R>> {
@@ -346,6 +348,7 @@ where
     }
 }
 
+#[derive(Default)]
 pub struct Systems {
     storage: RwLock<Vec<Arc<dyn System + Send + Sync>>>,
 }
@@ -353,6 +356,10 @@ pub struct Systems {
 impl Systems {
     pub fn new() -> Systems {
         Systems::default()
+    }
+
+    pub fn reserve(&self, n: usize) {
+        self.storage.write().reserve(n);
     }
 
     pub fn push(&self, world: &Arc<World>, system: Arc<dyn System + Send + Sync>) {
@@ -379,10 +386,11 @@ impl Systems {
     }
 }
 
-impl Default for Systems {
-    fn default() -> Systems {
-        Systems {
-            storage: RwLock::new(Vec::new()),
+impl Drop for Systems {
+    fn drop(&mut self) {
+        let lock = self.storage.write();
+        for system in lock.iter() {
+            todo!("run System::destroy");
         }
     }
 }

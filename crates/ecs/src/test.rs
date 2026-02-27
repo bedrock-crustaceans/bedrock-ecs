@@ -1,3 +1,4 @@
+use std::sync::RwLock;
 use ecs_derive::Component;
 use std::time::{Duration, Instant};
 
@@ -6,7 +7,7 @@ use crate::{
     Component, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State, Without, World,
 };
 
-// static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
+static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
 
 fn detection(query: Query<(Entity, &Health), Without<Immortal>>, mut writer: EventWriter<Killed>) {
     for (entity, health) in &query {
@@ -106,7 +107,7 @@ struct Killed {
 impl Event for Killed {}
 
 #[tokio::test]
-async fn test() {
+async fn ecs_test() {
     let world = World::new();
 
     // let pinned = boxer1(interval_system);

@@ -5,6 +5,38 @@ use std::{
 
 use crate::{EcsError, EcsResult};
 
+#[doc(hidden)]
+pub trait __AssertSyncHelper where Self: Sync {}
+#[doc(hidden)]
+pub trait __AssertSendHelper where Self: Send {}
+
+/// Asserts that the given type implements `Send`.
+#[macro_export]
+macro_rules! assert_send {
+    ($x: ident) => {
+        impl crate::util::__AssertSendHelper for $x {}
+    }
+}
+
+/// Asserts that the given type implements `Sync`.
+#[macro_export]
+macro_rules! assert_sync {
+    ($x: ident) => {
+        impl crate::util::__AssertSyncHelper for $x {}
+    }
+}
+
+/// Asserts that the given type is `dyn` compatible.
+#[macro_export]
+macro_rules! assert_dyn_compatible {
+    ($x: ident) => {
+        paste::paste! {
+            #[doc(hidden)]
+            type [<__AssertDynCompatible $x>] = dyn $x;
+        }
+    }
+}
+
 pub enum WriteLock {}
 
 impl LockKind for WriteLock {
