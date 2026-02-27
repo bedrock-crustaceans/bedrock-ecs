@@ -5,6 +5,14 @@ use std::{
 
 use crate::{EcsError, EcsResult};
 
+pub trait Is<T> {
+    fn identity_cast(self) -> T;
+}
+
+impl<T> Is<T> for T {
+    fn identity_cast(self) -> T { self }
+}
+
 #[doc(hidden)]
 pub trait __AssertSyncHelper where Self: Sync {}
 #[doc(hidden)]

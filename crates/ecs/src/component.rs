@@ -1,5 +1,5 @@
 use crate::entity::EntityId;
-use crate::{EcsResult, PersistentLock};
+use crate::{assert_dyn_compatible, EcsResult, PersistentLock};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};

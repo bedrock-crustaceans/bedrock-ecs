@@ -6,11 +6,7 @@ use std::{
 
 use smallvec::SmallVec;
 
-use crate::{
-    scheduler::{BorrowedTypeDescriptor, SystemParamDescriptor},
-    sealed, Component, EcsResult, Entity, EntityIter, FilterParams, SystemParam,
-    TypedStorage, World,
-};
+use crate::{scheduler::{BorrowedTypeDescriptor, SystemParamDescriptor}, sealed, Component, EcsResult, Entity, EntityIter, FilterParams, Is, SystemParam, TypedStorage, World};
 
 pub trait QueryParams {
     /// The type that is returned when this param is fetched.
@@ -101,13 +97,7 @@ impl<T: Component> QueryParams for &T {
 
         let storage_index = *typed.map.get(&entity.id())?.value();
         let storage = unsafe { &*typed.storage.get() };
-        let component = &storage[storage_index];
-
-        let cast = unsafe {
-            std::mem::transmute_copy::<&T, Self::Fetchable<'w>>(&component)
-        };
-
-        Some(cast)
+        Some(&storage[storage_index])
     }
 
     fn filter(entity: &Entity) -> bool {
@@ -193,19 +183,7 @@ impl<T: Component> QueryParams for &mut T {
 
         let storage_index = *typed.map.get(&entity.id())?.value();
         let storage = unsafe { &mut *typed.storage.get() };
-        let component = &mut storage[storage_index];
-
-        let cast = unsafe {
-            std::mem::transmute_copy::<&mut T, Self::Fetchable<'w>>(&component)
-        };
-
-        Some(cast)
-
-        // // SAFETY: We have ensured that `T` and `Self::Fetchable` are the same types using the
-        // // assertion at the top.
-        // Some(unsafe {
-        //     *(component as *mut Self::Fetchable<'w>)
-        // })
+        Some(&mut storage[storage_index])
     }
 
     fn filter(entity: &Entity) -> bool {
