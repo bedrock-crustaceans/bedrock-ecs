@@ -1,7 +1,7 @@
 use crate::component::{Components, SpawnBundle};
 use crate::entity::{Entities, Entity};
 use crate::scheduler::{MultiThreadedExecutor, Schedule, Scheduler, SingleThreadedExecutor};
-use crate::{Events, Resource, Resources, Systems};
+use crate::{EcsResult, Events, Resource, Resources, Systems};
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -19,14 +19,14 @@ impl World {
         Arc::new(World::default())
     }
 
-    pub fn spawn<B: SpawnBundle>(self: &Arc<Self>, bundle: B) -> Entity {
+    pub fn spawn<B: SpawnBundle>(self: &Arc<Self>, bundle: B) -> EcsResult<Entity> {
         let entity = self.entities.alloc();
-        bundle.insert_into(&self.components, entity);
+        bundle.insert_into(&self.components, entity)?;
 
-        Entity {
+        Ok(Entity {
             world: Arc::clone(self),
             id: entity,
-        }
+        })
     }
 
     pub fn schedule_single_threaded(self: &Arc<Self>) -> Schedule<SingleThreadedExecutor> {
@@ -38,7 +38,7 @@ impl World {
     }
 
     #[inline]
-    pub fn spawn_empty(self: &Arc<Self>) -> Entity {
+    pub fn spawn_empty(self: &Arc<Self>) -> EcsResult<Entity> {
         self.spawn(())
     }
 

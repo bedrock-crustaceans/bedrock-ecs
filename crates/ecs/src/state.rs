@@ -31,7 +31,7 @@ impl<S: Send + Sync + Default> SystemParam for State<S> {
         }
     }
 
-    fn state(_world: &Arc<crate::World>) -> Arc<Self::State> {
+    fn state(_world: &Arc<World>) -> Arc<Self::State> {
         Arc::new(StateHolder(UnsafeCell::new(S::default())))
     }
 }

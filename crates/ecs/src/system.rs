@@ -8,7 +8,7 @@ use std::{
     pin::Pin,
     sync::Arc
 };
-
+use std::any::Any;
 use crate::{
     scheduler::{SystemDescriptor, SystemParamDescriptor},
     sealed, World,
@@ -94,22 +94,7 @@ where
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {
-            debug_assert_eq!(
-                TypeId::of::<R>(),
-                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
-            );
-
-            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
-            // It is therefore safe to transmute as both types are equal.
-            let cast = unsafe {
-                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
-                    &returned,
-                )
-            };
-            // Prevent dropping the Box, preventing a use-after-free.
-            std::mem::forget(returned);
-
-            cast
+            returned.into_future()
         } else {
             // Return empty future.
             Box::pin(async {})
@@ -142,22 +127,7 @@ where
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {
-            debug_assert_eq!(
-                TypeId::of::<R>(),
-                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
-            );
-
-            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
-            // It is therefore safe to transmute as both types are equal.
-            let cast = unsafe {
-                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
-                    &returned,
-                )
-            };
-            // Prevent dropping the Box, preventing a use-after-free.
-            std::mem::forget(returned);
-
-            cast
+            returned.into_future()
         } else {
             // Return empty future.
             Box::pin(async {})
@@ -193,22 +163,7 @@ where
     fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
         let returned = self.system.call(world, &self.state);
         if self.is_async() {
-            debug_assert_eq!(
-                TypeId::of::<R>(),
-                TypeId::of::<Pin<Box<dyn Future<Output = ()> + Send + Sync>>>()
-            );
-
-            // SAFETY: `System::is_async` will only return `true` when `R == Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
-            // It is therefore safe to transmute as both types are equal.
-            let cast = unsafe {
-                std::mem::transmute_copy::<R, Pin<Box<dyn Future<Output = ()> + Send + Sync>>>(
-                    &returned,
-                )
-            };
-            // Prevent dropping the Box, preventing a use-after-free.
-            std::mem::forget(returned);
-
-            cast
+            returned.into_future()
         } else {
             // Return empty future.
             Box::pin(async {})
@@ -316,14 +271,24 @@ where
 /// In the future this could possibly also be used for returning errors or something in that direction.
 pub trait SystemReturnable: Send + Sync + 'static {
     const IS_ASYNC: bool;
+
+    fn into_future(self) -> PinnedFut;
 }
 
 impl SystemReturnable for () {
     const IS_ASYNC: bool = false;
+
+    fn into_future(self) -> PinnedFut {
+        panic!("Attempt to call a sync system as an async one");
+    }
 }
 
 impl SystemReturnable for Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
     const IS_ASYNC: bool = true;
+
+    fn into_future(self) -> PinnedFut {
+        self
+    }
 }
 
 pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Send + Sync + Sized {

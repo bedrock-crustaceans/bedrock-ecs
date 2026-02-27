@@ -131,12 +131,13 @@ impl Resources {
     /// # Safety:
     ///
     /// Aliasing invariants must be upheld manually.
-    /// Ensure you've acauired a lock with [`acquire_write`](Self::acquire_write) before calling this.
+    /// Ensure you've acquired a lock with [`acquire_write`](Self::acquire_write) before calling this.
     pub unsafe fn get_mut<R: Resource>(&self) -> EcsResult<&mut R> {
         let mut singleton = self
             .map
             .get_mut(&TypeId::of::<R>())
             .ok_or(EcsError::NotFound)?;
+
         let singleton: &mut ResourceSingleton<R> = singleton
             .as_any_mut()
             .downcast_mut()

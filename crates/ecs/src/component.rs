@@ -4,7 +4,6 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::any::{Any, TypeId};
 use std::cell::UnsafeCell;
-use std::usize;
 
 pub trait Component: Send + Sync + 'static {}
 
@@ -152,7 +151,7 @@ impl<T: Send + Sync + 'static> TypelessStorage for TypedStorage<T> {
             Ok(true)
         } else {
             let _guard = self.lock.read()?;
-            // Safety: Acquiring a mutable reference to the vec is safe because the
+            // Safety: Acquiring an immutable reference to the vec is safe because the
             // `acquire_write` call above ensures non-mutable access.
             let storage = unsafe { &*self.storage.get() };
 
@@ -178,6 +177,7 @@ impl Components {
             let downcast: &TypedStorage<T> = store.as_any().downcast_ref().unwrap();
             downcast.insert(entity, component)
         } else {
+            // Storage does not exist, create and insert it.
             self.map
                 .insert(type_id, TypedStorage::with(entity, component));
 

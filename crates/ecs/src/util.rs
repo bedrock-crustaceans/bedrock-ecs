@@ -76,7 +76,7 @@ impl PersistentLock {
 
     pub fn write(&self) -> EcsResult<LockGuard<WriteLock>> {
         if self.counter.load(Ordering::SeqCst) != 0 {
-            // Lock is already being used for reading.
+            // Lock is already being used for reading or writing.
             return Err(EcsError::StorageLocked(
                 "read or write lock active, cannot acquire write lock",
             ));
