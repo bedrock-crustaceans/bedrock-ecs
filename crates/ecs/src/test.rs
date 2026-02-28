@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::entity::Entity;
 use crate::{
-    Component, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, State, Without, World,
+    Component, Event, EventReader, EventWriter, Query, Res, ResMut, Resource, Local, Without, World,
 };
 
 static GLOBAL: RwLock<Option<&'static Health>> = RwLock::new(None);
@@ -51,7 +51,7 @@ struct SystemState {
     counter: usize,
 }
 
-fn state_system(mut state: State<SystemState>) {
+fn state_system(mut state: Local<SystemState>) {
     state.counter += 1;
     println!("Counter is: {}", state.counter);
 }
@@ -64,7 +64,7 @@ struct TickCounter {
 async fn async_system(
     mut reader: EventReader<Killed>,
     counter: Res<KillCounter>,
-    mut state: State<TickCounter>,
+    mut state: Local<TickCounter>,
 ) {
     tokio::time::sleep(Duration::from_secs(1)).await;
     state.ticks += 1;

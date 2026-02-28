@@ -9,7 +9,7 @@ mod filter;
 mod query;
 mod resource;
 mod scheduler;
-mod state;
+mod local;
 mod system;
 #[macro_use]
 mod util;
@@ -22,7 +22,7 @@ pub use event::*;
 pub use filter::*;
 pub use query::*;
 pub use resource::*;
-pub use state::*;
+pub use local::*;
 pub use system::*;
 pub use util::*;
 pub use world::*;
@@ -36,7 +36,7 @@ pub mod prelude {
     use super::filter::{Added, Changed, Removed, With, Without};
     use super::query::Query;
     use super::resource::{Res, ResMut, Resource};
-    use super::state::State;
+    use super::local::Local;
     use super::world::World;
 }
 
