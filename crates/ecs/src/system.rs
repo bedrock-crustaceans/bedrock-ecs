@@ -4,8 +4,10 @@ use std::{cell::UnsafeCell, marker::PhantomData};
 
 use crate::{param::{Param, ParamDesc, ParamGroup}, sealed::Sealer, world::World};
 
+#[derive(Debug)]
 pub struct SystemDescriptor {
     pub id: usize,
+    pub send: bool,
     pub deps: Vec<ParamDesc>
 }
 
@@ -16,6 +18,8 @@ pub trait System {
 }
 
 pub trait ParametrizedSystem<G: ParamGroup>: Sized {
+    const SEND: bool;
+
     fn into_container(self, id: usize) -> FnContainer<G, Self> {
         FnContainer {
             #[cfg(debug_assertions)]
@@ -52,6 +56,7 @@ where
     fn desc(&self) -> SystemDescriptor {
         SystemDescriptor {
             id: self.id,
+            send: F::SEND,
             deps: vec![P::desc()]
         }
     }
@@ -78,6 +83,7 @@ impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContain
     fn desc(&self) -> SystemDescriptor {
         SystemDescriptor {
             id: self.id,
+            send: F::SEND,
             deps: vec![P1::desc(), P2::desc()]
         }
     }
@@ -101,6 +107,8 @@ impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContain
 }
 
 impl<F: Fn(P::Item<'_>), P: Param> ParametrizedSystem<P> for F {
+    const SEND: bool = P::SEND;
+
     fn call(&self, world: &World, state: &mut P::State) {
         let p = P::fetch::<Sealer>(world, state);
         self(p);
@@ -108,6 +116,8 @@ impl<F: Fn(P::Item<'_>), P: Param> ParametrizedSystem<P> for F {
 }
 
 impl<F: Fn(P1::Item<'_>, P2::Item<'_>), P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
+    const SEND: bool = P1::SEND && P2::SEND;
+
     fn call(&self, world: &World, state: &mut <(P1, P2) as ParamGroup>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
@@ -125,13 +135,45 @@ impl Systems {
         self.storage.reserve(n);
     }
 
-    pub fn push<P: ParamGroup + 'static, S: ParametrizedSystem<P> + 'static>(&mut self, system: S) where FnContainer<P, S>: System {
-        self.storage.push(Box::new(system.into_container(0)));
+    pub fn push<P, S: IntoSystem<P>>(&mut self, system: S) {
+        let system = system.into_system();
+        let desc= system.desc();
+
+        println!("System desc: {desc:?}");
+
+        self.storage.push(system);
     }
 
     pub fn call(&self, world: &World) {
         for sys in &self.storage {
             sys.call(world);
         }
+    }
+}
+
+pub trait IntoSystem<P> {
+    fn into_system(self) -> Box<dyn System>;
+}
+
+impl<F, P> IntoSystem<P> for F 
+where
+    P: Param + 'static,
+    F: Fn(P) + 'static,
+    F: ParametrizedSystem<P>
+{
+    fn into_system(self) -> Box<dyn System> {
+        Box::new(self.into_container(0))
+    }
+}
+
+impl<F, P1, P2> IntoSystem<(P1, P2)> for F 
+where
+    P1: Param + 'static,
+    P2: Param + 'static,
+    F: Fn(P1, P2) + 'static,
+    F: ParametrizedSystem<(P1, P2)>
+{
+    fn into_system(self) -> Box<dyn System> {
+        Box::new(self.into_container(0))
     }
 }

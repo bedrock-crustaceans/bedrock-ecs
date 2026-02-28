@@ -1,16 +1,18 @@
 use std::{any::TypeId, marker::PhantomData};
 
 use bitvec::vec::IntoIter;
+use smallvec::{SmallVec, smallvec};
 use static_assertions::assert_type_eq_all;
 
-use crate::{component::{Component, Storage}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc}, sealed::Sealed, world::World};
+use crate::{component::{Component, Storage}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
 
 pub trait QueryGroup {
     type Fetchable<'a>;
 
+    const SEND: bool;
     const MUTABLE: bool;
 
-    fn type_id() -> TypeId;
+    fn desc() -> QueryDescVec;
     fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>>;
     fn filter(entity: &Entity) -> bool;
 }
@@ -18,11 +20,15 @@ pub trait QueryGroup {
 impl QueryGroup for Entity<'_> {
     type Fetchable<'a> = Entity<'a>;
 
+    const SEND: bool = true;
     const MUTABLE: bool = false;
 
-    fn type_id() -> TypeId {
-        TypeId::of::<Entity>()
-    }    
+    fn desc() -> QueryDescVec {
+        smallvec![QueryDesc {
+            mutable: false,
+            ty: QueryType::Entity
+        }]
+    }
 
     fn fetch<'w>(_world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
         Some(entity)
@@ -33,13 +39,17 @@ impl QueryGroup for Entity<'_> {
     }
 }
 
-impl<T: Component> QueryGroup for &T {
+impl<T: Component + Send> QueryGroup for &T {
     type Fetchable<'a> = &'a T;
 
+    const SEND: bool = true;
     const MUTABLE: bool = false;
 
-    fn type_id() -> TypeId {
-        TypeId::of::<T>()
+    fn desc() -> QueryDescVec {
+        smallvec![QueryDesc {
+            mutable: false,
+            ty: QueryType::Component(TypeId::of::<T>())
+        }]
     }
 
     fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
@@ -68,13 +78,17 @@ impl<T: Component> QueryGroup for &T {
     }
 }
 
-impl<T: Component> QueryGroup for &mut T {
+impl<T: Component + Send> QueryGroup for &mut T {
     type Fetchable<'a> = &'a mut T;
 
+    const SEND: bool = true;
     const MUTABLE: bool = true;
 
-    fn type_id() -> TypeId {
-        TypeId::of::<T>()
+    fn desc() -> QueryDescVec {
+        smallvec![QueryDesc {
+            mutable: true,
+            ty: QueryType::Component(TypeId::of::<T>())
+        }]
     }
 
     fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
@@ -110,26 +124,21 @@ impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, 
     type State = ();
     type Item<'w> = Query<'w, Q, F>;
 
+    const SEND: bool = Q::SEND;
+
     fn desc() -> ParamDesc {
-        todo!()
+        ParamDesc::Query(Q::desc())
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, _: &()) -> Query<'w, Q, F> {
+    fn fetch<'w, S: Sealed>(world: &'w World, _: &mut ()) -> Query<'w, Q, F> {
         Query {
             world,
             _marker: PhantomData
         }
     }
 
-    fn state(&self) -> &() { &() }
-
-    fn init(_: &()) {
-        todo!()
-    }
-
-    fn destroy(_: &()) {
-        todo!()
-    }
+    fn init() {}
+    fn destroy(_: &mut ()) {}
 }
 
 impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
