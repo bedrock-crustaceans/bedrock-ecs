@@ -1,6 +1,6 @@
 use crate::{
-    AsyncSystem, EntityId, FnContainer, ParameterizedSystem, System, SystemParams,
-    SystemReturnable, World,
+    EntityId, FnContainer, ParameterizedSystem, System, SystemParams,
+    World,
 };
 use dashmap::{DashMap, DashSet};
 use futures::stream::FuturesUnordered;
@@ -120,34 +120,16 @@ impl<K: ExecutorKind> Schedule<K> {
         }
     }
 
-    pub fn add_system<P, R, S>(&mut self, system: S) -> SystemId
+    pub fn add_system<P, S>(&mut self, system: S) -> SystemId
     where
         P: SystemParams + 'static,
-        R: SystemReturnable + 'static,
-        S: ParameterizedSystem<P, R> + 'static,
-        FnContainer<P, R, S>: System,
+        S: ParameterizedSystem<P> + 'static,
+        FnContainer<P, S>: System,
     {
         let system_id = self.next_id;
         self.next_id += 1;
 
         let contained = Arc::new(system.into_container(system_id, &self.world));
-        contained.init(&self.world);
-
-        dbg!(contained.descriptor());
-
-        self.systems.insert(system_id, contained);
-        SystemId(system_id)
-    }
-
-    pub fn add_async_system<P, S>(&mut self, system: S) -> SystemId
-    where
-        P: SystemParams + 'static,
-        S: AsyncSystem<P>,
-    {
-        let system_id = self.next_id;
-        self.next_id += 1;
-
-        let contained = Arc::new(system.pinned(system_id, &self.world));
         contained.init(&self.world);
 
         dbg!(contained.descriptor());
@@ -164,29 +146,12 @@ impl<K: ExecutorKind> Schedule<K> {
         // at await points. Therefore the systems need to run inside a LocalSet but this would only run systems
         // on the main thread. Maybe Rayon is a good idea?
 
-        let mut futures = FuturesUnordered::new();
         for (id, system) in &self.systems {
             let world = Arc::clone(&self.world);
             let system = Arc::clone(system);
 
-            futures.push(tokio::spawn(async move {
-                system.call(&world).await;
-            }));
+            system.call(&world);
         }
-
-        // let mut local_set = LocalSet::new();
-
-        // for sys_index in 0..self.systems.len() {
-        //     let world = Arc::clone(&self.world);
-
-        //     let sys = self.systems[sys_index].clone();
-        //     futures.push(tokio::spawn(async move {
-        //         sys.call(&world).await;
-        //     }));
-        // }
-
-        // Run all futures to completion
-        while let Some(_) = futures.next().await {}
 
         self.world.scheduler.post_tick(&self.world);
     }

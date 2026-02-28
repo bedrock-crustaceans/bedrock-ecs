@@ -61,23 +61,6 @@ struct TickCounter {
     ticks: usize,
 }
 
-async fn async_system(
-    mut reader: EventReader<Killed>,
-    counter: Res<KillCounter>,
-    mut state: Local<TickCounter>,
-) {
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    state.ticks += 1;
-
-    println!(
-        "After {} second(s), killed {} entities",
-        state.ticks, counter.0
-    );
-    for Killed { entity } in reader.read() {
-        println!("Killed {:?}", entity.id());
-    }
-}
-
 #[derive(Debug, Component)]
 struct LastUpdate {
     instant: Instant,
@@ -129,7 +112,6 @@ async fn ecs_test() {
     schedule.add_system(detection);
     schedule.add_system(execution);
     schedule.add_system(state_system);
-    schedule.add_async_system(async_system);
 
     let mut interval = tokio::time::interval(Duration::from_millis(50));
     for _ in 0..2 {

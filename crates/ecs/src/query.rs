@@ -22,10 +22,6 @@ pub trait QueryParams {
     fn fetch<'w>(world: &'w World, entity: Entity) -> Option<Self::Fetchable<'w>>;
     /// Ensures that the entity has the requested components.
     fn filter(entity: &Entity) -> bool;
-    /// Acquires the locks on the requested component storages.
-    fn acquire_locks(world: &World) -> EcsResult<()>;
-    /// Releases all previously acquired locks.
-    fn release_locks(world: &World);
 }
 
 impl QueryParams for Entity {
@@ -48,12 +44,6 @@ impl QueryParams for Entity {
     /// An entity query param needs no filtering as every entity can obviously produce an `Entity` type.
     fn filter(_entity: &Entity) -> bool {
         true
-    }
-
-    fn acquire_locks(_world: &World) -> EcsResult<()> {
-        Ok(()) /* Entities require no locks */
-    }
-    fn release_locks(_world: &World) { /* Entities require no locks. */
     }
 }
 
@@ -102,43 +92,6 @@ impl<T: Component> QueryParams for &T {
 
     fn filter(entity: &Entity) -> bool {
         entity.has::<T>()
-    }
-
-    fn acquire_locks(world: &World) -> EcsResult<()> {
-        let type_id = TypeId::of::<T>();
-        let Some(typeless) = world.components.map.get(&type_id) else {
-            // Storage does not exist so it does not have to be locked.
-            return Ok(());
-        };
-
-        let typed: &TypedStorage<T> = typeless
-            .value()
-            .as_any()
-            .downcast_ref()
-            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
-
-        let guard = typed.lock.read()?;
-        std::mem::forget(guard);
-
-        Ok(())
-    }
-
-    fn release_locks(world: &World) {
-        let type_id = TypeId::of::<T>();
-        let Some(typeless) = world.components.map.get(&type_id) else {
-            // Storage does not exist.
-            return;
-        };
-
-        let typed: &TypedStorage<T> = typeless
-            .value()
-            .as_any()
-            .downcast_ref()
-            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
-
-        // Safety: This code is only called in the `Drop` impl of a `Query`.
-        // If a query has been constructed then that means this thread must have acquired the locks succesfully.
-        unsafe { typed.lock.force_release_read() }
     }
 }
 
@@ -189,43 +142,6 @@ impl<T: Component> QueryParams for &mut T {
     fn filter(entity: &Entity) -> bool {
         entity.has::<T>()
     }
-
-    fn acquire_locks(world: &World) -> EcsResult<()> {
-        let type_id = TypeId::of::<T>();
-        let Some(typeless) = world.components.map.get(&type_id) else {
-            // Storage does not exist so it does not have to be locked.
-            return Ok(());
-        };
-
-        let typed: &TypedStorage<T> = typeless
-            .value()
-            .as_any()
-            .downcast_ref()
-            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
-
-        let guard = typed.lock.write()?;
-        std::mem::forget(guard);
-
-        Ok(())
-    }
-
-    fn release_locks(world: &World) {
-        let type_id = TypeId::of::<T>();
-        let Some(typeless) = world.components.map.get(&type_id) else {
-            // Storage to be unlocked does not exist.
-            return;
-        };
-
-        let typed: &TypedStorage<T> = typeless
-            .value()
-            .as_any()
-            .downcast_ref()
-            .expect("Failed to downcast typeless storage. The wrong storage type has been inserted into component storage");
-
-        // Safety: This code is only called in the `Drop` impl of a `Query`.
-        // If a query has been constructed then that means this thread must have acquired the locks succesfully.
-        unsafe { typed.lock.force_release_write() }
-    }
 }
 
 impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
@@ -259,22 +175,6 @@ impl<Q1: QueryParams, Q2: QueryParams> QueryParams for (Q1, Q2) {
     fn filter(entity: &Entity) -> bool {
         Q1::filter(entity) && Q2::filter(entity)
     }
-
-    fn acquire_locks(world: &World) -> EcsResult<()> {
-        Q1::acquire_locks(world)?;
-
-        if let Err(err) = Q2::acquire_locks(world) {
-            Q1::release_locks(world);
-            return Err(err);
-        }
-
-        Ok(())
-    }
-
-    fn release_locks(world: &World) {
-        Q1::release_locks(world);
-        Q2::release_locks(world);
-    }
 }
 
 pub struct Query<Q: QueryParams, F: FilterParams = ()> {
@@ -287,9 +187,6 @@ unsafe impl<Q: QueryParams, F: FilterParams> Sync for Query<Q, F> {}
 
 impl<Q: QueryParams, F: FilterParams> Query<Q, F> {
     pub fn new(world: &Arc<World>) -> EcsResult<Self> {
-        // Obtain lock on component storage.
-        Q::acquire_locks(world)?;
-
         Ok(Self {
             world: Arc::clone(world),
             _marker: PhantomData,
@@ -310,14 +207,6 @@ impl<Q: QueryParams, F: FilterParams> SystemParam for Query<Q, F> {
 
     fn state(_world: &Arc<World>) -> Arc<Self::State> {
         Arc::new(())
-    }
-}
-
-impl<Q: QueryParams, F: FilterParams> Drop for Query<Q, F> {
-    fn drop(&mut self) {
-        // Locks can be released unconditionally.
-        // Whenever this code runs, a query has been created and all locks have therefore been acquired succesfully.
-        Q::release_locks(&self.world);
     }
 }
 

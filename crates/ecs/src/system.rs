@@ -2,13 +2,9 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use std::{
-    any::TypeId,
-    future::Future,
     marker::PhantomData,
-    pin::Pin,
     sync::Arc
 };
-use std::any::Any;
 use crate::{assert_dyn_compatible, scheduler::{SystemDescriptor, SystemParamDescriptor}, sealed, World};
 
 pub unsafe trait System: Send + Sync {
@@ -19,14 +15,7 @@ pub unsafe trait System: Send + Sync {
     ///
     /// Before running a system you must ensure that the Rust reference aliasing guarantees are upheld.
     /// Any systems requiring mutable access to a component must have unique access.
-    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>>;
-
-    /// This function takes a self parameter to make [`System`] object-safe.
-    ///
-    /// # Safety
-    ///
-    /// This function *must* only return `true` for systems that return the type `Pin<Box<dyn Future<Output = ()> + Send + Sync>>`.
-    fn is_async(&self) -> bool;
+    fn call(&self, world: &Arc<World>);
 
     /// Runs any preparations before a system's first run.
     /// This is for example used to register all active event readers.
@@ -39,11 +28,11 @@ pub unsafe trait System: Send + Sync {
 assert_dyn_compatible!(System);
 
 /// Wrapper around a system function pointer to be able to store the function's params.
-pub struct FnContainer<P: SystemParams, R: SystemReturnable, F: ParameterizedSystem<P, R>> {
+pub struct FnContainer<P: SystemParams, F: ParameterizedSystem<P>> {
     pub id: usize,
     pub system: F,
     pub state: P::ArcState,
-    pub _marker: PhantomData<(P, R)>,
+    pub _marker: PhantomData<P>,
 }
 
 pub trait SystemParams {
@@ -81,10 +70,9 @@ where
     }
 }
 
-unsafe impl<P, R, F: ParameterizedSystem<P, R>> System for FnContainer<P, R, F>
+unsafe impl<P, F: ParameterizedSystem<P>> System for FnContainer<P, F>
 where
-    P: SystemParam,
-    R: SystemReturnable,
+    P: SystemParam
 {
     fn descriptor(&self) -> SystemDescriptor {
         SystemDescriptor {
@@ -93,19 +81,8 @@ where
         }
     }
 
-    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let returned = self.system.call(world, &self.state);
-        if self.is_async() {
-            returned.into_future()
-        } else {
-            // Return empty future.
-            Box::pin(async {})
-        }
-    }
-
-    #[inline]
-    fn is_async(&self) -> bool {
-        R::IS_ASYNC
+    fn call(&self, world: &Arc<World>) {
+        self.system.call(world, &self.state);
     }
 
     fn init(&self, world: &Arc<World>) {
@@ -113,11 +90,10 @@ where
     }
 }
 
-unsafe impl<P1, P2, R, F: ParameterizedSystem<(P1, P2), R>> System for FnContainer<(P1, P2), R, F>
+unsafe impl<P1, P2, F: ParameterizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F>
 where
     P1: SystemParam,
-    P2: SystemParam,
-    R: SystemReturnable,
+    P2: SystemParam
 {
     fn descriptor(&self) -> SystemDescriptor {
         SystemDescriptor {
@@ -126,19 +102,8 @@ where
         }
     }
 
-    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let returned = self.system.call(world, &self.state);
-        if self.is_async() {
-            returned.into_future()
-        } else {
-            // Return empty future.
-            Box::pin(async {})
-        }
-    }
-
-    #[inline]
-    fn is_async(&self) -> bool {
-        R::IS_ASYNC
+    fn call(&self, world: &Arc<World>) {
+        self.system.call(world, &self.state);
     }
 
     fn init(&self, world: &Arc<World>) {
@@ -147,13 +112,12 @@ where
     }
 }
 
-unsafe impl<P1, P2, P3, R, F: ParameterizedSystem<(P1, P2, P3), R>> System
-    for FnContainer<(P1, P2, P3), R, F>
+unsafe impl<P1, P2, P3, F: ParameterizedSystem<(P1, P2, P3)>> System
+    for FnContainer<(P1, P2, P3), F>
 where
     P1: SystemParam,
     P2: SystemParam,
-    P3: SystemParam,
-    R: SystemReturnable,
+    P3: SystemParam
 {
     fn descriptor(&self) -> SystemDescriptor {
         SystemDescriptor {
@@ -162,19 +126,8 @@ where
         }
     }
 
-    fn call(&self, world: &Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-        let returned = self.system.call(world, &self.state);
-        if self.is_async() {
-            returned.into_future()
-        } else {
-            // Return empty future.
-            Box::pin(async {})
-        }
-    }
-
-    #[inline]
-    fn is_async(&self) -> bool {
-        R::IS_ASYNC
+    fn call(&self, world: &Arc<World>) {
+        self.system.call(world, &self.state);
     }
 
     fn init(&self, world: &Arc<World>) {
@@ -214,87 +167,8 @@ impl SystemParam for () {
     }
 }
 
-pub type PinnedFut = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
-
-/// Implemented by async systems to put them into storage containers.
-pub trait AsyncSystem<P>
-where
-    P: SystemParams,
-{
-    /// Pins the returned future and puts the system into a container.
-    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static;
-}
-
-impl<P, F, Fut> AsyncSystem<P> for F
-where
-    F: Fn(P) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + Sync + 'static,
-    P: SystemParam + 'static,
-{
-    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
-        let pinned = move |p| -> PinnedFut { Box::pin(self(p)) };
-
-        pinned.into_container(id, world)
-    }
-}
-
-impl<P1, P2, F, Fut> AsyncSystem<(P1, P2)> for F
-where
-    F: Fn(P1, P2) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + Sync + 'static,
-    P1: SystemParam + 'static,
-    P2: SystemParam + 'static,
-{
-    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
-        let pinned = move |p1, p2| -> PinnedFut { Box::pin(self(p1, p2)) };
-
-        pinned.into_container(id, world)
-    }
-}
-
-impl<P1, P2, P3, F, Fut> AsyncSystem<(P1, P2, P3)> for F
-where
-    F: Fn(P1, P2, P3) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + Sync + 'static,
-    P1: SystemParam + 'static,
-    P2: SystemParam + 'static,
-    P3: SystemParam + 'static,
-{
-    fn pinned(self, id: usize, world: &Arc<World>) -> impl System + Send + Sync + 'static {
-        let pinned = move |p1, p2, p3| -> PinnedFut { Box::pin(self(p1, p2, p3)) };
-
-        pinned.into_container(id, world)
-    }
-}
-
-/// Types that can be used as return values for a system.
-///
-/// This is useful for async systems which return futures but is also implemented for unit in the case of sync systems.
-/// In the future this could possibly also be used for returning errors or something in that direction.
-pub trait SystemReturnable: Send + Sync + 'static {
-    const IS_ASYNC: bool;
-
-    fn into_future(self) -> PinnedFut;
-}
-
-impl SystemReturnable for () {
-    const IS_ASYNC: bool = false;
-
-    fn into_future(self) -> PinnedFut {
-        panic!("Attempt to call a sync system as an async one");
-    }
-}
-
-impl SystemReturnable for Pin<Box<dyn Future<Output = ()> + Send + Sync>> {
-    const IS_ASYNC: bool = true;
-
-    fn into_future(self) -> PinnedFut {
-        self
-    }
-}
-
-pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Send + Sync + Sized {
-    fn into_container(self, id: usize, world: &Arc<World>) -> FnContainer<P, R, Self> {
+pub trait ParameterizedSystem<P: SystemParams>: Send + Sync + Sized {
+    fn into_container(self, id: usize, world: &Arc<World>) -> FnContainer<P, Self> {
         FnContainer {
             id,
             system: self,
@@ -303,48 +177,45 @@ pub trait ParameterizedSystem<P: SystemParams, R: SystemReturnable>: Send + Sync
         }
     }
 
-    fn call(&self, world: &Arc<World>, state: &P::ArcState) -> R;
+    fn call(&self, world: &Arc<World>, state: &P::ArcState);
 }
 
-impl<F, R, P> ParameterizedSystem<P, R> for F
+impl<F, P> ParameterizedSystem<P> for F
 where
-    F: Fn(P) -> R + Send + Sync,
-    P: SystemParam,
-    R: SystemReturnable,
+    F: Fn(P) + Send + Sync,
+    P: SystemParam
 {
-    fn call(&self, world: &Arc<World>, state: &Arc<P::State>) -> R {
+    fn call(&self, world: &Arc<World>, state: &Arc<P::State>) {
         let p = P::fetch::<sealed::Sealer>(world, state);
-        self(p)
+        self(p);
     }
 }
 
-impl<F, R, P1, P2> ParameterizedSystem<(P1, P2), R> for F
+impl<F, P1, P2> ParameterizedSystem<(P1, P2)> for F
 where
-    F: Fn(P1, P2) -> R + Send + Sync,
+    F: Fn(P1, P2) + Send + Sync,
     P1: SystemParam,
-    P2: SystemParam,
-    R: SystemReturnable,
+    P2: SystemParam
 {
-    fn call(&self, world: &Arc<World>, state: &<(P1, P2) as SystemParams>::ArcState) -> R {
+    fn call(&self, world: &Arc<World>, state: &<(P1, P2) as SystemParams>::ArcState) {
         let p1 = P1::fetch::<sealed::Sealer>(world, &state.0);
         let p2 = P2::fetch::<sealed::Sealer>(world, &state.1);
-        self(p1, p2)
+        self(p1, p2);
     }
 }
 
-impl<F, R, P1, P2, P3> ParameterizedSystem<(P1, P2, P3), R> for F
+impl<F, P1, P2, P3> ParameterizedSystem<(P1, P2, P3)> for F
 where
-    F: Fn(P1, P2, P3) -> R + Send + Sync,
+    F: Fn(P1, P2, P3) + Send + Sync,
     P1: SystemParam,
     P2: SystemParam,
-    P3: SystemParam,
-    R: SystemReturnable,
+    P3: SystemParam
 {
-    fn call(&self, world: &Arc<World>, state: &<(P1, P2, P3) as SystemParams>::ArcState) -> R {
+    fn call(&self, world: &Arc<World>, state: &<(P1, P2, P3) as SystemParams>::ArcState) {
         let p1 = P1::fetch::<sealed::Sealer>(world, &state.0);
         let p2 = P2::fetch::<sealed::Sealer>(world, &state.1);
         let p3 = P3::fetch::<sealed::Sealer>(world, &state.2);
-        self(p1, p2, p3)
+        self(p1, p2, p3);
     }
 }
 
@@ -369,20 +240,12 @@ impl Systems {
     }
 
     pub async fn call(&self, world: &Arc<World>) {
-        let mut futures = FuturesUnordered::new();
-
         let lock = self.storage.read();
         for sys_index in 0..self.storage.read().len() {
             let world = Arc::clone(world);
 
-            let sys = lock[sys_index].clone();
-            futures.push(tokio::spawn(async move {
-                sys.call(&world).await;
-            }));
+            lock[sys_index].call(&world);
         }
-
-        // Run all futures to completion
-        while let Some(_) = futures.next().await {}
     }
 }
 
