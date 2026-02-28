@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{param::{Param, ParamDesc}, sealed::Sealed};
+use crate::{param::{Param, ParamDesc}, sealed::Sealed, world::World};
 
 pub struct Local<T: 'static> {
     _marker: PhantomData<T>
@@ -8,6 +8,7 @@ pub struct Local<T: 'static> {
 
 impl<T> Param for Local<T> {
     type State = Local<T>;
+    type Item<'w> = Local<T>;
 
     fn desc() -> ParamDesc {
         ParamDesc::Local
@@ -16,7 +17,7 @@ impl<T> Param for Local<T> {
     fn init(state: &Local<T>) {}
     fn destroy(state: &Local<T>) {}
 
-    fn fetch<S: Sealed>(state: &Local<T>) -> Self {
+    fn fetch<S: Sealed>(world: &World, state: &Local<T>) -> Self {
         todo!()
     }
 

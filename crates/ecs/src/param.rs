@@ -1,17 +1,18 @@
-use crate::sealed::Sealed;
+use crate::{sealed::Sealed, world::World};
 
 pub enum ParamDesc {
     Unit,
     Local
 }
 
-pub trait Param: 'static {
+pub trait Param {
     type State;
+    type Item<'w>;
 
     fn desc() -> ParamDesc;
 
     #[doc(hidden)]
-    fn fetch<S: Sealed>(state: &Self::State) -> Self;
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &Self::State) -> Self::Item<'w>;
 
     fn state(&self) -> &Self::State;
 
@@ -20,7 +21,7 @@ pub trait Param: 'static {
     fn destroy(state: &Self::State);
 }
 
-pub trait ParamGroup: 'static {
+pub trait ParamGroup {
     type State;
 
     fn init() -> Self::State;
@@ -28,6 +29,7 @@ pub trait ParamGroup: 'static {
 
 impl Param for () {
     type State = ();
+    type Item<'w> = ();
 
     fn desc() -> ParamDesc {
         ParamDesc::Unit
@@ -35,7 +37,7 @@ impl Param for () {
 
     fn state(&self) -> &() { &() }
 
-    fn fetch<S: Sealed>(_state: &Self::State) -> Self {}
+    fn fetch<'w, S: Sealed>(_world: &'w World, _state: &Self::State) -> Self::Item<'w> {}
 
     fn init(_state: &Self::State) {}
     fn destroy(_state: &Self::State) {}

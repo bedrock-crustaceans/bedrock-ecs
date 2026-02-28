@@ -2,9 +2,13 @@
 mod test;
 
 pub mod component;
+pub mod entity;
+pub mod filter;
 pub mod local;
 pub mod param;
+pub mod query;
 pub mod system;
+pub mod util;
 pub mod world;
 
 pub mod prelude {
