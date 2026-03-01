@@ -1,10 +1,9 @@
 use std::{any::TypeId, marker::PhantomData};
 
-use bitvec::vec::IntoIter;
 use smallvec::{SmallVec, smallvec};
 use static_assertions::assert_type_eq_all;
 
-use crate::{component::{Component, Storage}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
+use crate::{component::{Component, ComponentId, Storage}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
 
 pub trait QueryGroup {
     type Fetchable<'a>;
@@ -60,17 +59,16 @@ impl<T: Component + Send> QueryGroup for &T {
         );
 
         todo!();
-
-        // let type_id = TypeId::of::<T>();
+        // let id = ComponentId::of::<T>();
         // let storage: &Storage<T> = world
         //     .components
         //     .map
-        //     .get(&type_id)?
+        //     .get(&id)?
         //     .as_any()
         //     .downcast_ref()
         //     .expect("Invalid storage type has been inserted into component storage");
 
-        
+        // storage.get(entity.id())
     }
 
     fn filter(entity: &Entity) -> bool {
@@ -99,6 +97,16 @@ impl<T: Component + Send> QueryGroup for &mut T {
         );
 
         todo!();
+        // let type_id = TypeId::of::<T>();
+        // let storage: &mut Storage<T> = world
+        //     .components
+        //     .map
+        //     .get(&type_id)?
+        //     .as_any_mut()
+        //     .downcast_mut()
+        //     .expect("Invalid storage type has been inserted into component storage");
+
+        // storage.get_mut(entity.id())
     }
 
     fn filter(entity: &Entity) -> bool {

@@ -1,11 +1,20 @@
-use std::{iter::FusedIterator, marker::PhantomData};
+use std::{iter::FusedIterator, marker::PhantomData, ops::Deref};
 
 use bitvec::vec::BitVec;
 
 use crate::{component::Component, filter::FilterGroup, query::QueryGroup, world::World};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct GenerationId(pub(crate) usize);
+
+#[derive(Clone)]
+pub struct EntityMeta {
+    id: EntityId,
+    generation: GenerationId
+}
 
 #[derive(Clone)]
 pub struct Entity<'w> {
@@ -18,12 +27,25 @@ impl<'w> Entity<'w> {
         self.id
     }
 
-    pub fn despawn(self) {
-        todo!();
+    pub fn has<T: Component>(&self) -> bool {
+        todo!()
+        // self.world.components.has_component::<T>(self.id)
+    }
+}
+
+pub struct EntityMut<'w> {
+    pub(crate) world: &'w mut World,
+    pub(crate) id: EntityId
+}
+
+impl<'w> EntityMut<'w> {
+    pub fn id(&self) -> EntityId {
+        self.id
     }
 
     pub fn has<T: Component>(&self) -> bool {
         todo!()
+        // self.world.components.has_component::<T>(self.id)
     }
 }
 
@@ -60,6 +82,7 @@ impl<Q: QueryGroup, F: FilterGroup> FusedIterator for EntityIter<'_, Q, F> {}
 
 #[derive(Default)]
 pub(crate) struct Entities {
+    generation: GenerationId,
     indices: BitVec
 }
 
