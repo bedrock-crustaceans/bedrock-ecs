@@ -97,6 +97,17 @@ impl Table {
         self.len += 1;
     }
 
+    pub unsafe fn get(&self, index: usize) -> Option<NonNull<u8>> {
+        if index >= self.len {
+            return None
+        }
+
+        let offset = self.layout.size() * index;
+        Some(unsafe {
+            self.data.unwrap().add(offset)
+        })
+    }
+
     pub fn swap_remove(&mut self, idx: usize) {
         println!("Swap removing idx {idx}");
 
@@ -181,6 +192,34 @@ impl Drop for Table {
     }
 }
 
+pub struct ArchetypeIter<'a> {
+    index: usize,
+    archetype: &'a Archetype
+}
+
+impl<'a> Iterator for ArchetypeIter<'a> {
+    type Item = NonNull<u8>;
+
+    fn next(&mut self) -> Option<NonNull<u8>> {
+        let item = unsafe {
+            self.archetype.get(self.index)?
+        };
+        self.index += 1;
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> ExactSizeIterator for ArchetypeIter<'a> {
+    fn len(&self) -> usize {
+        self.archetype.len() - self.index
+    }
+}
+
 #[derive(Debug)]
 pub struct Archetype {
     components: ArchetypeComponents,    
@@ -200,14 +239,29 @@ impl Archetype {
         }
     }
 
-    pub fn spawn<G: ComponentGroup>(&mut self, entity: EntityId, group: G) {
+    pub unsafe fn iter(&self) -> ArchetypeIter {
+        ArchetypeIter {
+            index: 0,
+            archetype: self
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.entities.len()
+    }
+
+    pub fn insert<G: ComponentGroup>(&mut self, entity: EntityId, group: G) {
         self.entities.push(entity);
         
-        let ptr = &group as *const _ as *const u8;
+        let ptr = (&raw const group).cast::<u8>();
         self.table.push(ptr);
 
         // Forget memory to prevent freeing the memory that has been copied to the table.
         std::mem::forget(group);
+    }
+
+    pub unsafe fn get(&self, index: usize) -> Option<NonNull<u8>> {
+        self.table.get(index)
     }
 
     pub fn despawn(&mut self, entity: EntityId) {
@@ -221,8 +275,8 @@ impl Archetype {
 
 #[derive(Default, Debug)]
 pub struct Archetypes {
-    archetypes: Vec<Archetype>,
-    lookup: HashMap<ArchetypeComponents, ArchetypeId>
+    archetypes: HashMap<ArchetypeComponents, Archetype>,
+    // lookup: HashMap<ArchetypeComponents, ArchetypeId>
 }
 
 impl Archetypes {
@@ -231,29 +285,39 @@ impl Archetypes {
     }
 
     pub fn insert<G: ComponentGroup>(&mut self, id: EntityId, group: G) {
+        // let comps = G::archetype();
+        // let layout = G::layout();
+
+        // let idx = self.lookup.get(&comps).copied().unwrap_or_else(|| {
+        //     let archetype = Archetype::new::<G>(comps.clone(), layout);
+        //     self.archetypes.push(archetype);
+
+        //     let id = ArchetypeId::from(self.archetypes.len() - 1);
+        //     self.lookup.insert(comps, id);
+
+        //     id
+        // });
+
+        // let archetype = &mut self.archetypes[idx.0];
+        // archetype.spawn(id, group);
+
         let comps = G::archetype();
         let layout = G::layout();
 
-        let idx = self.lookup.get(&comps).copied().unwrap_or_else(|| {
-            let archetype = Archetype::new::<G>(comps.clone(), layout);
-            self.archetypes.push(archetype);
+        let archetype = self.archetypes.entry(comps.clone())
+            .or_insert_with(|| {
+                Archetype::new::<G>(comps, layout)
+            });
 
-            let id = ArchetypeId::from(self.archetypes.len() - 1);
-            self.lookup.insert(comps, id);
-
-            id
-        });
-
-        let archetype = &mut self.archetypes[idx.0];
-        archetype.spawn(id, group);
+        archetype.insert(id, group);
     }
 
-    pub fn remove<G: ComponentGroup>(&mut self, id: EntityId) {
-        let comps = G::archetype();
-        if let Some(idx) = self.lookup.get(&comps) {
-            let archetype = &mut self.archetypes[idx.0];
-            archetype.despawn(id);
-        }
+    pub fn get(&self, id: &ArchetypeComponents) -> Option<&Archetype> {
+        self.archetypes.get(id)
+    }
+    
+    pub fn remove(&mut self, id: &ArchetypeComponents) -> Option<Archetype> {
+        self.archetypes.remove(id)
     }
 
     // pub fn insert(&mut self, id: EntityId, components: ArchetypeComponents, layout: Layout) {
@@ -295,7 +359,7 @@ mod test {
         archetypes.insert(EntityId(0), Test { hello: 0 });
         archetypes.insert(EntityId(1), Test { hello: 1 });
         archetypes.insert(EntityId(2), Test { hello: 2 });
-        archetypes.remove::<Test>(EntityId(1));
+        
 
         // println!("{archetypes:?}");
         println!("Dropping archetypes");

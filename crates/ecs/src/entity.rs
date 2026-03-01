@@ -49,37 +49,6 @@ impl<'w> EntityMut<'w> {
     }
 }
 
-pub(crate) struct EntityIter<'a, Q: QueryGroup, F: FilterGroup> {
-    world: &'a World,
-    entities: &'a BitVec,
-    bvec_index: usize,
-    index: usize,
-    _marker: PhantomData<&'a (Q, F)>
-}
-
-impl<'a, Q: QueryGroup, F: FilterGroup> Iterator for EntityIter<'a, Q, F> {
-    type Item = Entity<'a>;
-
-    fn next(&mut self) -> Option<Entity<'a>> {
-        loop {
-            // TODO: use bvec_index
-            let next_id = self.entities.iter_ones().nth(self.index)?;
-            
-            self.index += 1;
-            let entity = Entity {
-                world: self.world,
-                id: EntityId(next_id)
-            };
-
-            if Q::filter(&entity) && F::filter(&entity) {
-                break Some(entity);
-            }
-        }
-    }
-}
-
-impl<Q: QueryGroup, F: FilterGroup> FusedIterator for EntityIter<'_, Q, F> {}
-
 #[derive(Default)]
 pub(crate) struct Entities {
     generation: GenerationId,
@@ -112,15 +81,5 @@ impl Entities {
 
     pub fn free(&mut self, entity: EntityId) {
         self.indices.set(entity.0, false);
-    }
-
-    pub fn iter<'a, Q: QueryGroup, F: FilterGroup>(&'a self, world: &'a World) -> EntityIter<'a, Q, F> {
-        EntityIter {
-            world,
-            entities: &self.indices,
-            bvec_index: 0,
-            index: 0,
-            _marker: PhantomData
-        }
     }
 }

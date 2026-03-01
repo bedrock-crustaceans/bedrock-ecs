@@ -1,19 +1,19 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use smallvec::{SmallVec, smallvec};
 use static_assertions::assert_type_eq_all;
 
-use crate::{component::{Component, ComponentId, Storage}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
+use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId, Storage}, entity::{Entity}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
 
 pub trait QueryGroup {
-    type Fetchable<'a>;
+    type Fetchable<'w>;
 
     const SEND: bool;
     const MUTABLE: bool;
 
+    fn archetype() -> ArchetypeComponents;
+    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Fetchable<'w>;
     fn desc() -> QueryDescVec;
-    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>>;
-    fn filter(entity: &Entity) -> bool;
 }
 
 impl QueryGroup for Entity<'_> {
@@ -22,19 +22,19 @@ impl QueryGroup for Entity<'_> {
     const SEND: bool = true;
     const MUTABLE: bool = false;
 
+    fn archetype() -> ArchetypeComponents {
+        ArchetypeComponents(Box::new([]))
+    }
+
+    unsafe fn from_ptr<'w>(_ptr: NonNull<u8>) -> Entity<'w> {
+        panic!("Cannot instantiate Entity from pointer");
+    }
+
     fn desc() -> QueryDescVec {
         smallvec![QueryDesc {
             mutable: false,
             ty: QueryType::Entity
         }]
-    }
-
-    fn fetch<'w>(_world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
-        Some(entity)
-    }
-
-    fn filter(_entity: &Entity<'_>) -> bool {
-        true
     }
 }
 
@@ -44,35 +44,19 @@ impl<T: Component + Send> QueryGroup for &T {
     const SEND: bool = true;
     const MUTABLE: bool = false;
 
+    fn archetype() -> ArchetypeComponents {
+        ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    }
+
+    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w T {
+        unsafe { &*(ptr.as_ptr() as *const T) }
+    }
+
     fn desc() -> QueryDescVec {
         smallvec![QueryDesc {
             mutable: false,
             ty: QueryType::Component(TypeId::of::<T>())
         }]
-    }
-
-    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
-        assert_eq!(
-            TypeId::of::<T>(),
-            TypeId::of::<Self::Fetchable<'static>>(),
-            "&T != Self::Fetchable, this is a bug."
-        );
-
-        todo!();
-        // let id = ComponentId::of::<T>();
-        // let storage: &Storage<T> = world
-        //     .components
-        //     .map
-        //     .get(&id)?
-        //     .as_any()
-        //     .downcast_ref()
-        //     .expect("Invalid storage type has been inserted into component storage");
-
-        // storage.get(entity.id())
-    }
-
-    fn filter(entity: &Entity) -> bool {
-        entity.has::<T>()
     }
 }
 
@@ -82,54 +66,40 @@ impl<T: Component + Send> QueryGroup for &mut T {
     const SEND: bool = true;
     const MUTABLE: bool = true;
 
+    fn archetype() -> ArchetypeComponents {
+        ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    }
+
+    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w mut T {
+        unsafe { &mut *(ptr.as_ptr() as *mut T) }
+    }
+
     fn desc() -> QueryDescVec {
         smallvec![QueryDesc {
             mutable: true,
             ty: QueryType::Component(TypeId::of::<T>())
         }]
     }
-
-    fn fetch<'w>(world: &'w World, entity: Entity<'w>) -> Option<Self::Fetchable<'w>> {
-        assert_eq!(
-            TypeId::of::<T>(),
-            TypeId::of::<Self::Fetchable<'static>>(),
-            "&mut T != Self::Fetchable, this is a bug."
-        );
-
-        todo!();
-        // let type_id = TypeId::of::<T>();
-        // let storage: &mut Storage<T> = world
-        //     .components
-        //     .map
-        //     .get(&type_id)?
-        //     .as_any_mut()
-        //     .downcast_mut()
-        //     .expect("Invalid storage type has been inserted into component storage");
-
-        // storage.get_mut(entity.id())
-    }
-
-    fn filter(entity: &Entity) -> bool {
-        entity.has::<T>()
-    }
 }
 
 pub struct Query<'w, Q: QueryGroup, F: FilterGroup = ()> {
-    world: &'w World,
+    archetypes: &'w Archetypes,
+    state: &'w QueryState,
     _marker: PhantomData<(Q, F)>
 }
 
 impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
-    pub fn new(world: &'w World) -> Query<'w, Q, F> {
+    pub fn new(world: &'w World, state: &'w QueryState) -> Query<'w, Q, F> {
         Query {
-            world,
+            archetypes: &world.archetypes,
+            state,
             _marker: PhantomData
         }
     }
 }
 
 impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, Q, F> {
-    type State = ();
+    type State = QueryState;
     type Item<'w> = Query<'w, Q, F>;
 
     const SEND: bool = Q::SEND;
@@ -138,15 +108,26 @@ impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, 
         ParamDesc::Query(Q::desc())
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, _: &mut ()) -> Query<'w, Q, F> {
-        Query {
-            world,
-            _marker: PhantomData
-        }
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryState) -> Query<'w, Q, F> {
+        Query::new(world, state)
     }
 
-    fn init() {}
-    fn destroy(_: &mut ()) {}
+    fn init() -> QueryState {
+        QueryState {
+            archetype: Q::archetype()
+        }
+    }
+    
+    fn destroy(_: &mut QueryState) {}
+}
+
+pub struct QueryState {
+    archetype: ArchetypeComponents
+}
+
+pub struct QueryIter<'q, 'w, Q: QueryGroup, F: FilterGroup> {
+    iter: Option<ArchetypeIter<'w>>,
+    _marker: PhantomData<&'q (Q, F)>
 }
 
 impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
@@ -158,24 +139,30 @@ impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F>
     }
 }
 
-pub struct QueryIter<'q, 'w, Q: QueryGroup, F: FilterGroup> {
-    query: &'q Query<'w, Q, F>,
-    entities: EntityIter<'q, Q, F>
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
+    fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
+        let archetype = query.archetypes.get(&query.state.archetype);
+        let iter = archetype.map(|a| unsafe {
+            a.iter()
+        });
+
+        QueryIter {
+            iter,
+            _marker: PhantomData
+        }
+    }
 }
 
 impl<'q, 'w, Q: QueryGroup, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
     type Item = Q::Fetchable<'w>;
 
     fn next(&mut self) -> Option<Q::Fetchable<'w>> {
-        let entity = self.entities.next()?;
-        todo!()
-        // Q::fetch(&self.world, entity)
+        // TODO: filters
+        let ptr = self.iter.as_mut()?.next()?;
+        Some(unsafe {
+            Q::from_ptr(ptr)
+        })
     }
 }
 
-impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
-    fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
-        let entities = todo!();
-        QueryIter { query, entities }
-    }
-}
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}
