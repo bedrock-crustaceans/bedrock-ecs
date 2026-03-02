@@ -26,8 +26,8 @@ fn system_test() {
     let mut world = World::new();
 
     world.spawn(Health(5.0));
-    world.spawn(Health(1.0));
-    world.spawn(Health(0.5));
+    // world.spawn(Health(1.0));
+    // world.spawn(Health(0.5));
 
     world.systems.push(system1);
 

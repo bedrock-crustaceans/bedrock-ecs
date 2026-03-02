@@ -2,7 +2,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
 
-use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamDesc, ParamGroup}, sealed::Sealer, world::World};
+use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamDesc, ParamBundle}, sealed::Sealer, world::World};
 
 #[derive(Debug)]
 pub struct SystemDescriptor {
@@ -17,7 +17,7 @@ pub trait System {
     fn call(&self, world: &World);
 }
 
-pub trait ParametrizedSystem<G: ParamGroup>: Sized {
+pub trait ParametrizedSystem<G: ParamBundle>: Sized {
     const SEND: bool;
 
     fn into_container(self, id: usize) -> FnContainer<G, Self> {
@@ -34,7 +34,7 @@ pub trait ParametrizedSystem<G: ParamGroup>: Sized {
     fn call(&self, world: &World, state: &mut G::State);
 }
 
-pub struct FnContainer<P: ParamGroup, F: ParametrizedSystem<P>> {
+pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     #[cfg(debug_assertions)]
     pub counter: AtomicUsize,
     pub id: usize,
@@ -118,7 +118,7 @@ impl<F: Fn(P::Item<'_>), P: Param> ParametrizedSystem<P> for F {
 impl<F: Fn(P1::Item<'_>, P2::Item<'_>), P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
     const SEND: bool = P1::SEND && P2::SEND;
 
-    fn call(&self, world: &World, state: &mut <(P1, P2) as ParamGroup>::State) {
+    fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
 

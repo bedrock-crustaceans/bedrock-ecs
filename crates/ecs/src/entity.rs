@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use bitvec::vec::BitVec;
 
 use crate::{component::Component, world::World};
@@ -28,6 +30,19 @@ impl<'w> Entity<'w> {
     pub fn has<T: Component>(&self) -> bool {
         todo!()
         // self.world.components.has_component::<T>(self.id)
+    }
+}
+
+pub struct EntityIter<'w> {
+    index: usize,
+    _marker: PhantomData<&'w ()>
+}
+
+impl<'w> Iterator for EntityIter<'w> {
+    type Item = Entity<'w>;
+
+    fn next(&mut self) -> Option<Entity<'w>> {
+        todo!()
     }
 }
 

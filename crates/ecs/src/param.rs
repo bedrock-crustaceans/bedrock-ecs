@@ -41,7 +41,7 @@ pub trait Param {
     fn destroy(state: &mut Self::State);
 }
 
-pub trait ParamGroup {
+pub trait ParamBundle {
     type State;
 
     const SEND: bool;
@@ -65,7 +65,7 @@ impl Param for () {
     fn destroy(_state: &mut Self::State) {}
 }
 
-impl<P: Param> ParamGroup for P {
+impl<P: Param> ParamBundle for P {
     type State = P::State;
 
     const SEND: bool = P::SEND;
@@ -75,7 +75,7 @@ impl<P: Param> ParamGroup for P {
     }
 }
 
-impl<P1: Param, P2: Param> ParamGroup for (P1, P2) {
+impl<P1: Param, P2: Param> ParamBundle for (P1, P2) {
     type State = (P1::State, P2::State);
 
     const SEND: bool = P1::SEND && P2::SEND;
@@ -85,7 +85,7 @@ impl<P1: Param, P2: Param> ParamGroup for (P1, P2) {
     }
 }
 
-impl<P1: Param, P2: Param, P3: Param> ParamGroup for (P1, P2, P3) {
+impl<P1: Param, P2: Param, P3: Param> ParamBundle for (P1, P2, P3) {
     type State = (P1::State, P2::State, P3::State);
 
     const SEND: bool = P1::SEND && P2::SEND && P3::SEND;

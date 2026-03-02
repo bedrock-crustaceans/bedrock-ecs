@@ -3,21 +3,25 @@ use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 use smallvec::{SmallVec, smallvec};
 use static_assertions::assert_type_eq_all;
 
-use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
+use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, ArchetypeIterMut, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
 
-pub trait QueryGroup {
+pub trait QueryBundle {
     type Fetchable<'w>;
+    type Iter<'w>: Iterator<Item = Self::Fetchable<'w>>;
 
     const SEND: bool;
     const MUTABLE: bool;
 
     fn archetype() -> ArchetypeComponents;
+    unsafe fn iter<'w>(archetype: &'w Archetype) -> Self::Iter<'w>;
+
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Fetchable<'w>;
     fn desc() -> QueryDescVec;
 }
 
-impl QueryGroup for Entity<'_> {
+impl QueryBundle for Entity<'_> {
     type Fetchable<'a> = Entity<'a>;
+    type Iter<'w> = EntityIter<'w>;
 
     const SEND: bool = true;
     const MUTABLE: bool = false;
@@ -30,6 +34,10 @@ impl QueryGroup for Entity<'_> {
         panic!("Cannot instantiate Entity from pointer");
     }
 
+    unsafe fn iter<'w>(_archetype: &'w Archetype) -> Self::Iter<'w> {
+        todo!()
+    }
+
     fn desc() -> QueryDescVec {
         smallvec![QueryDesc {
             mutable: false,
@@ -38,14 +46,19 @@ impl QueryGroup for Entity<'_> {
     }
 }
 
-impl<T: Component + Send> QueryGroup for &T {
+impl<T: Component + Send> QueryBundle for &T {
     type Fetchable<'a> = &'a T;
+    type Iter<'w> = ArchetypeIter<'w, T>;
 
     const SEND: bool = true;
     const MUTABLE: bool = false;
 
     fn archetype() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    }
+
+    unsafe fn iter<'w>(archetype: &'w Archetype) -> ArchetypeIter<'w, T> {
+        ArchetypeIter::new(archetype)
     }
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w T {
@@ -60,14 +73,19 @@ impl<T: Component + Send> QueryGroup for &T {
     }
 }
 
-impl<T: Component + Send> QueryGroup for &mut T {
+impl<T: Component + Send> QueryBundle for &mut T {
     type Fetchable<'a> = &'a mut T;
+    type Iter<'w> = ArchetypeIterMut<'w, T>;
 
     const SEND: bool = true;
     const MUTABLE: bool = true;
 
     fn archetype() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    }
+
+    unsafe fn iter<'w>(archetype: &'w Archetype) -> ArchetypeIterMut<'w, T> {
+        ArchetypeIterMut::new(archetype)
     }
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w mut T {
@@ -82,13 +100,13 @@ impl<T: Component + Send> QueryGroup for &mut T {
     }
 }
 
-pub struct Query<'w, Q: QueryGroup, F: FilterGroup = ()> {
+pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
     archetypes: &'w Archetypes,
     state: &'w QueryState,
     _marker: PhantomData<(Q, F)>
 }
 
-impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
+impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
     pub fn new(world: &'w World, state: &'w QueryState) -> Query<'w, Q, F> {
         println!("Query mutable? {}", Q::MUTABLE);
 
@@ -100,7 +118,7 @@ impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
     }
 }
 
-impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, Q, F> {
+impl<'placeholder, Q: QueryBundle, F: FilterGroup> Param for Query<'placeholder, Q, F> {
     type State = QueryState;
     type Item<'w> = Query<'w, Q, F>;
 
@@ -127,12 +145,12 @@ pub struct QueryState {
     archetype: ArchetypeComponents
 }
 
-pub struct QueryIter<'q, 'w, Q: QueryGroup, F: FilterGroup> {
-    iter: Option<ArchetypeIter<'w>>,
+pub struct QueryIter<'q, 'w, Q: QueryBundle, F: FilterGroup> {
+    iter: Option<Q::Iter<'w>>,
     _marker: PhantomData<&'q (Q, F)>
 }
 
-impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
+impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
     type Item = Q::Fetchable<'w>;
     type IntoIter = QueryIter<'q, 'w, Q, F>;
 
@@ -141,12 +159,13 @@ impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F>
     }
 }
 
-impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
+impl<'q, 'w, Q: QueryBundle, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
     fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
         let archetype = query.archetypes.get(&query.state.archetype);
-
-        let iter = archetype.map(|a| unsafe {
-            ArchetypeIter::new(a, Q::MUTABLE)
+        let iter = archetype.map(|a| {
+            unsafe {
+                Q::iter(a)
+            }
         });
 
         QueryIter {
@@ -156,16 +175,12 @@ impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryI
     }
 }
 
-impl<'q, 'w, Q: QueryGroup, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
+impl<'q, 'w, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
     type Item = Q::Fetchable<'w>;
 
     fn next(&mut self) -> Option<Q::Fetchable<'w>> {
-        // TODO: filters
-        let ptr = self.iter.as_mut()?.next()?;
-        Some(unsafe {
-            Q::from_ptr(ptr)
-        })
+        self.iter.as_mut()?.next()
     }
 }
 
-impl<'q, 'w, Q: QueryGroup, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}
+impl<'q, 'w, Q: QueryBundle, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}

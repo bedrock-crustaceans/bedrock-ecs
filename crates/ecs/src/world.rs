@@ -1,4 +1,4 @@
-use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::ComponentGroup, system::Systems};
+use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::ComponentBundle, system::Systems};
 
 #[derive(Default)]
 pub struct World {
@@ -12,9 +12,9 @@ impl World {
         World::default()
     }
 
-    pub fn spawn<'w, B: ComponentGroup>(&'w mut self, bundle: B) -> EntityMut<'w> {
+    pub fn spawn<'w, B: ComponentBundle>(&'w mut self, bundle: B) -> EntityMut<'w> {
         let id = self.entities.alloc();
-        bundle.insert_into(id, &mut self.archetypes);
+        self.archetypes.insert(id, bundle);
 
         EntityMut {
             id, world: self

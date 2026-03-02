@@ -18,6 +18,14 @@ pub mod debug {
     const READ: u8 = 1;
     const WRITE: u8 = 2;
 
+    pub struct RwGuard<'a, const WRITE: bool>(&'a RwFlag);
+
+    impl<'a, const WRITE: bool> Drop for RwGuard<'a, WRITE> {
+        fn drop(&mut self) {
+            self.0.unlock_guardless();
+        }
+    }
+
     #[derive(Debug)]
     pub struct RwFlag {
         state: AtomicU8
@@ -30,19 +38,39 @@ pub mod debug {
             }
         }
 
-        pub fn read(&self) {
+        pub fn state(&self) -> u8 {
+            self.state.load(Ordering::SeqCst)
+        }
+
+        pub fn read(&self) -> RwGuard<'_, false> {
             let prev = self.state.fetch_max(1, Ordering::SeqCst);
             assert_eq!(prev, UNLOCKED, "RwFlag was write, cannot read");
-            println!("Lock read");
+            println!("Lock guard read");
+            
+            RwGuard(self)
         }
 
-        pub fn write(&self) {
+        pub fn write(&self) -> RwGuard<'_, true> {
             let prev = self.state.fetch_add(2, Ordering::SeqCst);
             assert_eq!(prev, UNLOCKED, "RwFlag was not unlocked, cannot write");
-            println!("Lock write");
+            println!("Lock guard write");
+
+            RwGuard(self)
         }
 
-        pub fn unlock(&self) {
+        pub fn read_guardless(&self) {
+            let prev = self.state.fetch_max(1, Ordering::SeqCst);
+            assert_eq!(prev, UNLOCKED, "RwFlag was write, cannot read");
+            println!("Lock guardless read");
+        }
+
+        pub fn write_guardless(&self) {
+            let prev = self.state.fetch_add(2, Ordering::SeqCst);
+            assert_eq!(prev, UNLOCKED, "RwFlag was not unlocked, cannot write");
+            println!("Lock guardless write");
+        }
+
+        pub fn unlock_guardless(&self) {
             let prev = self.state.fetch_min(0, Ordering::SeqCst);
             assert_ne!(prev, UNLOCKED, "Cannot unlock RwFlag twice");
             println!("Unlock");

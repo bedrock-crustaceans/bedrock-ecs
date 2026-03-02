@@ -1,10 +1,8 @@
-#[cfg(debug_assertions)]
-use std::sync::{Arc, atomic::AtomicBool};
 use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull, sync::atomic::Ordering};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{component::ComponentId, entity::{EntityId, EntityMeta}, spawn::ComponentGroup, util::{self}};
+use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, spawn::ComponentBundle, util::{self}};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -41,6 +39,8 @@ unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
 /// Stores a collection of a single component type.
 #[derive(Debug)]
 pub struct Table {
+    #[cfg(debug_assertions)]
+    flag: RwFlag,
     /// The type ID of the item contained in this table.
     ty: TypeId,
     /// The layout of the component type.
@@ -62,7 +62,9 @@ pub struct Table {
 
 impl Table {
     /// Creates a new table for the type `T`.
-    pub fn new<T: 'static>(layout: Layout) -> Table {
+    pub fn new<T: 'static>() -> Table {
+        dbg!("Created {}", std::any::type_name::<T>());
+
         // The static requirement on `T` ensures that the type does not contain any references.
 
         let drop_fn = if std::mem::needs_drop::<T>() {
@@ -71,11 +73,14 @@ impl Table {
             None
         };
 
+        let layout = Layout::new::<T>();
         if std::mem::size_of::<T>() == 0 {
             // Produce a valid non-null pointer for the ZST even though we will never use it.
             let ptr = NonNull::<T>::dangling().cast::<u8>();
 
             Table {
+                #[cfg(debug_assertions)]
+                flag: RwFlag::new(),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -86,6 +91,8 @@ impl Table {
             }
         } else {
             Table {
+                #[cfg(debug_assertions)]
+                flag: RwFlag::new(),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -107,6 +114,9 @@ impl Table {
     /// Reserves capacity for `n` additional entries.
     pub fn reserve(&mut self, n: usize) {
         assert_ne!(self.layout.size(), 0, "Table::reserve should not be called for ZSTs");
+
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.write();
 
         if n == 0 {
             // Don't bother allocating for 0 size. This also ensures that we do not try to allocate
@@ -152,6 +162,11 @@ impl Table {
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Table::new`. This `T` is not stored in the `Table` type to prevent the runtime cost of dynamic dispatch.
     pub fn push<T: 'static>(&mut self, data: T) {
+        dbg!("Pushing {}", std::any::type_name::<T>());
+
+        #[cfg(debug_assertions)]
+        let mut _guard = self.flag.write();
+
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
@@ -159,9 +174,17 @@ impl Table {
         );
 
         if self.cap <= self.len {
+            #[cfg(debug_assertions)]
+            drop(_guard);
+
             // Reserve at least 4 slots to reduce allocations at the start.
             let new_slots = self.cap.clamp(4, usize::MAX);
             self.reserve(new_slots);
+
+            #[cfg(debug_assertions)]
+            {
+                _guard = self.flag.write();
+            }
         }
 
         let offset = self.layout.size() * self.len;
@@ -230,6 +253,9 @@ impl Table {
     /// 
     /// This function panics if the index is out of bounds.
     pub fn swap_remove(&mut self, idx: usize) {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.write();
+
         if idx >= self.len {
             panic!("Table::swap_remove index out of bounds");
         }
@@ -326,17 +352,24 @@ impl Table {
 
     /// The amount of elements currently contained in the table.
     pub fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.read();
         self.len
     }
 
     /// The capacity of the table.
     pub fn capacity(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.read();
         self.cap
     }
 }
 
 impl Drop for Table {
     fn drop(&mut self) {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.write();
+
         if let Some(ptr) = self.data {
             // Drop contents if it matters
             if let Some(drop_fn) = self.drop_fn {
@@ -373,35 +406,31 @@ pub struct ArchetypeIter<'a, T: 'static> {
 
 impl<'a, T: 'static> ArchetypeIter<'a, T> {
     pub unsafe fn new(
-        archetype: &'a Archetype, 
-        #[cfg(debug_assertions)]
-        mutable: bool
+        archetype: &'a Archetype,
     ) -> ArchetypeIter<'a, T> {
         #[cfg(debug_assertions)]
-        {
-            if mutable {
-                archetype.flag.write();
-            } else {
-                archetype.flag.read();
-            }
-        }
+        archetype.flag.read_guardless();
 
         ArchetypeIter {
             index: 0,
-            archetype
+            archetype,
+            _marker: PhantomData
         }
     }
 }
 
-impl<'a> Iterator for ArchetypeIter<'a> {
-    type Item = NonNull<u8>;
+impl<'a, T: 'static> Iterator for ArchetypeIter<'a, T> {
+    type Item = &'a T;
 
-    fn next(&mut self) -> Option<NonNull<u8>> {
-        let item = unsafe {
-            self.archetype.get(self.index)?
-        };
-        self.index += 1;
-        Some(item)
+    fn next(&mut self) -> Option<&'a T> {
+        todo!()
+        // self.index += 1;
+
+        // let item = unsafe {
+        //     &*(ptr.as_ptr() as *const T)
+        // };
+
+        // Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -410,18 +439,74 @@ impl<'a> Iterator for ArchetypeIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for ArchetypeIter<'a> {
+impl<'a, T> ExactSizeIterator for ArchetypeIter<'a, T> {
     fn len(&self) -> usize {
-        self.archetype.len() - self.index
+        todo!();
+        // unsafe {
+        //     self.archetype.len()
+        // } - self.index
     }
 }
 
-impl<'a> FusedIterator for ArchetypeIter<'a> {}
+impl<'a, T> FusedIterator for ArchetypeIter<'a, T> {}
 
 #[cfg(debug_assertions)]
-impl<'a> Drop for ArchetypeIter<'a> {
+impl<'a, T> Drop for ArchetypeIter<'a, T> {
     fn drop(&mut self) {
-        self.archetype.flag.unlock();
+        self.archetype.flag.unlock_guardless();
+    }
+}
+
+/// Iterates over components in an archetype.
+pub struct ArchetypeIterMut<'a, T: 'static> {
+    index: usize,
+    archetype: &'a Archetype,
+    _marker: PhantomData<&'a T>
+}
+
+impl<'a, T: 'static> ArchetypeIterMut<'a, T> {
+    pub unsafe fn new(
+        archetype: &'a Archetype,
+    ) -> ArchetypeIterMut<'a, T> {
+        #[cfg(debug_assertions)]
+        archetype.flag.write_guardless();
+
+        ArchetypeIterMut {
+            index: 0,
+            archetype,
+            _marker: PhantomData
+        }
+    }
+}
+
+impl<'a, T: 'static> Iterator for ArchetypeIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<&'a mut T> {
+        todo!()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> ExactSizeIterator for ArchetypeIterMut<'a, T> {
+    fn len(&self) -> usize {
+        todo!();
+        // unsafe {
+        //     self.archetype.len()
+        // } - self.index
+    }
+}
+
+impl<'a, T> FusedIterator for ArchetypeIterMut<'a, T> {}
+
+#[cfg(debug_assertions)]
+impl<'a, T> Drop for ArchetypeIterMut<'a, T> {
+    fn drop(&mut self) {
+        self.archetype.flag.unlock_guardless();
     }
 }
 
@@ -435,19 +520,26 @@ pub struct Archetype {
     // an the entity at index 5 in `entities` will have its components stored at index
     // 5 in the `columns` field.
     entities: UnsafeCell<Vec<EntityId>>,
-    table: UnsafeCell<Table>
+    map: HashMap<ComponentId, Table>
 }
 
 impl Archetype {
-    pub fn new<T>(components: ArchetypeComponents, layout: Layout) -> Archetype {
+    pub fn new<G: ComponentBundle>() -> Archetype {
         Archetype {
             #[cfg(debug_assertions)]
             flag: RwFlag::new(),
 
-            components,
+            components: G::components(),
             entities: UnsafeCell::new(Vec::new()),
-            table: UnsafeCell::new(Table::new::<T>(layout))
+            map: G::new_table_map()
         }
+    }
+
+    pub fn insert<G: ComponentBundle>(&mut self, entity: EntityId, components: G) {
+        let entities = self.entities.get_mut();
+        entities.push(entity);
+
+        components.insert_into(&mut self.map);
     }
 
     /// # Safety
@@ -456,67 +548,14 @@ impl Archetype {
     /// Calls to this function must be externally synchronised. Not abiding by these conditions
     /// induces immediate UB.
     pub unsafe fn len(&self) -> usize {
-        #[cfg(debug_assertions)]
-        self.flag.read();
-
         let len = unsafe {
             &*(self.entities.get() as *const Vec<EntityId>)
         }.len();
 
-        #[cfg(debug_assertions)]
-        self.flag.unlock();
-
         len
     }
 
-    /// # Safety
-    /// 
-    /// This function must only be called if there exist no other (mutable or immutable) references to this `Archetype`
-    /// Calls to this function must be externally synchronised. Not abiding by these conditions
-    /// induces immediate UB.
-    pub unsafe fn insert<G: ComponentGroup>(&mut self, entity: EntityId, group: G) {
-        #[cfg(debug_assertions)]
-        self.flag.write();
 
-        unsafe {
-            &mut *self.entities.get()
-        }.push(entity);
-        
-        let ptr = (&raw const group).cast::<u8>();
-        unsafe {
-            &mut *self.table.get()
-        }.push(ptr);
-
-        #[cfg(debug_assertions)]
-        self.flag.unlock();
-
-        // Forget memory to prevent freeing the memory that has been copied to the table.
-        std::mem::forget(group);
-    }
-
-    /// # Safety
-    /// 
-    /// This function returns a `*mut u8` pointer. 
-    /// 
-    /// Calls to this function must be externally synchronised. Not abiding by these conditions
-    /// induces immediate UB.
-    pub unsafe fn get(&self, index: usize) -> Option<NonNull<u8>> {
-        self.table.get(index)
-    }
-
-    pub fn despawn(&mut self, entity: EntityId) {
-        #[cfg(debug_assertions)]
-        self.flag.write();
-
-        if let Some(idx) = self.entities.iter().find(|x| **x == entity).copied() {
-            let idx = idx.0;
-            self.entities.swap_remove(idx);
-            self.table.swap_remove(idx);
-        }
-
-        #[cfg(debug_assertions)]
-        self.flag.unlock();
-    }
 }
 
 #[derive(Default, Debug)]
@@ -530,32 +569,15 @@ impl Archetypes {
         Archetypes::default()
     }
 
-    pub fn insert<G: ComponentGroup>(&mut self, id: EntityId, group: G) {
-        // let comps = G::archetype();
-        // let layout = G::layout();
-
-        // let idx = self.lookup.get(&comps).copied().unwrap_or_else(|| {
-        //     let archetype = Archetype::new::<G>(comps.clone(), layout);
-        //     self.archetypes.push(archetype);
-
-        //     let id = ArchetypeId::from(self.archetypes.len() - 1);
-        //     self.lookup.insert(comps, id);
-
-        //     id
-        // });
-
-        // let archetype = &mut self.archetypes[idx.0];
-        // archetype.spawn(id, group);
-
-        let comps = G::archetype();
-        let layout = G::layout();
-
+    pub fn insert<G: ComponentBundle + 'static>(&mut self, id: EntityId, bundle: G) {
+        let comps = G::components();
+    
         let archetype = self.archetypes.entry(comps.clone())
             .or_insert_with(|| {
-                Archetype::new::<G>(comps, layout)
+                Archetype::new::<G>()
             });
 
-        archetype.insert(id, group);
+        archetype.insert(id, bundle);
     }
 
     pub fn get(&self, id: &ArchetypeComponents) -> Option<&Archetype> {
