@@ -151,10 +151,17 @@ impl Systems {
     }
 }
 
-pub trait IntoSystem<P> {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid system",
+    label = "this system has invalid parameters",
+    note = "check the parameters of the system, are they all valid?",
+    note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
+)]
+pub trait IntoSystem<Poo> {
     fn into_system(self) -> Box<dyn System>;
 }
 
+#[diagnostic::do_not_recommend]
 impl<F, P> IntoSystem<P> for F 
 where
     P: Param + 'static,
@@ -166,6 +173,7 @@ where
     }
 }
 
+#[diagnostic::do_not_recommend]
 impl<F, P1, P2> IntoSystem<(P1, P2)> for F 
 where
     P1: Param + 'static,

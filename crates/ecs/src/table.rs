@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, component::ComponentId, entity::EntityId, spawn::ComponentBundle, util};
+use crate::{archetype::ArchetypeComponents, component::ComponentId, entity::EntityId, spawn::SpawnGroup, util};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -243,44 +243,9 @@ impl Column {
         #[cfg(debug_assertions)]
         let _guard = self.flag.write();
 
-        if idx >= self.len {
-            panic!("Column::swap_remove index out of bounds");
-        }
+        assert!(idx < self.len, "Column::swap_remove index out of bounds");
 
-        // If it is the last item, just decrease the length
-        if idx == self.len - 1 {
-            self.len -= 1;
-
-            // Drop item if required
-            if let Some(drop_fn) = self.drop_fn {
-                let offset = idx * self.layout.size();
-                assert!(offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove drop");
-
-                // Safety:
-                //
-                // The offset is guaranteed to not overflow `isize` by the assertion above.
-                // Additionally, `self.data` is a valid pointer into an allocation and by the fact that
-                // `idx == self.len - 1` we know that the offset result is also contained in the allocation.
-                let ptr = unsafe {
-                    self.data.unwrap().add(offset)
-                };
-                
-                // Safety:
-                //
-                // This call is safe because `ptr` is guaranteed to point to a valid memory block of type `T`,
-                // where `T` is the type used in `Column::new`. Additionally it contains at least 1 item, thus the
-                // size is correct.
-                //
-                // Lastly this is a valid function pointer since it is only set in `Column::new`.
-                unsafe {
-                    drop_fn(ptr.as_ptr(), 1);
-                }
-            }
-
-            return
-        }
-
-        let data_ptr = self.data.unwrap();
+        let data_ptr = self.data.unwrap().as_ptr();
         let dst_offset = self.entry_size() * idx;
         assert!(dst_offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove dst pointer");
 
@@ -305,33 +270,35 @@ impl Column {
             //
             // Lastly this is a valid function pointer since it is only set in `Column::new`.
             unsafe {
-                f(dst_ptr.as_ptr(), 1);
+                f(dst_ptr, 1);
             }
         });
 
-        let src_offset = self.entry_size() * (self.len() - 1);
-        assert!(src_offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove src pointer");
+        if idx != self.len - 1 {
+            let src_offset = self.entry_size() * (self.len() - 1);
+            assert!(src_offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove src pointer");
 
-        // The last item in the array. Will be copied to the empty slot
-        //
-        // Safety:
-        //
-        // The offset is guaranteed not to overflow `isize` by the assertion above.
-        // Furthermore, `data_ptr` is a valid pointer into an allocation and by the
-        // fact the count is `self.len() - 1`, the offset result is also within the allocation.
-        let src_ptr = unsafe {
-            data_ptr.add(src_offset)
-        };
+            // The last item in the array. Will be copied to the empty slot
+            //
+            // Safety:
+            //
+            // The offset is guaranteed not to overflow `isize` by the assertion above.
+            // Furthermore, `data_ptr` is a valid pointer into an allocation and by the
+            // fact the count is `self.len() - 1`, the offset result is also within the allocation.
+            let src_ptr = unsafe {
+                data_ptr.add(src_offset)
+            };
 
-        // Then copy the last item into the now empty slot.
-        //
-        // Safety:
-        //
-        // This is safe because `src_ptr` is a valid pointer as described above,
-        // and `dst_ptr` is also safe as described above. The size is computed from the layout, which is the exact
-        // layout created from `T`.
-        unsafe {
-            std::ptr::copy_nonoverlapping(src_ptr.as_ptr(), dst_ptr.as_ptr(), self.layout.size());
+            // Then copy the last item into the now empty slot.
+            //
+            // Safety:
+            //
+            // This is safe because `src_ptr` is a valid pointer as described above,
+            // and `dst_ptr` is also safe as described above. The size is computed from the layout, which is the exact
+            // layout created from `T`.
+            unsafe {
+                std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, self.layout.size());
+            }
         }
 
         self.len -= 1;
@@ -368,17 +335,20 @@ impl Drop for Column {
                 //
                 // Lastly this is a valid function pointer since it is only set in `Column::new`.
                 unsafe {
-                    drop_fn(ptr.as_ptr(), self.len)
+                    drop_fn(ptr.as_ptr(), self.len);
                 }
-            }
+            }   
 
-            let layout = util::repeat_layout(self.layout, self.cap);
-            // Safety:
-            //
-            // This is safe because `ptr` has previously been allocated with `alloc` and
-            // layout was the layout originally used to create this specific allocation.
-            unsafe {
-                std::alloc::dealloc(ptr.as_ptr(), layout);
+            if self.layout.size() != 0 {
+                let layout = util::repeat_layout(self.layout, self.cap);
+                // Safety:
+                //
+                // This is safe because `ptr` has previously been allocated with `alloc` and
+                // layout was the layout originally used to create this specific allocation.
+                // Furthermore, the type is not a ZST.
+                unsafe {
+                    std::alloc::dealloc(ptr.as_ptr(), layout);
+                }
             }
         }
     }
@@ -414,7 +384,7 @@ impl<'a, T: 'static> Iterator for ColumnIter<'a, T> {
         self.index += 1;
 
         Some(unsafe {
-            &*(ptr.as_ptr() as *const T)
+            &*ptr.as_ptr().cast_const()
         })
     }
 
@@ -503,7 +473,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new<G: ComponentBundle>() -> Table {
+    pub fn new<G: SpawnGroup>() -> Table {
         Table {
             #[cfg(debug_assertions)]
             flag: RwFlag::new(),
@@ -514,7 +484,7 @@ impl Table {
         }
     }
 
-    pub fn insert<G: ComponentBundle>(&mut self, entity: EntityId, components: G) {
+    pub fn insert<G: SpawnGroup>(&mut self, entity: EntityId, components: G) {
         let entities = self.entities.get_mut();
         entities.push(entity);
 

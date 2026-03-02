@@ -1,5 +1,7 @@
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;
+
+#![warn(clippy::pedantic)]
 
 pub mod archetype;
 pub mod component;

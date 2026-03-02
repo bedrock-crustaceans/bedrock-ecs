@@ -25,6 +25,9 @@ pub enum ParamDesc {
     Query(QueryDescVec)
 }
 
+#[diagnostic::on_unimplemented(
+    message = "{Self} is not a valid system parameter"
+)]
 pub trait Param {
     type State;
     type Item<'w>;

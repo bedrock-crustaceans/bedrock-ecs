@@ -28,23 +28,23 @@ impl<F1: Filter, F2: Filter> FilterGroup for (F1, F2) {
     }
 }
 
-pub struct With<T: Component> {
+pub struct With<T> {
     _marker: PhantomData<T>
 }
 
-pub struct Without<T: Component> {
+pub struct Without<T> {
     _marker: PhantomData<T>
 }
 
-pub struct Added<T: Component> {
+pub struct Added<T> {
     _marker: PhantomData<T>
 }
 
-pub struct Removed<T: Component> {
+pub struct Removed<T> {
     _marker: PhantomData<T>
 }
 
-pub struct Changed<T: Component> {
+pub struct Changed<T> {
     _marker: PhantomData<T>
 }
 

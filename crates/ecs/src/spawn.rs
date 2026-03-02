@@ -2,7 +2,7 @@ use std::{alloc::Layout, collections::HashMap};
 
 use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId, table::Column};
 
-pub unsafe trait ComponentBundle: 'static {
+pub unsafe trait SpawnGroup: 'static {
     /// Returns a list of components in this group.
     fn components() -> ArchetypeComponents;
     /// Creates a new table map to store in the archetype.
@@ -11,7 +11,21 @@ pub unsafe trait ComponentBundle: 'static {
     fn insert_into(self, storage: &mut HashMap<ComponentId, Column>);
 }
 
-unsafe impl<C: Component> ComponentBundle for C {
+unsafe impl SpawnGroup for () {
+    fn components() -> ArchetypeComponents {
+        ArchetypeComponents(Box::new([]))
+    }
+
+    fn new_table_map() -> HashMap<ComponentId, Column> {
+        HashMap::new()
+    }
+
+    fn insert_into(self, _storage: &mut HashMap<ComponentId, Column>) {
+        // No-op
+    }
+}
+
+unsafe impl<C: Component> SpawnGroup for C {
     fn components() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<C>()]))
     }
@@ -30,7 +44,7 @@ unsafe impl<C: Component> ComponentBundle for C {
     }
 }
 
-unsafe impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
+unsafe impl<C1: Component, C2: Component> SpawnGroup for (C1, C2) {
     fn components() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<C1>(), ComponentId::of::<C2>()]))
     }

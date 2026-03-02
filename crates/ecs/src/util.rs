@@ -26,7 +26,7 @@ pub mod debug {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     pub struct RwFlag {
         state: AtomicU8
     }

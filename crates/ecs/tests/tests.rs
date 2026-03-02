@@ -1,4 +1,4 @@
-use crate::{component::Component, entity::Entity, local::Local, query::Query, system::Systems, world::World};
+use ecs::{component::Component, entity::Entity, filter::With, local::Local, query::Query, system::Systems, world::World};
 
 struct Health(f32);
 
@@ -12,9 +12,9 @@ impl Drop for Health {
 
 fn system1(query: Query<&Health>, mut counter: Local<usize>) {
     for thing in &query {
-        println!("Health: {}, counter: {}", thing.0, *counter);
-        // thing.0 *= 2.0;
-        *counter += 1;
+        // println!("Health: {}, counter: {}", thing.0, *counter);
+        // // thing.0 *= 2.0;
+        // *counter += 1;
 
         // *LOCK.write() = Some(thing);
         // println!("id: {:?}", entity.id());

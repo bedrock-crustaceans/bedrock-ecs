@@ -4,7 +4,14 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 
-pub trait QueryBundle {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid query type", 
+    label = "invalid query",
+    // note = "only `Entity`, `&T` and `&mut T` where `T: Component` or tuples thereof can be used in queries",
+    note = "components in a query must be wrapped in a reference, e.g. `&{Self}` or `&mut {Self}`",
+    note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
+)]
+pub trait QueryGroup {
     type Fetchable<'w>;
     type Iter<'w>: Iterator<Item = Self::Fetchable<'w>>;
 
@@ -18,7 +25,7 @@ pub trait QueryBundle {
     fn desc() -> QueryDescVec;
 }
 
-impl QueryBundle for Entity<'_> {
+impl QueryGroup for Entity<'_> {
     type Fetchable<'a> = Entity<'a>;
     type Iter<'w> = EntityIter<'w>;
 
@@ -45,7 +52,7 @@ impl QueryBundle for Entity<'_> {
     }
 }
 
-impl<T: Component + Send> QueryBundle for &T {
+impl<T: Component + Send> QueryGroup for &T {
     type Fetchable<'a> = &'a T;
     type Iter<'w> = ColumnIter<'w, T>;
 
@@ -74,7 +81,7 @@ impl<T: Component + Send> QueryBundle for &T {
     }
 }
 
-impl<T: Component + Send> QueryBundle for &mut T {
+impl<T: Component + Send> QueryGroup for &mut T {
     type Fetchable<'a> = &'a mut T;
     type Iter<'w> = ColumnIterMut<'w, T>;
 
@@ -101,13 +108,13 @@ impl<T: Component + Send> QueryBundle for &mut T {
     }
 }
 
-pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
+pub struct Query<'w, Q: QueryGroup, F: FilterGroup = ()> {
     archetypes: &'w Archetypes,
     state: &'w QueryState,
     _marker: PhantomData<(Q, F)>
 }
 
-impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
+impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
     pub fn new(world: &'w World, state: &'w QueryState) -> Query<'w, Q, F> {
         println!("Query mutable? {}", Q::MUTABLE);
 
@@ -119,7 +126,7 @@ impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
     }
 }
 
-impl<'placeholder, Q: QueryBundle, F: FilterGroup> Param for Query<'placeholder, Q, F> {
+impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, Q, F> {
     type State = QueryState;
     type Item<'w> = Query<'w, Q, F>;
 
@@ -146,12 +153,13 @@ pub struct QueryState {
     archetype: ArchetypeComponents
 }
 
-pub struct QueryIter<'q, 'w, Q: QueryBundle, F: FilterGroup> {
+pub struct QueryIter<'q, 'w, Q: QueryGroup, F: FilterGroup> {
     iter: Option<Q::Iter<'w>>,
     _marker: PhantomData<&'q (Q, F)>
 }
 
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
+#[diagnostic::do_not_recommend]
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
     type Item = Q::Fetchable<'w>;
     type IntoIter = QueryIter<'q, 'w, Q, F>;
 
@@ -160,7 +168,7 @@ impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F
     }
 }
 
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
     fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
         let archetype = query.archetypes.get(&query.state.archetype);
         let iter = archetype.map(|a| {
@@ -176,7 +184,7 @@ impl<'q, 'w, Q: QueryBundle, F: FilterGroup> From<&'q Query<'w, Q, F>> for Query
     }
 }
 
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
     type Item = Q::Fetchable<'w>;
 
     fn next(&mut self) -> Option<Q::Fetchable<'w>> {
@@ -184,4 +192,4 @@ impl<'q, 'w, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F
     }
 }
 
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}
+impl<'q, 'w, Q: QueryGroup, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}
