@@ -11,6 +11,7 @@ pub mod query;
 pub mod sparse_set;
 pub mod spawn;
 pub mod system;
+pub mod table;
 pub mod util;
 pub mod world;
 

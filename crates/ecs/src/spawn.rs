@@ -1,14 +1,14 @@
 use std::{alloc::Layout, collections::HashMap};
 
-use crate::{archetype::{Archetype, ArchetypeComponents, Archetypes, Table}, component::{Component, ComponentId}, entity::EntityId};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId, table::Column};
 
 pub unsafe trait ComponentBundle: 'static {
     /// Returns a list of components in this group.
     fn components() -> ArchetypeComponents;
     /// Creates a new table map to store in the archetype.
-    fn new_table_map() -> HashMap<ComponentId, Table>;
+    fn new_table_map() -> HashMap<ComponentId, Column>;
     /// Inserts into an existing archetype.
-    fn insert_into(self, storage: &mut HashMap<ComponentId, Table>);
+    fn insert_into(self, storage: &mut HashMap<ComponentId, Column>);
 }
 
 unsafe impl<C: Component> ComponentBundle for C {
@@ -16,14 +16,14 @@ unsafe impl<C: Component> ComponentBundle for C {
         ArchetypeComponents(Box::new([ComponentId::of::<C>()]))
     }
 
-    fn new_table_map() -> HashMap<ComponentId, Table> {
+    fn new_table_map() -> HashMap<ComponentId, Column> {
         let id = ComponentId::of::<C>();
-        let table = Table::new::<C>();
+        let table = Column::new::<C>();
 
         HashMap::from([(id, table)])
     }
 
-    fn insert_into(self, storage: &mut HashMap<ComponentId, Table>) {
+    fn insert_into(self, storage: &mut HashMap<ComponentId, Column>) {
         let id = ComponentId::of::<C>();
 
         storage.get_mut(&id).expect("ComponentBundle insertion failed").push(self);
@@ -35,12 +35,12 @@ unsafe impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
         ArchetypeComponents(Box::new([ComponentId::of::<C1>(), ComponentId::of::<C2>()]))
     }
 
-    fn new_table_map() -> HashMap<ComponentId, Table> {
+    fn new_table_map() -> HashMap<ComponentId, Column> {
         let id1 = ComponentId::of::<C1>();
         let id2 = ComponentId::of::<C2>();
 
-        let table1 = Table::new::<C1>();
-        let table2 = Table::new::<C2>();
+        let table1 = Column::new::<C1>();
+        let table2 = Column::new::<C2>();
 
         HashMap::from([
             (id1, table1), 
@@ -48,7 +48,7 @@ unsafe impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
         ])
     }
 
-    fn insert_into(self, storage: &mut HashMap<ComponentId, Table>) {
+    fn insert_into(self, storage: &mut HashMap<ComponentId, Column>) {
         let id1 = ComponentId::of::<C1>();
         let id2 = ComponentId::of::<C2>();
 

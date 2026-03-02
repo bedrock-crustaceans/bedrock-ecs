@@ -25,13 +25,17 @@ fn system1(query: Query<&Health>, mut counter: Local<usize>) {
 fn system_test() {
     let mut world = World::new();
 
+    println!("spawn");
     world.spawn(Health(5.0));
-    // world.spawn(Health(1.0));
+    world.spawn(Health(1.0));
     // world.spawn(Health(0.5));
 
+    println!("begin push");
     world.systems.push(system1);
 
+    println!("begin call");
     world.systems.call(&world);
+    println!("end call");
 
     todo!();
 }

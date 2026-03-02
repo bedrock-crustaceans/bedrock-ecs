@@ -1,9 +1,8 @@
 use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use smallvec::{SmallVec, smallvec};
-use static_assertions::assert_type_eq_all;
 
-use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, ArchetypeIterMut, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 
 pub trait QueryBundle {
     type Fetchable<'w>;
@@ -13,7 +12,7 @@ pub trait QueryBundle {
     const MUTABLE: bool;
 
     fn archetype() -> ArchetypeComponents;
-    unsafe fn iter<'w>(archetype: &'w Archetype) -> Self::Iter<'w>;
+    unsafe fn iter<'w>(table: &'w Table) -> Self::Iter<'w>;
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Fetchable<'w>;
     fn desc() -> QueryDescVec;
@@ -34,7 +33,7 @@ impl QueryBundle for Entity<'_> {
         panic!("Cannot instantiate Entity from pointer");
     }
 
-    unsafe fn iter<'w>(_archetype: &'w Archetype) -> Self::Iter<'w> {
+    unsafe fn iter<'w>(_table: &'w Table) -> Self::Iter<'w> {
         todo!()
     }
 
@@ -48,7 +47,7 @@ impl QueryBundle for Entity<'_> {
 
 impl<T: Component + Send> QueryBundle for &T {
     type Fetchable<'a> = &'a T;
-    type Iter<'w> = ArchetypeIter<'w, T>;
+    type Iter<'w> = ColumnIter<'w, T>;
 
     const SEND: bool = true;
     const MUTABLE: bool = false;
@@ -57,8 +56,10 @@ impl<T: Component + Send> QueryBundle for &T {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
     }
 
-    unsafe fn iter<'w>(archetype: &'w Archetype) -> ArchetypeIter<'w, T> {
-        ArchetypeIter::new(archetype)
+    unsafe fn iter<'w>(table: &'w Table) -> ColumnIter<'w, T> {
+        let id = ComponentId::of::<T>();
+        let col = table.col(&id);
+        ColumnIter::new(col)
     }
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w T {
@@ -75,7 +76,7 @@ impl<T: Component + Send> QueryBundle for &T {
 
 impl<T: Component + Send> QueryBundle for &mut T {
     type Fetchable<'a> = &'a mut T;
-    type Iter<'w> = ArchetypeIterMut<'w, T>;
+    type Iter<'w> = ColumnIterMut<'w, T>;
 
     const SEND: bool = true;
     const MUTABLE: bool = true;
@@ -84,8 +85,8 @@ impl<T: Component + Send> QueryBundle for &mut T {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
     }
 
-    unsafe fn iter<'w>(archetype: &'w Archetype) -> ArchetypeIterMut<'w, T> {
-        ArchetypeIterMut::new(archetype)
+    unsafe fn iter<'w>(table: &'w Table) -> ColumnIterMut<'w, T> {
+        todo!()
     }
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w mut T {
