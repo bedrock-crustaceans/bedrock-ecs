@@ -10,10 +10,10 @@ impl Drop for Health {
     }
 }
 
-fn system1(query: Query<&mut Health>, mut counter: Local<usize>) {
+fn system1(query: Query<&Health>, mut counter: Local<usize>) {
     for thing in &query {
         println!("Health: {}, counter: {}", thing.0, *counter);
-        thing.0 *= 2.0;
+        // thing.0 *= 2.0;
         *counter += 1;
 
         // *LOCK.write() = Some(thing);
@@ -31,7 +31,6 @@ fn system_test() {
 
     world.systems.push(system1);
 
-    world.systems.call(&world);
     world.systems.call(&world);
 
     todo!();

@@ -1,8 +1,6 @@
-use std::{iter::FusedIterator, marker::PhantomData, ops::Deref};
-
 use bitvec::vec::BitVec;
 
-use crate::{component::Component, filter::FilterGroup, query::QueryGroup, world::World};
+use crate::{component::Component, world::World};
 
 #[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);

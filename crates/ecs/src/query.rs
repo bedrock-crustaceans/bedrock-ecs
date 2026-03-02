@@ -3,7 +3,7 @@ use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 use smallvec::{SmallVec, smallvec};
 use static_assertions::assert_type_eq_all;
 
-use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId, Storage}, entity::{Entity}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
+use crate::{archetype::{Archetype, ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, world::World};
 
 pub trait QueryGroup {
     type Fetchable<'w>;
@@ -90,6 +90,8 @@ pub struct Query<'w, Q: QueryGroup, F: FilterGroup = ()> {
 
 impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
     pub fn new(world: &'w World, state: &'w QueryState) -> Query<'w, Q, F> {
+        println!("Query mutable? {}", Q::MUTABLE);
+
         Query {
             archetypes: &world.archetypes,
             state,
@@ -142,8 +144,9 @@ impl<'q, 'w, Q: QueryGroup, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F>
 impl<'q, 'w, Q: QueryGroup, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
     fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
         let archetype = query.archetypes.get(&query.state.archetype);
+
         let iter = archetype.map(|a| unsafe {
-            a.iter()
+            ArchetypeIter::new(a, Q::MUTABLE)
         });
 
         QueryIter {

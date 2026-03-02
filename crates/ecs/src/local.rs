@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::{Deref, DerefMut}};
+use std::{ops::{Deref, DerefMut}};
 
 use crate::{param::{Param, ParamDesc}, sealed::Sealed, world::World};
 

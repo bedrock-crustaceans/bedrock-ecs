@@ -2,7 +2,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
 
-use crate::{param::{Param, ParamDesc, ParamGroup}, sealed::Sealer, world::World};
+use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamDesc, ParamGroup}, sealed::Sealer, world::World};
 
 #[derive(Debug)]
 pub struct SystemDescriptor {

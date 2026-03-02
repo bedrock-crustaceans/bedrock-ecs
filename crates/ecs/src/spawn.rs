@@ -1,6 +1,6 @@
 use std::alloc::Layout;
 
-use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId, Components}, entity::EntityId};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId};
 
 pub unsafe trait ComponentGroup {
     fn layout() -> Layout;

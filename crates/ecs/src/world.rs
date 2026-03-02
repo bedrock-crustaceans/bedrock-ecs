@@ -1,4 +1,4 @@
-use crate::{archetype::Archetypes, component::Components, entity::{Entities, Entity, EntityMut}, spawn::ComponentGroup, system::Systems};
+use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::ComponentGroup, system::Systems};
 
 #[derive(Default)]
 pub struct World {
