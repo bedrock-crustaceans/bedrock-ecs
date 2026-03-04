@@ -1,4 +1,5 @@
 use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::SpawnBundle, system::Systems};
+use crate::graph::Schedule;
 use crate::schedule::ScheduleBuilder;
 
 #[derive(Default)]
@@ -23,8 +24,8 @@ impl World {
         }
     }
     
-    pub fn run(&self, schedule: &ScheduleBuilder) {
-        todo!()
+    pub fn run(&mut self, schedule: &Schedule) {
+
     }
 }
 

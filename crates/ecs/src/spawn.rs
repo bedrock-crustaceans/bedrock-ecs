@@ -5,6 +5,7 @@ use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component,
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {
         #[allow(unused_parens)]
+        #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: Component),*> SpawnBundle for ($($gen),*) {
             fn components() -> ArchetypeComponents {
                 let boxed = Box::new([
@@ -49,8 +50,13 @@ pub unsafe trait SpawnBundle: 'static {
 
 
 impl_bundle!();
-impl_bundle!(C0);
-impl_bundle!(C0, C1);
-impl_bundle!(C0, C1, C2);
-impl_bundle!(C0, C1, C2, C3);
-impl_bundle!(C0, C1, C2, C3, C4);
+impl_bundle!(A);
+impl_bundle!(A, B);
+impl_bundle!(A, B, C);
+impl_bundle!(A, B, C, D);
+impl_bundle!(A, B, C, D, E);
+impl_bundle!(A, B, C, D, E, F);
+impl_bundle!(A, B, C, D, E, F, G);
+impl_bundle!(A, B, C, D, E, F, G, H);
+impl_bundle!(A, B, C, D, E, F, G, H, I);
+impl_bundle!(A, B, C, D, E, F, G, H, I, J);

@@ -1,8 +1,10 @@
 use std::any::TypeId;
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use crate::component::ComponentId;
 use crate::system::SystemId;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AccessType {
     Entity,
     World,
@@ -10,7 +12,7 @@ pub enum AccessType {
     Resource(TypeId),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AccessDesc {
     pub(crate) ty: AccessType,
     pub(crate) exclusive: bool
@@ -32,7 +34,7 @@ pub(crate) struct GraphNode {
 pub struct ScheduleGraph {
     nodes: Vec<GraphNode>,
     adjacency: Vec<Vec<usize>>,
-    in_degrees: Vec<usize>
+    in_degrees: Vec<usize>,
 }
 
 impl ScheduleGraph {
@@ -52,11 +54,22 @@ impl ScheduleGraph {
     }
 
     fn build_dependencies(&mut self) {
-        // Determine edges
-        for i in 0..self.nodes.len() {
-            for j in (i + 1)..self.nodes.len() {
-                if self.has_conflict(&self.nodes[i], &self.nodes[j]) {
-                    self.add_edge(i, j);
+        let mut resource_access: HashMap<AccessType, Vec<usize>> = HashMap::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            for access in &node.access {
+                resource_access.entry(access.ty).or_default().push(i);
+            }
+        }
+
+        for nodes in resource_access.values() {
+            for i in 0..nodes.len() {
+                for j in (i + 1)..nodes.len() {
+                    let node1 = nodes[i];
+                    let node2 = nodes[j];
+
+                    if self.has_conflict(&self.nodes[node1], &self.nodes[node2]) {
+                        self.add_edge(node1, node2);
+                    }
                 }
             }
         }
@@ -75,6 +88,8 @@ impl ScheduleGraph {
     }
 
     pub fn sort(&mut self) -> Schedule {
+        println!("Generating dependency graph...");
+
         // Create edges between all conflicting systems
         self.build_dependencies();
 
@@ -85,6 +100,7 @@ impl ScheduleGraph {
             .filter_map(|(i, deg)| 0.eq(deg).then_some(i))
             .collect::<Vec<_>>();
 
+        println!("Finding optimal schedule...");
         while !current_set.is_empty() {
             let mut next_set = Vec::new();
 

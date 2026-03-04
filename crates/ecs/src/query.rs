@@ -124,6 +124,11 @@ impl_iter!(A, B);
 impl_iter!(A, B, C);
 impl_iter!(A, B, C, D);
 impl_iter!(A, B, C, D, E);
+impl_iter!(A, B, C, D, E, F);
+impl_iter!(A, B, C, D, E, F, G);
+impl_iter!(A, B, C, D, E, F, G, H);
+impl_iter!(A, B, C, D, E, F, G, H, I);
+impl_iter!(A, B, C, D, E, F, G, H, I, J);
 
 pub unsafe trait ParamRef: Send {
     type Unref;
@@ -226,36 +231,11 @@ impl_bundle!(A, B);
 impl_bundle!(A, B, C);
 impl_bundle!(A, B, C, D);
 impl_bundle!(A, B, C, D, E);
-
-// unsafe impl<T1: ParamRef + Send, T2: ParamRef + Send> QueryBundle for (T1, T2) {
-//     type Output<'w> = (T1::Output<'w>, T2::Output<'w>);
-//     type Iter<'w> = JoinedIter<'w, (T1::Output<'w>, T2::Output<'w>)>;
-//
-//     fn archetype() -> ArchetypeComponents {
-//         let c1 = T1::component_id();
-//         let c2 = T2::component_id();
-//
-//         // Only store the ids that are not `None`.
-//         let comps: Box<[ComponentId]> = [c1, c2]
-//             .into_iter()
-//             .flatten()
-//             .collect();
-//
-//         ArchetypeComponents(comps)
-//     }
-//
-//     unsafe fn iter<'w>(table: &'w Table) -> Self::Iter<'w> {
-//         todo!()
-//     }
-//
-//     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Output<'w> {
-//         todo!()
-//     }
-//
-//     fn access() -> Vec<AccessDesc> {
-//         vec![T1::access(), T2::access()]
-//     }
-// }
+impl_bundle!(A, B, C, D, E, F);
+impl_bundle!(A, B, C, D, E, F, G);
+impl_bundle!(A, B, C, D, E, F, G, H);
+impl_bundle!(A, B, C, D, E, F, G, H, I);
+impl_bundle!(A, B, C, D, E, F, G, H, I, J);
 
 pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
     archetypes: &'w Archetypes,
@@ -270,6 +250,10 @@ impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
             state,
             _marker: PhantomData
         }
+    }
+
+    pub fn iter(&self) -> QueryIter<'_, 'w, Q, F> {
+        QueryIter::from(self)
     }
 }
 

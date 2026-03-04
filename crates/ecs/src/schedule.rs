@@ -4,7 +4,14 @@ use crate::graph::{GraphNode, Schedule, ScheduleGraph};
 use crate::param::ParamBundle;
 use crate::system::{IntoSystem, System, SystemId};
 
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid system bundle",
+    label = "not a valid system bundle",
+    note = "ensure that each of the items in the tuple is a valid system",
+    note = "only tuples with up to 10 elements can be used as bundles"
+)]
 pub trait SystemBundle<P> {
+    /// Inserts this bundle into the schedule builder.
     fn insert_into(self, schedule: &mut ScheduleBuilder);
 }
 
@@ -12,13 +19,17 @@ macro_rules! impl_bundle {
     ($($gen:ident),*) => {
         paste::paste! {
             #[allow(unused_parens)]
-            impl<$([<$gen F>]: IntoSystem<$gen> + 'static),*, $($gen: ParamBundle),*> SystemBundle<($($gen),*)> for ($([<$gen F>]),*) {
+            #[diagnostic::do_not_recommend]
+            impl<$([<$gen Fun>]),*, $($gen),*> SystemBundle<($($gen),*)> for ($([<$gen Fun>]),*)
+            where
+                $([<$gen Fun>]: IntoSystem<$gen> + 'static),*,
+                $($gen: ParamBundle),*
+            {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
-                    #[allow(non_snake_case)]
-                    let ($($gen),*) = self;
+                    let ($([<$gen:lower>]),*) = self;
                     $(
-                        let boxed = $gen.into_system();
-                        let sid = SystemId::of::<$gen, [<$gen F>]>();
+                        let boxed = [<$gen:lower>].into_system();
+                        let sid = SystemId::of::<$gen, [<$gen Fun>]>();
                         schedule.graph.add_node(GraphNode {
                             sid, access: boxed.access()
                         });
@@ -35,6 +46,11 @@ impl_bundle!(A, B);
 impl_bundle!(A, B, C);
 impl_bundle!(A, B, C, D);
 impl_bundle!(A, B, C, D, E);
+impl_bundle!(A, B, C, D, E, F);
+impl_bundle!(A, B, C, D, E, F, G);
+impl_bundle!(A, B, C, D, E, F, G, H);
+impl_bundle!(A, B, C, D, E, F, G, H, I);
+impl_bundle!(A, B, C, D, E, F, G, H, I, J);
 
 pub trait ScheduleLabel {
     const NAME: &'static str;
