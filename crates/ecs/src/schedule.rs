@@ -50,7 +50,7 @@ where
     }
 }
 
-pub trait SystemsLabel {
+pub trait ScheduleLabel {
     const NAME: &'static str;
 }
 
@@ -72,7 +72,7 @@ impl ScheduleBuilder {
 
     pub fn add<L, G, P>(mut self, label: L, systems: G) -> ScheduleBuilder
     where
-        L: SystemsLabel, G: SystemBundle<P>
+        L: ScheduleLabel, G: SystemBundle<P>
     {
         systems.insert_into(&mut self);
 

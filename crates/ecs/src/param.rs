@@ -17,7 +17,7 @@ pub unsafe trait Param {
     type Item<'w>;
 
     const SEND: bool;
-    
+
     fn access() -> Vec<AccessDesc>;
 
     #[doc(hidden)]
@@ -52,32 +52,23 @@ unsafe impl Param for () {
     fn destroy(_state: &mut Self::State) {}
 }
 
-impl<P: Param> ParamBundle for P {
-    type State = P::State;
+macro_rules! impl_bundle {
+    ($($gen:ident),*) => {
+        #[allow(unused_parens)]
+        impl<$($gen: Param),*> ParamBundle for ($($gen),*) {
+            type State = ($($gen::State),*);
 
-    const SEND: bool = P::SEND;
+            const SEND: bool = $($gen::SEND)&&+;
 
-    fn init() -> Self::State {
-        P::init()     
+            fn init() -> Self::State {
+                ($($gen::init()),*)
+            }
+        }
     }
 }
 
-impl<P1: Param, P2: Param> ParamBundle for (P1, P2) {
-    type State = (P1::State, P2::State);
-
-    const SEND: bool = P1::SEND && P2::SEND;
-
-    fn init() -> Self::State {
-        (P1::init(), P2::init())
-    }
-}
-
-impl<P1: Param, P2: Param, P3: Param> ParamBundle for (P1, P2, P3) {
-    type State = (P1::State, P2::State, P3::State);
-
-    const SEND: bool = P1::SEND && P2::SEND && P3::SEND;
-
-    fn init() -> Self::State {
-        (P1::init(), P2::init(), P3::init())
-    }
-}
+impl_bundle!(A);
+impl_bundle!(A, B);
+impl_bundle!(A, B, C);
+impl_bundle!(A, B, C, D);
+impl_bundle!(A, B, C, D, E);

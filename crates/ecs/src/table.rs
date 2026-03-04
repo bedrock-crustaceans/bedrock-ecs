@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, component::ComponentId, entity::EntityId, spawn::SpawnGroup, util};
+use crate::{archetype::ArchetypeComponents, component::ComponentId, entity::EntityId, spawn::SpawnBundle, util};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -469,7 +469,7 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new<G: SpawnGroup>() -> Table {
+    pub fn new<G: SpawnBundle>() -> Table {
         Table {
             #[cfg(debug_assertions)]
             flag: RwFlag::new(),
@@ -480,7 +480,7 @@ impl Table {
         }
     }
 
-    pub fn insert<G: SpawnGroup>(&mut self, entity: EntityId, components: G) {
+    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityId, components: G) {
         let entities = self.entities.get_mut();
         entities.push(entity);
 

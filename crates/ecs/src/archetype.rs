@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, spawn::SpawnGroup, table::Table, util::{self}};
+use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, spawn::SpawnBundle, table::Table, util::{self}};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -28,7 +28,7 @@ impl Archetypes {
         Archetypes::default()
     }
 
-    pub fn insert<G: SpawnGroup + 'static>(&mut self, id: EntityId, bundle: G) {
+    pub fn insert<G: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: G) {
         let comps = G::components();
     
         let table = self.tables.entry(comps.clone())
