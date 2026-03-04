@@ -8,47 +8,33 @@ pub trait SystemBundle<P> {
     fn insert_into(self, schedule: &mut ScheduleBuilder);
 }
 
-impl<F, P> SystemBundle<P> for F
-where
-    P: ParamBundle,
-    F: IntoSystem<P> + 'static
-{
-    fn insert_into(self, schedule: &mut ScheduleBuilder) {
-        let sid = SystemId::of::<P, F>();
-        let boxed = self.into_system();
-
-        schedule.graph.add_node(GraphNode {
-            sid, access: boxed.access()
-        });
-        schedule.systems.insert(sid, boxed);
+macro_rules! impl_bundle {
+    ($($gen:ident),*) => {
+        paste::paste! {
+            #[allow(unused_parens)]
+            impl<$([<$gen F>]: IntoSystem<$gen> + 'static),*, $($gen: ParamBundle),*> SystemBundle<($($gen),*)> for ($([<$gen F>]),*) {
+                fn insert_into(self, schedule: &mut ScheduleBuilder) {
+                    #[allow(non_snake_case)]
+                    let ($($gen),*) = self;
+                    $(
+                        let boxed = $gen.into_system();
+                        let sid = SystemId::of::<$gen, [<$gen F>]>();
+                        schedule.graph.add_node(GraphNode {
+                            sid, access: boxed.access()
+                        });
+                        schedule.systems.insert(sid, boxed);
+                    )*
+                }
+            }
+        }
     }
 }
 
-impl<F1, F2, P1, P2> SystemBundle<(P1, P2)> for (F1, F2)
-where
-    P1: ParamBundle,
-    P2: ParamBundle,
-    F1: IntoSystem<P1> + 'static,
-    F2: IntoSystem<P2> + 'static,
-{
-    fn insert_into(self, schedule: &mut ScheduleBuilder) {
-        let sid1 = SystemId::of::<P1, F1>();
-        let sid2 = SystemId::of::<P2, F2>();
-        let boxed1 = self.0.into_system();
-        let boxed2 = self.1.into_system();
-
-        schedule.graph.add_node(GraphNode {
-            sid: sid1, access: boxed1.access()
-        });
-
-        schedule.graph.add_node(GraphNode {
-            sid: sid2, access: boxed2.access()
-        });
-
-        schedule.systems.insert(sid1, boxed1);
-        schedule.systems.insert(sid2, boxed2);
-    }
-}
+impl_bundle!(A);
+impl_bundle!(A, B);
+impl_bundle!(A, B, C);
+impl_bundle!(A, B, C, D);
+impl_bundle!(A, B, C, D, E);
 
 pub trait ScheduleLabel {
     const NAME: &'static str;

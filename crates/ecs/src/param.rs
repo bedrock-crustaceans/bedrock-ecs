@@ -14,14 +14,12 @@ use crate::graph::{AccessDesc, AccessType};
 )]
 pub unsafe trait Param {
     type State;
-    type Item<'w>;
-
-    const SEND: bool;
+    type Output<'w>;
 
     fn access() -> Vec<AccessDesc>;
 
     #[doc(hidden)]
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Item<'w>;
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
     fn init() -> Self::State;
 
@@ -31,22 +29,18 @@ pub unsafe trait Param {
 pub trait ParamBundle {
     type State;
 
-    const SEND: bool;
-
     fn init() -> Self::State;
 }
 
 unsafe impl Param for () {
     type State = ();
-    type Item<'w> = ();
-
-    const SEND: bool = true;
+    type Output<'w> = ();
 
     fn access() -> Vec<AccessDesc> {
         Vec::new()
     }
 
-    fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut Self::State) -> Self::Item<'w> {}
+    fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut Self::State) -> Self::Output<'w> {}
 
     fn init() {}
     fn destroy(_state: &mut Self::State) {}
@@ -57,8 +51,6 @@ macro_rules! impl_bundle {
         #[allow(unused_parens)]
         impl<$($gen: Param),*> ParamBundle for ($($gen),*) {
             type State = ($($gen::State),*);
-
-            const SEND: bool = $($gen::SEND)&&+;
 
             fn init() -> Self::State {
                 ($($gen::init()),*)

@@ -9,9 +9,7 @@ pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
 unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
     type State = LocalState<T>;
-    type Item<'w> = Local<'w, T>;
-
-    const SEND: bool = true;
+    type Output<'w> = Local<'w, T>;
 
     fn access() -> Vec<AccessDesc> {
         Vec::new()

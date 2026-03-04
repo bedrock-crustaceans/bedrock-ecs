@@ -100,6 +100,8 @@ fn stress_test() {
         .add(Label3, collision_system)
         .schedule();
 
+    println!("{:#?}", schedule);
+
     // // Execute loop
     // for _ in 0..100 {
     //     schedule.run(&mut world);

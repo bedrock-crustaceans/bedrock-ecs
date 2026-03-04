@@ -12,8 +12,6 @@ pub trait System {
 }
 
 pub trait ParametrizedSystem<G: ParamBundle>: Sized {
-    const SEND: bool;
-
     fn into_container(self, id: usize) -> FnContainer<G, Self> {
         FnContainer {
             #[cfg(debug_assertions)]
@@ -95,18 +93,14 @@ impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContain
     }
 }
 
-impl<F: Fn(P::Item<'_>), P: Param> ParametrizedSystem<P> for F {
-    const SEND: bool = P::SEND;
-
+impl<F: Fn(P::Output<'_>), P: Param> ParametrizedSystem<P> for F {
     fn call(&self, world: &World, state: &mut P::State) {
         let p = P::fetch::<Sealer>(world, state);
         self(p);
     }
 }
 
-impl<F: Fn(P1::Item<'_>, P2::Item<'_>), P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
-    const SEND: bool = P1::SEND && P2::SEND;
-
+impl<F: Fn(P1::Output<'_>, P2::Output<'_>), P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
     fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
