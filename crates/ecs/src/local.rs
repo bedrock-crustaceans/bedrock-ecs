@@ -1,19 +1,20 @@
 use std::{ops::{Deref, DerefMut}};
 
-use crate::{param::{Param, ParamDesc}, sealed::Sealed, world::World};
+use crate::{param::{Param}, sealed::Sealed, world::World};
+use crate::graph::AccessDesc;
 
 pub struct LocalState<T: Default + Send + 'static>(T);
 
 pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
-impl<'s, T: Default + Send> Param for Local<'s, T> {
+unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
     type State = LocalState<T>;
     type Item<'w> = Local<'w, T>;
 
     const SEND: bool = true;
 
-    fn desc() -> ParamDesc {
-        ParamDesc::Local
+    fn access() -> Vec<AccessDesc> {
+        Vec::new()
     }
 
     fn init() -> LocalState<T> { LocalState(T::default())  }

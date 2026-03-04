@@ -86,7 +86,6 @@ mod test {
         archetypes.insert(EntityId(0), Test { hello: 0 });
         archetypes.insert(EntityId(1), Test { hello: 1 });
         archetypes.insert(EntityId(2), Test { hello: 2 });
-        
 
         // println!("{archetypes:?}");
         println!("Dropping archetypes");

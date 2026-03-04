@@ -50,8 +50,6 @@ pub struct Column {
 impl Column {
     /// Creates a new Column for the type `T`.
     pub fn new<T: 'static>() -> Column {
-        dbg!("Created {}", std::any::type_name::<T>());
-
         // The static requirement on `T` ensures that the type does not contain any references.
 
         let drop_fn = if std::mem::needs_drop::<T>() {
@@ -149,8 +147,6 @@ impl Column {
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`. This `T` is not stored in the `Column` type to prevent the runtime cost of dynamic dispatch.
     pub fn push<T: 'static>(&mut self, data: T) {
-        dbg!("Pushing {}", std::any::type_name::<T>());
-
         #[cfg(debug_assertions)]
         let mut _guard = self.flag.write();
 

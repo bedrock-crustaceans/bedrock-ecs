@@ -3,38 +3,22 @@ use std::any::TypeId;
 use smallvec::SmallVec;
 
 use crate::{sealed::Sealed, world::World};
+use crate::graph::{AccessDesc, AccessType};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum QueryType {
-    Entity,
-    Component(TypeId)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryDesc {
-    pub(crate) ty: QueryType,
-    pub(crate) mutable: bool
-}
-
-pub type QueryDescVec = SmallVec<[QueryDesc; 3]>;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParamDesc {
-    Unit,
-    Local,
-    Query(QueryDescVec)
-}
-
+/// # Safety
+///
+/// The `access` must correctly return the types it accesses. Incorrect implementation will
+/// lead to reference aliasing and immediate UB.
 #[diagnostic::on_unimplemented(
     message = "{Self} is not a valid system parameter"
 )]
-pub trait Param {
+pub unsafe trait Param {
     type State;
     type Item<'w>;
 
     const SEND: bool;
-
-    fn desc() -> ParamDesc;
+    
+    fn access() -> Vec<AccessDesc>;
 
     #[doc(hidden)]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Item<'w>;
@@ -52,14 +36,14 @@ pub trait ParamBundle {
     fn init() -> Self::State;
 }
 
-impl Param for () {
+unsafe impl Param for () {
     type State = ();
     type Item<'w> = ();
 
     const SEND: bool = true;
 
-    fn desc() -> ParamDesc {
-        ParamDesc::Unit
+    fn access() -> Vec<AccessDesc> {
+        Vec::new()
     }
 
     fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut Self::State) -> Self::Item<'w> {}

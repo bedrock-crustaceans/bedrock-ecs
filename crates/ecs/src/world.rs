@@ -1,4 +1,5 @@
 use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::SpawnGroup, system::Systems};
+use crate::schedule::ScheduleBuilder;
 
 #[derive(Default)]
 pub struct World {
@@ -12,12 +13,20 @@ impl World {
         World::default()
     }
 
-    pub fn spawn<'w, B: SpawnGroup>(&'w mut self, bundle: B) -> EntityMut<'w> {
+    pub fn spawn<B: SpawnGroup>(&mut self, bundle: B) -> EntityMut<'_> {
         let id = self.entities.alloc();
         self.archetypes.insert(id, bundle);
 
         EntityMut {
-            id, world: self
+            id,
+            world: self
         }
     }
+    
+    pub fn run(&self, schedule: &ScheduleBuilder) {
+        todo!()
+    }
 }
+
+unsafe impl Send for World {}
+unsafe impl Sync for World {}

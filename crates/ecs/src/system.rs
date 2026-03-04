@@ -1,19 +1,13 @@
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
-
-use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamDesc, ParamBundle}, sealed::Sealer, world::World};
-
-#[derive(Debug)]
-pub struct SystemDescriptor {
-    pub id: usize,
-    pub send: bool,
-    pub deps: Vec<ParamDesc>
-}
+use std::any::TypeId;
+use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamBundle}, sealed::Sealer, world::World};
+use crate::graph::AccessDesc;
 
 pub trait System {
     /// This function takes a self parameter to make the `System` trait dyn-compatible.
-    fn desc(&self) -> SystemDescriptor;
+    fn access(&self) -> Vec<AccessDesc>;
     fn call(&self, world: &World);
 }
 
@@ -53,12 +47,8 @@ where
     P: Param,
     F: ParametrizedSystem<P>,
 {
-    fn desc(&self) -> SystemDescriptor {
-        SystemDescriptor {
-            id: self.id,
-            send: F::SEND,
-            deps: vec![P::desc()]
-        }
+    fn access(&self) -> Vec<AccessDesc> {
+        P::access()
     }
 
     fn call(&self, world: &World) {
@@ -80,12 +70,11 @@ where
 }
 
 impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F> {
-    fn desc(&self) -> SystemDescriptor {
-        SystemDescriptor {
-            id: self.id,
-            send: F::SEND,
-            deps: vec![P1::desc(), P2::desc()]
-        }
+    fn access(&self) -> Vec<AccessDesc> {
+        let mut p1 = P1::access();
+        p1.extend(P2::access());
+
+        p1
     }
     
     fn call(&self, world: &World) {
@@ -137,7 +126,7 @@ impl Systems {
 
     pub fn push<P, S: IntoSystem<P>>(&mut self, system: S) {
         let system = system.into_system();
-        let desc= system.desc();
+        let desc= system.access();
 
         println!("System desc: {desc:?}");
 
@@ -157,12 +146,12 @@ impl Systems {
     note = "check the parameters of the system, are they all valid?",
     note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
 )]
-pub trait IntoSystem<Poo> {
+pub trait IntoSystem<P> {
     fn into_system(self) -> Box<dyn System>;
 }
 
 #[diagnostic::do_not_recommend]
-impl<F, P> IntoSystem<P> for F 
+impl<F, P> IntoSystem<P> for F
 where
     P: Param + 'static,
     F: Fn(P) + 'static,
@@ -174,7 +163,7 @@ where
 }
 
 #[diagnostic::do_not_recommend]
-impl<F, P1, P2> IntoSystem<(P1, P2)> for F 
+impl<F, P1, P2> IntoSystem<(P1, P2)> for F
 where
     P1: Param + 'static,
     P2: Param + 'static,
@@ -183,5 +172,15 @@ where
 {
     fn into_system(self) -> Box<dyn System> {
         Box::new(self.into_container(0))
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct SystemId(pub(crate) TypeId);
+
+impl SystemId {
+    pub const fn of<P, F: IntoSystem<P> + 'static>() -> SystemId {
+        SystemId(TypeId::of::<F>())
     }
 }

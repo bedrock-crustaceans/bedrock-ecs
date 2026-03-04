@@ -2,8 +2,13 @@ use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use smallvec::{SmallVec, smallvec};
 
-use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param, ParamDesc, QueryDesc, QueryDescVec, QueryType}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
+use crate::graph::{AccessDesc, AccessType};
 
+/// # Safety:
+///
+/// The `access` method must correctly return the types this query uses.
+/// Incorrect implementation will lead to reference aliasing and inevitable UB.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid query type", 
     label = "invalid query",
@@ -11,7 +16,7 @@ use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component,
     note = "components in a query must be wrapped in a reference, e.g. `&{Self}` or `&mut {Self}`",
     note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
 )]
-pub trait QueryGroup {
+pub unsafe trait QueryGroup {
     type Fetchable<'w>;
     type Iter<'w>: Iterator<Item = Self::Fetchable<'w>>;
 
@@ -22,10 +27,10 @@ pub trait QueryGroup {
     unsafe fn iter<'w>(table: &'w Table) -> Self::Iter<'w>;
 
     unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Fetchable<'w>;
-    fn desc() -> QueryDescVec;
+    fn access() -> Vec<AccessDesc>;
 }
 
-impl QueryGroup for Entity<'_> {
+unsafe impl QueryGroup for Entity<'_> {
     type Fetchable<'a> = Entity<'a>;
     type Iter<'w> = EntityIter<'w>;
 
@@ -44,15 +49,15 @@ impl QueryGroup for Entity<'_> {
         todo!()
     }
 
-    fn desc() -> QueryDescVec {
-        smallvec![QueryDesc {
-            mutable: false,
-            ty: QueryType::Entity
+    fn access() -> Vec<AccessDesc> {
+        vec![AccessDesc {
+            ty: AccessType::Entity,
+            exclusive: true
         }]
     }
 }
 
-impl<T: Component + Send> QueryGroup for &T {
+unsafe impl<T: Component + Send> QueryGroup for &T {
     type Fetchable<'a> = &'a T;
     type Iter<'w> = ColumnIter<'w, T>;
 
@@ -73,15 +78,15 @@ impl<T: Component + Send> QueryGroup for &T {
         unsafe { &*(ptr.as_ptr() as *const T) }
     }
 
-    fn desc() -> QueryDescVec {
-        smallvec![QueryDesc {
-            mutable: false,
-            ty: QueryType::Component(TypeId::of::<T>())
+    fn access() -> Vec<AccessDesc> {
+        vec![AccessDesc {
+            ty: AccessType::Component(ComponentId::of::<T>()),
+            exclusive: false
         }]
     }
 }
 
-impl<T: Component + Send> QueryGroup for &mut T {
+unsafe impl<T: Component + Send> QueryGroup for &mut T {
     type Fetchable<'a> = &'a mut T;
     type Iter<'w> = ColumnIterMut<'w, T>;
 
@@ -100,11 +105,125 @@ impl<T: Component + Send> QueryGroup for &mut T {
         unsafe { &mut *(ptr.as_ptr() as *mut T) }
     }
 
-    fn desc() -> QueryDescVec {
-        smallvec![QueryDesc {
-            mutable: true,
-            ty: QueryType::Component(TypeId::of::<T>())
+    fn access() -> Vec<AccessDesc> {
+        vec![AccessDesc {
+            ty: AccessType::Component(ComponentId::of::<T>()),
+            exclusive: true
         }]
+    }
+}
+
+pub struct JoinedIter<'w, T> {
+    _marker: PhantomData<&'w T>
+}
+
+impl<'w, T1, T2> Iterator for JoinedIter<'w, (T1, T2)> {
+    type Item = (T1, T2);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
+pub unsafe trait ParamRef: Send {
+    type Unref;
+    type Fetchable<'w>: 'w;
+    type Iter<'w>: Iterator<Item = Self::Fetchable<'w>>;
+
+    const EXCLUSIVE: bool;
+
+    fn access() -> AccessDesc;
+
+    fn component_id() -> Option<ComponentId>;
+}
+
+unsafe impl ParamRef for Entity<'_> {
+    type Unref = Entity<'static>;
+    type Fetchable<'w> = Entity<'w>;
+    type Iter<'w> = EntityIter<'w>;
+
+    const EXCLUSIVE: bool = false;
+
+    fn access() -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Entity,
+            exclusive: false
+        }
+    }
+
+    fn component_id() -> Option<ComponentId> {
+        None
+    }
+}
+
+unsafe impl<T: Component + Send + Sync> ParamRef for &T {
+    type Unref = T;
+    type Fetchable<'w> = &'w T;
+    type Iter<'w> = ColumnIter<'w, T>;
+
+    const EXCLUSIVE: bool = false;
+
+    fn access() -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Component(ComponentId::of::<T>()),
+            exclusive: false
+        }
+    }
+
+    fn component_id() -> Option<ComponentId> {
+        Some(ComponentId::of::<T>())
+    }
+}
+
+unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
+    type Unref = T;
+    type Fetchable<'w> = &'w mut T;
+    type Iter<'w> = ColumnIterMut<'w, T>;
+
+    const EXCLUSIVE: bool = true;
+
+    fn access() -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Component(ComponentId::of::<T>()),
+            exclusive: true
+        }
+    }
+
+    fn component_id() -> Option<ComponentId> {
+        Some(ComponentId::of::<T>())
+    }
+}
+
+unsafe impl<T1: ParamRef + Send, T2: ParamRef + Send> QueryGroup for (T1, T2) {
+    type Fetchable<'w> = (T1::Fetchable<'w>, T2::Fetchable<'w>);
+    type Iter<'w> = JoinedIter<'w, (T1::Fetchable<'w>, T2::Fetchable<'w>)>;
+
+    const SEND: bool = true;
+    const MUTABLE: bool = false;
+
+    fn archetype() -> ArchetypeComponents {
+        let c1 = T1::component_id();
+        let c2 = T2::component_id();
+
+        // Only store the ids that are not `None`.
+        let comps: Box<[ComponentId]> = [c1, c2]
+            .into_iter()
+            .flatten()
+            .collect();
+
+        ArchetypeComponents(comps)
+    }
+
+    unsafe fn iter<'w>(table: &'w Table) -> Self::Iter<'w> {
+        todo!()
+    }
+
+    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> Self::Fetchable<'w> {
+        todo!()
+    }
+
+    fn access() -> Vec<AccessDesc> {
+        vec![T1::access(), T2::access()]
     }
 }
 
@@ -126,14 +245,14 @@ impl<'w, Q: QueryGroup, F: FilterGroup> Query<'w, Q, F> {
     }
 }
 
-impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, Q, F> {
+unsafe impl<'placeholder, Q: QueryGroup, F: FilterGroup> Param for Query<'placeholder, Q, F> {
     type State = QueryState;
     type Item<'w> = Query<'w, Q, F>;
 
     const SEND: bool = Q::SEND;
 
-    fn desc() -> ParamDesc {
-        ParamDesc::Query(Q::desc())
+    fn access() -> Vec<AccessDesc> {
+        Q::access()
     }
 
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryState) -> Query<'w, Q, F> {
