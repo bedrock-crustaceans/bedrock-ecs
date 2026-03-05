@@ -8,6 +8,8 @@ use crate::graph::AccessDesc;
 pub trait System {
     /// This function takes a self parameter to make the `System` trait dyn-compatible.
     fn access(&self) -> Vec<AccessDesc>;
+    /// Attempts to determine the name of this system.
+    fn name(&self) -> String;
     fn call(&self, world: &World);
 }
 
@@ -49,6 +51,13 @@ where
         P::access()
     }
 
+    fn name(&self) -> String {
+        let type_name = std::any::type_name::<F>();
+        let split = type_name.split("::").last().unwrap_or("unknown");
+
+        split.to_owned()
+    }
+
     fn call(&self, world: &World) {
         #[cfg(debug_assertions)]
         {
@@ -73,6 +82,10 @@ impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContain
         p1.extend(P2::access());
 
         p1
+    }
+
+    fn name(&self) -> String {
+        todo!()
     }
     
     fn call(&self, world: &World) {

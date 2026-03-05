@@ -1,8 +1,10 @@
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::path::Path;
 use crate::component::ComponentId;
-use crate::system::SystemId;
+use crate::query;
+use crate::system::{System, SystemId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AccessType {
@@ -87,11 +89,34 @@ impl ScheduleGraph {
         false
     }
 
-    pub fn sort(&mut self) -> Schedule {
+    /// Produces a dotviz file.
+    pub(crate) fn render(&self, systems: &HashMap<SystemId, Box<dyn System>>) -> String {
+        let mut out = String::from("digraph {");
+
+        for (i, nodes) in self.adjacency.iter().enumerate() {
+            let i_id = self.nodes[i].sid;
+            let system = systems.get(&i_id).unwrap();
+            let i_name = system.name();
+
+            for j in nodes {
+                let system = systems.get(&self.nodes[*j].sid).unwrap();
+                let j_name = system.name();
+
+                out.push_str(&format!("{i_name} -> {j_name};"));
+            }
+        }
+        
+        out.push('}');
+        out
+    }
+
+    pub fn sort(&mut self, systems: HashMap<SystemId, Box<dyn System>>) -> Schedule {
         println!("Generating dependency graph...");
 
         // Create edges between all conflicting systems
         self.build_dependencies();
+
+        println!("Rendered: {}", self.render(&systems));
 
         let mut sets = Vec::new();
         let mut current_set = self.in_degrees
@@ -116,13 +141,35 @@ impl ScheduleGraph {
             sets.push(std::mem::replace(&mut current_set, next_set));
         }
 
+        // Map node index to system ID
+        let sets = sets.iter().map(|set| {
+            set.iter().map(|&node| {
+                self.nodes[node].sid
+            }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
+
+        let named = sets.iter().map(|ids| {
+            ids.iter().map(|id| {
+                systems.get(id).unwrap().name()
+            }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
+
+        println!("Optimal schedule: {named:?}");
+
         Schedule {
+            systems,
             sets
         }
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct Schedule {
-    pub(crate) sets: Vec<Vec<usize>>
+    pub(crate) systems: HashMap<SystemId, Box<dyn System>>,
+    pub(crate) sets: Vec<Vec<SystemId>>
+}
+
+impl Schedule {
+    pub fn render<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
+        todo!()
+    }
 }

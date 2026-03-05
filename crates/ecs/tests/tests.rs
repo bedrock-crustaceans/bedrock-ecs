@@ -25,143 +25,202 @@ impl Component for Mass {}
 impl Component for Static {}
 impl Component for Stamina {}
 impl Component for Sprite {}
-
 impl Component for Target {}
 
-// Yes this was AI-generated. I could not be bothered to create a large amount of systems by hand.
-// --- 1. SENSOR SYSTEMS (Heavy Read-Only) ---
-// These should all run in parallel as they only borrow &Position
-fn proximity_sensor_system(query: Query<&Position>) { /* ... */ }
-fn visibility_check_system(query: Query<(&Position, &Sprite)>) { /* ... */ }
-fn audio_emitter_system(query: Query<(&Position, &Velocity)>) { /* ... */ }
+// // Yes this was AI-generated. I could not be bothered to create a large amount of systems by hand.
+// // --- 1. SENSOR SYSTEMS (Heavy Read-Only) ---
+// // These should all run in parallel as they only borrow &Position
+// fn proximity_sensor_system(query: Query<&Position>) { /* ... */ }
+// fn visibility_check_system(query: Query<(&Position, &Sprite)>) { /* ... */ }
+// fn audio_emitter_system(query: Query<(&Position, &Velocity)>) { /* ... */ }
 
-// --- 2. ATTRIBUTE SYSTEMS (Mixed Access) ---
-// These compete for Health and Stamina
-fn hunger_drain_system(query: Query<&mut Health>) { /* ... */ }
-fn fatigue_system(query: Query<(&Velocity, &mut Stamina)>) { /* ... */ }
-fn oxygen_system(query: Query<(&Position, &mut Health)>) { /* ... */ }
+// // --- 2. ATTRIBUTE SYSTEMS (Mixed Access) ---
+// // These compete for Health and Stamina
+// fn hunger_drain_system(query: Query<&mut Health>) { /* ... */ }
+// fn fatigue_system(query: Query<(&Velocity, &mut Stamina)>) { /* ... */ }
+// fn oxygen_system(query: Query<(&Position, &mut Health)>) { /* ... */ }
 
-// --- 3. AI & BEHAVIOR (Decision Making) ---
-// High contention on 'Target' and 'Faction'
-fn aggro_logic_system(query: Query<(&Faction, &mut Target)>) { /* ... */ }
-fn flee_logic_system(query: Query<(&Health, &mut Velocity)>) { /* ... */ }
-fn wander_idle_system(query: Query<&mut Velocity, Without<Target>>) { /* ... */ }
+// // --- 3. AI & BEHAVIOR (Decision Making) ---
+// // High contention on 'Target' and 'Faction'
+// fn aggro_logic_system(query: Query<(&Faction, &mut Target)>) { /* ... */ }
+// fn flee_logic_system(query: Query<(&Health, &mut Velocity)>) { /* ... */ }
+// fn wander_idle_system(query: Query<&mut Velocity, Without<Target>>) { /* ... */ }
 
-// --- 4. COSMETIC & VFX (Late Frame Reads) ---
-// Read-heavy systems that usually run at the end of the frame
-fn particle_spawn_system(query: Query<(&Position, &Velocity)>) { /* ... */ }
-fn trail_renderer_system(query: Query<(&Position, &Sprite)>) { /* ... */ }
-fn debug_render_system(query: Query<(&Position, &Health)>) { /* ... */ }
+// // --- 4. COSMETIC & VFX (Late Frame Reads) ---
+// // Read-heavy systems that usually run at the end of the frame
+// fn particle_spawn_system(query: Query<(&Position, &Velocity)>) { /* ... */ }
+// fn trail_renderer_system(query: Query<(&Position, &Sprite)>) { /* ... */ }
+// fn debug_render_system(query: Query<(&Position, &Health)>) { /* ... */ }
 
-// --- 5. THE DATA CRUSHER (Structural Stress) ---
-// This system randomly attaches "Buff" components, forcing archetype migrations
-fn buff_applicator_system(query: Query<(Entity, &Health)>) { /* ... */ }
+// // // --- 5. THE DATA CRUSHER (Structural Stress) ---
+// // // This system randomly attaches "Buff" components, forcing archetype migrations
+// fn buff_applicator_system(query: Query<(Entity, &Health)>) { /* ... */ }
 
-// 1. Movement: Read Vel, Write Pos. (Parallel-friendly)
-fn movement_system(query: Query<(&Velocity, &mut Position)>) {
-    for (vel, mut pos) in &query {
-        pos.x += vel.x;
-        pos.y += vel.y;
-    }
+// // 1. Movement: Read Vel, Write Pos. (Parallel-friendly)
+// fn movement_system(query: Query<(&Velocity, &mut Position)>) {
+//     for (vel, mut pos) in &query {
+//         pos.x += vel.x;
+//         pos.y += vel.y;
+//     }
+// }
+
+// // 2. Gravity: Read Mass, Write Vel. (Parallel-friendly)
+// fn gravity_system(query: Query<(&Mass, &mut Velocity), Without<Static>>) {
+//     for (_mass, vel) in &query {
+//         vel.y -= 9.81;
+//     }
+// }
+
+// fn combat_system(query: Query<(&Position, &Faction, &mut Health)>) {
+//     // We use a nested loop to simulate the "Naive" approach.
+//     // Note: In a real ECS, you would use a "View" or "Snapshot"
+//     // to avoid double-borrowing the query while iterating.
+
+//     let attack_range: f32 = 5.0;
+//     let damage: f32 = 0.5;
+
+//     // Collect positions and factions into a temporary buffer to avoid
+//     // multiple mutable borrow conflicts during the nested loop.
+//     let entities: Vec<(&Position, &Faction)> = query
+//         .iter()
+//         .map(|(pos, faction, _)| (pos, faction))
+//         .collect();
+
+//     // The Stress Maker: Nested Iteration
+//     for (pos_a, faction_a, mut health_a) in &query {
+//         for (pos_b, faction_b) in &entities {
+//             // Only fight different factions
+//             if faction_a.0 != faction_b.0 {
+//                 let dx = pos_a.x - pos_b.x;
+//                 let dy = pos_a.y - pos_b.y;
+//                 let distance_sq = dx * dx + dy * dy;
+
+//                 if distance_sq < attack_range * attack_range {
+//                     // Apply damage
+//                     health_a.0 -= damage;
+//                 }
+//             }
+//         }
+//     }
+// }
+// // 4. Regeneration: Write Health.
+// fn regen_system(query: Query<&mut Health>) {
+//     for health in &query {
+//         health.0 = (health.0 + 0.1).min(100.0);
+//     }
+// }
+
+// // 5. The "Wall": Mutates everything. This forces serial execution.
+// fn collision_system(query: Query<(Entity, &mut Position, &mut Velocity, &Mass)>) {
+//     // Expensive logic that moves entities back if they collide
+// }
+
+// // 6. Cleanup: Read Health, Command Entity destruction.
+// fn death_system(query: Query<(Entity, &Health)>) {
+//     for (entity, health) in &query {
+//         if health.0 <= 0.0 { /* despawn logic */ }
+//     }
+// }
+
+// fn animation_system(query: Query<(&Velocity, &mut Sprite)>) {
+//     for (vel, mut sprite) in &query {
+//         let speed_sq = vel.x * vel.x + vel.y * vel.y;
+
+//         // Logic branching: checks if the entity is moving
+//         if speed_sq > 0.01 {
+//             sprite.visible = true;
+//             // Cycle through a dummy animation sheet of 10 frames
+//             sprite.id = (sprite.id + 1) % 10;
+//         } else {
+//             // Idle state: use frame 0 and potentially hide sprite
+//             sprite.id = 0;
+//             sprite.visible = (speed_sq % 2.0) > 1.0; // Flickering effect stress
+//         }
+//     }
+// }
+
+/// 1. Movement: Updates Position based on Velocity.
+// fn physics_step_system(query: Query<(&mut Position, &Velocity), Without<Static>>) { /* ... */ }
+
+/// 2. Gravity: Constant downward acceleration.
+fn gravity_apply_system(query: Query<(&mut Velocity, &Mass), Without<Static>>) { /* ... */ }
+
+/// 3. Friction: Slows down Velocity over time.
+fn air_resistance_system(query: Query<(&mut Velocity, &Position)>) { /* ... */ }
+
+/// 4. Boundary: Bounce Velocity if Position hits edge.
+fn map_bounds_system(query: Query<(&Position, &mut Velocity)>) { /* ... */ }
+
+/// 5. Targeting: Scan for nearest Entity of different Faction.
+fn ai_perception_system(query: Query<(Entity, &Position, &Faction, &mut Target)>) { /* ... */ }
+
+/// 6. Homing: Steering Velocity toward Target.
+fn target_tracking_system(query: Query<(&Target, &Position, &mut Velocity)>) { /* ... */ }
+
+/// 7. Health: Natural regeneration if not moving.
+fn health_regen_system(query: Query<(&mut Health, &Velocity, &Stamina)>) { /* ... */ }
+
+/// 8. Stamina: Deplete Stamina based on Velocity magnitude.
+fn stamina_drain_system(query: Query<(&mut Stamina, &Velocity)>) { /* ... */ }
+
+/// 9. Stamina: Slow recovery over time.
+fn stamina_recovery_system(query: Query<(&mut Stamina, &Health)>) { /* ... */ }
+
+/// 10. Death: Mark Sprite invisible if Health <= 0.
+fn death_cleanup_system(query: Query<(&Health, &mut Sprite)>) { /* ... */ }
+
+/// 11. Visuals: Sync Sprite position to Position.
+fn sprite_transform_system(query: Query<(&Position, &mut Sprite)>) { /* ... */ }
+
+/// 12. Visuals: Flash Sprite if Health is low.
+fn low_health_vfx_system(query: Query<(&Health, &mut Sprite)>) { /* ... */ }
+
+/// 13. Combat: Poison nearby Factions.
+fn poison_aura_system(query: Query<(&Position, &Faction, &mut Health)>) { /* ... */ }
+
+/// 14. Combat: Lifesteal from Target.
+fn vampiric_drain_system(query: Query<(&Target, &mut Health, &mut Stamina)>) { /* ... */ }
+
+/// 15. Combat: Knockback based on Mass.
+fn impact_physics_system(query: Query<(&mut Velocity, &Mass, &Health)>) { /* ... */ }
+
+/// 16. Utility: Frozen status for Static entities.
+fn static_marker_sync_system(query: Query<(&mut Velocity, &Static)>) { /* ... */ }
+
+/// 17. UI: Update health bars (Reads Health/Position).
+fn ui_health_bar_system(query: Query<(&Health, &Position)>) { /* ... */ }
+
+/// 18. Sound: Play footstep sounds based on Velocity/Position.
+fn footstep_audio_system(query: Query<(&Velocity, &Position, &mut Sprite)>) { /* ... */ }
+
+/// 19. Buffs: Increase Mass if Stamina is high.
+fn bulk_up_system(query: Query<(&Stamina, &mut Mass)>) { /* ... */ }
+
+/// 20. Debug: Teleport Target to random Position.
+fn chaos_debug_system(query: Query<(&mut Target, &mut Position)>) { /* ... */ }
+
+struct Physics;
+
+impl ScheduleLabel for Physics {
+    const NAME: &'static str = "Physics";
 }
 
-// 2. Gravity: Read Mass, Write Vel. (Parallel-friendly)
-fn gravity_system(query: Query<(&Mass, &mut Velocity), Without<Static>>) {
-    for (_mass, vel) in &query {
-        vel.y -= 9.81;
-    }
+struct Logic;
+
+impl ScheduleLabel for Logic {
+    const NAME: &'static str = "Logic";
 }
 
-fn combat_system(query: Query<(&Position, &Faction, &mut Health)>) {
-    // We use a nested loop to simulate the "Naive" approach.
-    // Note: In a real ECS, you would use a "View" or "Snapshot"
-    // to avoid double-borrowing the query while iterating.
+struct Combat;
 
-    let attack_range: f32 = 5.0;
-    let damage: f32 = 0.5;
-
-    // Collect positions and factions into a temporary buffer to avoid
-    // multiple mutable borrow conflicts during the nested loop.
-    let entities: Vec<(&Position, &Faction)> = query
-        .iter()
-        .map(|(pos, faction, _)| (pos, faction))
-        .collect();
-
-    // The Stress Maker: Nested Iteration
-    for (pos_a, faction_a, mut health_a) in &query {
-        for (pos_b, faction_b) in &entities {
-            // Only fight different factions
-            if faction_a.0 != faction_b.0 {
-                let dx = pos_a.x - pos_b.x;
-                let dy = pos_a.y - pos_b.y;
-                let distance_sq = dx * dx + dy * dy;
-
-                if distance_sq < attack_range * attack_range {
-                    // Apply damage
-                    health_a.0 -= damage;
-                }
-            }
-        }
-    }
-}
-// 4. Regeneration: Write Health.
-fn regen_system(query: Query<&mut Health>) {
-    for health in &query {
-        health.0 = (health.0 + 0.1).min(100.0);
-    }
+impl ScheduleLabel for Combat {
+    const NAME: &'static str = "Combat";
 }
 
-// 5. The "Wall": Mutates everything. This forces serial execution.
-fn collision_system(query: Query<(Entity, &mut Position, &mut Velocity, &Mass)>) {
-    // Expensive logic that moves entities back if they collide
-}
+struct Visuals;
 
-// 6. Cleanup: Read Health, Command Entity destruction.
-fn death_system(query: Query<(Entity, &Health)>) {
-    for (entity, health) in &query {
-        if health.0 <= 0.0 { /* despawn logic */ }
-    }
-}
-
-fn animation_system(query: Query<(&Velocity, &mut Sprite)>) {
-    for (vel, mut sprite) in &query {
-        let speed_sq = vel.x * vel.x + vel.y * vel.y;
-
-        // Logic branching: checks if the entity is moving
-        if speed_sq > 0.01 {
-            sprite.visible = true;
-            // Cycle through a dummy animation sheet of 10 frames
-            sprite.id = (sprite.id + 1) % 10;
-        } else {
-            // Idle state: use frame 0 and potentially hide sprite
-            sprite.id = 0;
-            sprite.visible = (speed_sq % 2.0) > 1.0; // Flickering effect stress
-        }
-    }
-}
-
-struct Label1;
-
-impl ScheduleLabel for Label1 {
-    const NAME: &'static str = "Label1";
-}
-
-struct Label2;
-
-impl ScheduleLabel for Label2 {
-    const NAME: &'static str = "Label2";
-}
-
-struct Label3;
-
-impl ScheduleLabel for Label3 {
-    const NAME: &'static str = "Label3";
-}
-
-struct Label4;
-
-impl ScheduleLabel for Label4 {
-    const NAME: &'static str = "Label4";
+impl ScheduleLabel for Visuals {
+    const NAME: &'static str = "Visuals";
 }
 
 #[test]
@@ -182,48 +241,41 @@ fn stress_test() {
     }
 
     let schedule = ScheduleBuilder::new()
-        // PHASE A: Parallel Inputs & Sensors
-        // All of these should run simultaneously if the scheduler is efficient.
-        .add(Label1, (
-            gravity_system,
-            movement_system,
-            proximity_sensor_system,
-            visibility_check_system,
-            audio_emitter_system
+        // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
+        .add(Physics, (
+            // physics_step_system,      // Write: Position, Read: Velocity
+            gravity_apply_system,     // Write: Velocity, Read: Mass
+            air_resistance_system,    // Write: Velocity, Read: Position
+            map_bounds_system,        // Write: Velocity, Read: Position
+            static_marker_sync_system // Write: Velocity, Read: Static
         ))
-
-        // PHASE B: Logic Contention (The Bottleneck)
-        // Combat, Aggro, and Flee all fight over Velocity/Health/Target.
-        .add(Label2, (
-            combat_system,
-            aggro_logic_system,
-            flee_logic_system,
-            wander_idle_system,
-            fatigue_system
+        // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
+        .add(Logic, (
+            ai_perception_system,     // Write: Target, Read: Position, Faction
+            target_tracking_system,   // Write: Velocity, Read: Target, Position
+            vampiric_drain_system,    // Write: Health, Stamina, Read: Target
+            chaos_debug_system,       // Write: Target, Position
+            bulk_up_system            // Write: Mass, Read: Stamina
         ))
-
-        // PHASE C: Resource Management & Mutation
-        // Forces structural changes and final attribute calculations.
-        .add(Label3, (
-            regen_system,
-            hunger_drain_system,
-            oxygen_system,
-            buff_applicator_system,
-            death_system
+        // --- PHASE 3: Vitality & Combat (Health/Stamina Updates) ---
+        .add(Combat, (
+            health_regen_system,      // Write: Health, Read: Velocity, Stamina
+            stamina_drain_system,     // Write: Stamina, Read: Velocity
+            stamina_recovery_system,  // Write: Stamina, Read: Health
+            poison_aura_system,       // Write: Health, Read: Position, Faction
+            impact_physics_system     // Write: Velocity, Read: Mass, Health
         ))
-
-        // PHASE D: Post-Processing
-        .add(Label4, (
-            animation_system,
-            particle_spawn_system,
-            trail_renderer_system,
-            debug_render_system
+        // --- PHASE 4: Visuals & Feedback (Sprite/UI/Audio) ---
+        .add(Visuals, (
+            death_cleanup_system,     // Write: Sprite, Read: Health
+            sprite_transform_system,  // Write: Sprite, Read: Position
+            low_health_vfx_system,    // Write: Sprite, Read: Health
+            ui_health_bar_system,     // Read: Health, Position
+            footstep_audio_system     // Write: Sprite, Read: Velocity, Position
         ))
         .schedule();
 
-    println!("{schedule:?}");
-
-    world.run(&schedule);
+    // world.run(&schedule);
 
     // // Execute loop
     // for _ in 0..100 {

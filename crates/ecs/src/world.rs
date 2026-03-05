@@ -25,7 +25,7 @@ impl World {
     }
     
     pub fn run(&mut self, schedule: &Schedule) {
-
+        todo!()
     }
 }
 

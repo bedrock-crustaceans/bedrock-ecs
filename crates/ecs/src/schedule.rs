@@ -81,8 +81,9 @@ impl ScheduleBuilder {
         self
     }
 
-    pub fn schedule(&mut self) -> Schedule {
-        self.graph.sort()
+    pub fn schedule(mut self) -> Schedule {
+        println!("Rendered: {}", self.graph.render(&self.systems));
+        self.graph.sort(self.systems)
     }
 }
 

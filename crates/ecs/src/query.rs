@@ -201,6 +201,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
 
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {
+        #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
             type Output<'t> = ($($gen::Output<'t>),*);
             type Iter<'t> = JoinedIter<'t, ($($gen::Output<'t>),*)>;
