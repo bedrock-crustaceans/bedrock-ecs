@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::graph::{GraphNode, Schedule, ScheduleGraph};
 use crate::param::ParamBundle;
 use crate::system::{IntoSystem, System, SystemId};
+use crate::world::World;
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid system bundle",
@@ -28,10 +29,10 @@ macro_rules! impl_bundle {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let boxed = [<$gen:lower>].into_system();
+                        let boxed = [<$gen:lower>].into_system(schedule.world);
                         let sid = SystemId::of::<$gen, [<$gen Fun>]>();
                         schedule.graph.add_node(GraphNode {
-                            sid, access: boxed.access()
+                            sid, access: boxed.access().into()
                         });
                         schedule.systems.insert(sid, boxed);
                     )*
@@ -59,20 +60,22 @@ pub trait ScheduleLabel {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SystemLabelId(pub(crate) TypeId);
 
-pub struct ScheduleBuilder {
+pub struct ScheduleBuilder<'w> {
+    pub(crate) world: &'w mut World,
     pub(crate) graph: ScheduleGraph,
     pub(crate) systems: HashMap<SystemId, Box<dyn System>>,
 }
 
-impl ScheduleBuilder {
-    pub fn new() -> ScheduleBuilder {
+impl<'w> ScheduleBuilder<'w> {
+    pub fn new(world: &'w mut World) -> ScheduleBuilder<'w> {
         ScheduleBuilder {
+            world,
             graph: ScheduleGraph::new(),
             systems: HashMap::new()
         }
     }
 
-    pub fn add<L, G, P>(mut self, label: L, systems: G) -> ScheduleBuilder
+    pub fn add<L, G, P>(mut self, label: L, systems: G) -> ScheduleBuilder<'w>
     where
         L: ScheduleLabel, G: SystemBundle<P>
     {
@@ -84,11 +87,5 @@ impl ScheduleBuilder {
     pub fn schedule(mut self) -> Schedule {
         println!("Rendered: {}", self.graph.render(&self.systems));
         self.graph.sort(self.systems)
-    }
-}
-
-impl Default for ScheduleBuilder {
-    fn default() -> ScheduleBuilder {
-        ScheduleBuilder::new()
     }
 }

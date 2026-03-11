@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, query::{CachedTable, QueryBundle}, spawn::SpawnBundle, table::Table, util::{self}};
+use crate::{bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{EntityId, EntityMeta}, query::{CachedTable, QueryBundle}, spawn::SpawnBundle, table::Table, util::{self}};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -56,8 +56,9 @@ impl<'a, T: QueryBundle> Iterator for ArchetypeIter<'a, T> {
 #[derive(Default, Debug)]
 pub struct Archetypes {
     generation: u64,
+    pub(crate) registry: ComponentRegistry,
     tables: Vec<Table>,
-    lookup: HashMap<Box<[TypeId]>, usize>
+    lookup: HashMap<BitSet, usize>
 }
 
 impl Archetypes {
@@ -69,16 +70,20 @@ impl Archetypes {
         self.generation
     }
 
-    pub fn cache_tables<T: QueryBundle>(&self,  cache: &mut SmallVec<[CachedTable; 8]>) {
+    pub fn cache_tables(&self, archetype: &BitSet, cache: &mut SmallVec<[CachedTable; 8]>) {
         cache.clear();
 
         let iter = self.lookup.keys().enumerate().filter_map(|(i, k)| {
-            let cols = T::cache_layout(k);
+            if k.is_subset(archetype) {
+                // Found match
+                println!("{k:?} matches {archetype:?}");
+                return Some(CachedTable {
+                    table: i,
+                    cols: todo!()
+                })
+            }            
 
-            // This table contains requested components, cache it.
-            (!cols.is_empty()).then_some(CachedTable {
-                table: i, cols
-            })
+            None
         });
 
         cache.extend(iter);
@@ -87,15 +92,15 @@ impl Archetypes {
     pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
         self.generation += 1;
         
-        let comps = B::components();
+        let comps = B::components(&mut self.registry);
 
         // Check whether archetype already exists, otherwise create it
         let lookup = self.lookup.get(&comps);
         let table = if let Some(index) = lookup {
             &mut self.tables[*index]
         } else {
-            self.lookup.insert(comps, self.tables.len());
-            let table = Table::new::<B>();
+            self.lookup.insert(comps.clone(), self.tables.len());
+            let table = Table::new::<B>(comps, &mut self.registry);
             self.tables.push(table);
 
             self.tables.last_mut().unwrap()
@@ -104,9 +109,8 @@ impl Archetypes {
         table.insert(id, bundle);
     }
 
-    pub fn query<B: QueryBundle>(&self) -> Option<B::Iter<'_>> {
-        todo!()
-        // self.tables.get(id)
+    pub fn table(&self, index: usize) -> &Table {
+        &self.tables[index]
     }
     
     pub fn remove(&mut self, id: &ArchetypeComponents) -> Option<Table> {

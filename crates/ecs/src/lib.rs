@@ -4,6 +4,7 @@
 #![warn(clippy::pedantic)]
 
 pub mod archetype;
+pub mod bitset;
 pub mod component;
 pub mod entity;
 pub mod filter;

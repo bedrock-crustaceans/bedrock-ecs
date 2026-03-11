@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, component::ComponentId, entity::EntityId, spawn::SpawnBundle, util};
+use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::EntityId, spawn::SpawnBundle, util};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -441,22 +441,23 @@ pub struct Table {
     #[cfg(debug_assertions)]
     pub(crate) flag: RwFlag,
 
-    pub(crate) components: Box<[TypeId]>,    
+    pub(crate) archetype: BitSet,    
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
     // an the entity at index 5 in `entities` will have its components stored at index
     // 5 in the `columns` field.
     pub(crate) entities: UnsafeCell<Vec<EntityId>>,
-    pub(crate) lookup: HashMap<TypeId, usize>,
+    pub(crate) lookup: HashMap<ComponentId, usize>,
     pub(crate) columns: Vec<Column>
 }
 
 impl Table {
-    pub fn new<G: SpawnBundle>() -> Table {
-        G::new_table()
+    #[inline]
+    pub fn new<G: SpawnBundle>(bitset: BitSet, reg: &mut ComponentRegistry) -> Table {
+        G::new_table(bitset, reg)
     }
 
-    pub fn components(&self) -> &[TypeId] {
-        &self.components
+    pub fn archetype(&self) -> &BitSet {
+        &self.archetype
     }
 
     pub fn insert<G: SpawnBundle>(&mut self, entity: EntityId, components: G) {

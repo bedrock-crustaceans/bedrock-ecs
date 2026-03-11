@@ -1,6 +1,8 @@
 use std::{ops::{Deref, DerefMut}};
 
-use crate::{param::{Param}, sealed::Sealed, world::World};
+use smallvec::SmallVec;
+
+use crate::{param::{self, Param}, sealed::Sealed, world::World};
 use crate::graph::AccessDesc;
 
 pub struct LocalState<T: Default + Send + 'static>(T);
@@ -11,11 +13,11 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
     type State = LocalState<T>;
     type Output<'w> = Local<'w, T>;
 
-    fn access() -> Vec<AccessDesc> {
-        Vec::new()
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+        SmallVec::new()
     }
 
-    fn init() -> LocalState<T> { LocalState(T::default())  }
+    fn init(_world: &mut World) -> LocalState<T> { LocalState(T::default())  }
 
     fn destroy(_state: &mut LocalState<T>) {}
 

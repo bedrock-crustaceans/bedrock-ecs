@@ -1,6 +1,6 @@
 use std::{alloc::Layout, any::TypeId, collections::HashMap};
 
-use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId, table::{Column, Table}};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::EntityId, table::{Column, Table}};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
@@ -12,25 +12,25 @@ macro_rules! impl_bundle {
         #[allow(unused_parens)]
         #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: Component),*> SpawnBundle for ($($gen),*) {
-            fn components() -> Box<[TypeId]> {
-                let boxed = Box::new([
-                    $(TypeId::of::<$gen>()),*
-                ]);
-
-                boxed
+            #[allow(unused)]
+            fn components(reg: &mut ComponentRegistry) -> BitSet {
+                let mut bitset = BitSet::new();
+                $(
+                    let id = *reg.get_or_assign::<$gen>();
+                    bitset.set(id);
+                )*
+                bitset
             }
 
-            fn new_table() -> Table {
+            fn new_table(bitset: BitSet, reg: &mut ComponentRegistry) -> Table {
                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
-
-                let components = Self::components();
 
                 #[allow(unused)]
                 let mut table = Table {
                     #[cfg(debug_assertions)]
                     flag: RwFlag::new(),
 
-                    components,
+                    archetype: bitset,
                     entities: UnsafeCell::new(Vec::new()),
                     lookup: HashMap::with_capacity(COUNT),
                     columns: vec![
@@ -44,7 +44,7 @@ macro_rules! impl_bundle {
                 {
                     let mut counter = 0;
                     $(
-                        table.lookup.insert(TypeId::of::<$gen>(), counter);
+                        table.lookup.insert(reg.get_or_assign::<$gen>(), counter);
                         counter += 1;   
                     )*
                 }
@@ -72,9 +72,9 @@ macro_rules! impl_bundle {
 
 pub unsafe trait SpawnBundle: 'static {
     /// Returns a list of components in this group.
-    fn components() -> Box<[TypeId]>;
+    fn components(reg: &mut ComponentRegistry) -> BitSet;
     /// Creates a new table map to store in the archetype.
-    fn new_table() -> Table;
+    fn new_table(bitset: BitSet, reg: &mut ComponentRegistry) -> Table;
     /// Inserts into an existing archetype.
     fn insert_into(self, storage: &mut Vec<Column>);
 }

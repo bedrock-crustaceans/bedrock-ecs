@@ -122,7 +122,7 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Health>) {
+fn simple_system(query: Query<&Mass>) {
     for component in &query {
         println!("{}", component.0);
     }
@@ -167,7 +167,7 @@ fn stress_test() {
     println!("World has {} entities", world.entities().count());
 
     println!("Generating schedule...");
-    let schedule = ScheduleBuilder::new()
+    let schedule = ScheduleBuilder::new(&mut world)
         // // Stage 1: High Parallelism (Physics + Combat)
         // .add(Label1, (movement_system, gravity_system, combat_system))
         // // Stage 2: Mixed (Regen + Death check)

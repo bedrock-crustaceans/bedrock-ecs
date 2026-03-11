@@ -2,8 +2,10 @@ use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
+use smallvec::SmallVec;
+
 use crate::component::ComponentId;
-use crate::query;
+use crate::{param, query};
 use crate::system::{System, SystemId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -29,7 +31,7 @@ impl AccessDesc {
 #[derive(Debug, Clone)]
 pub(crate) struct GraphNode {
     pub sid: SystemId,
-    pub access: Vec<AccessDesc>,
+    pub access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
 }
 
 #[derive(Debug, Clone, Default)]

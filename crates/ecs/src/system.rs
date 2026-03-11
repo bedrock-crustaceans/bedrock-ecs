@@ -2,25 +2,32 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
 use std::any::TypeId;
+use smallvec::SmallVec;
+
 use crate::{param::{Param, ParamBundle}, sealed::Sealer, world::World};
 use crate::graph::AccessDesc;
 
 pub trait System: Sync {
-    /// This function takes a self parameter to make the `System` trait dyn-compatible.
-    fn access(&self) -> Vec<AccessDesc>;
     /// Attempts to determine the name of this system.
     fn name(&self) -> String;
+    fn access(&self) -> &[AccessDesc];
     fn call(&self, world: &World);
 }
 
 pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
-    fn into_container(self, id: usize) -> FnContainer<G, Self> {
+    fn into_container(self, world: &mut World, id: usize) -> FnContainer<G, Self> {
+        let access = G::access(world);
+        println!("Created access desc: {access:?}");
+
+        let state = G::init(world);
+
         FnContainer {
             #[cfg(debug_assertions)]
             counter: AtomicUsize::new(0),
             id,
             system: self,
-            state: UnsafeCell::new(G::init()),
+            access,
+            state: UnsafeCell::new(state),
             _marker: PhantomData
         }
     }
@@ -33,6 +40,7 @@ pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     pub counter: AtomicUsize,
     pub id: usize,
     pub system: F,
+    pub access: SmallVec<[AccessDesc; 8]>,
     pub state: UnsafeCell<P::State>,
     pub _marker: PhantomData<P>
 }
@@ -57,15 +65,15 @@ where
     P: Param,
     F: ParametrizedSystem<P>,
 {
-    fn access(&self) -> Vec<AccessDesc> {
-        P::access()
-    }
-
     fn name(&self) -> String {
         let type_name = std::any::type_name::<F>();
         let split = type_name.split("::").last().unwrap_or("unknown");
 
         split.to_owned()
+    }
+
+    fn access(&self) -> &[AccessDesc] {
+        &self.access
     }
 
     fn call(&self, world: &World) {
@@ -87,11 +95,8 @@ where
 }
 
 impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F> {
-    fn access(&self) -> Vec<AccessDesc> {
-        let mut p1 = P1::access();
-        p1.extend(P2::access());
-
-        p1
+    fn access(&self) -> &[AccessDesc] {
+        &self.access
     }
 
     fn name(&self) -> String {
@@ -141,8 +146,8 @@ impl Systems {
         self.storage.reserve(n);
     }
 
-    pub fn push<P, S: IntoSystem<P>>(&mut self, system: S) {
-        let system = system.into_system();
+    pub fn push<P, S: IntoSystem<P>>(&mut self, world: &mut World, system: S) {
+        let system = system.into_system(world);
         let desc= system.access();
 
         println!("System desc: {desc:?}");
@@ -164,7 +169,7 @@ impl Systems {
     note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
-    fn into_system(self) -> Box<dyn System>;
+    fn into_system(self, world: &mut World) -> Box<dyn System>;
 }
 
 #[diagnostic::do_not_recommend]
@@ -174,8 +179,8 @@ where
     F: Fn(P) + 'static,
     F: ParametrizedSystem<P>
 {
-    fn into_system(self) -> Box<dyn System> {
-        Box::new(self.into_container(0))
+    fn into_system(self, world: &mut World) -> Box<dyn System> {
+        Box::new(self.into_container(world, 0))
     }
 }
 
@@ -187,8 +192,8 @@ where
     F: Fn(P1, P2) + 'static,
     F: ParametrizedSystem<(P1, P2)>
 {
-    fn into_system(self) -> Box<dyn System> {
-        Box::new(self.into_container(0))
+    fn into_system(self, world: &mut World) -> Box<dyn System> {
+        Box::new(self.into_container(world, 0))
     }
 }
 

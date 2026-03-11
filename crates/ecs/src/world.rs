@@ -1,4 +1,4 @@
-use crate::{archetype::Archetypes, entity::{Entities, EntityMut}, spawn::SpawnBundle, system::Systems};
+use crate::{archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, spawn::SpawnBundle, system::Systems};
 use crate::graph::Schedule;
 use crate::schedule::ScheduleBuilder;
 
@@ -6,7 +6,6 @@ use crate::schedule::ScheduleBuilder;
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
-    pub(crate) systems: Systems
 }
 
 impl World {
@@ -39,6 +38,10 @@ impl World {
                 }
             });
         }
+    }
+
+    pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
+        ScheduleBuilder::new(self)
     }
 }
 
