@@ -62,6 +62,7 @@ impl<'a, T> Iterator for ArchetypeIter<'a, T> {
 
 #[derive(Default, Debug)]
 pub struct Archetypes {
+    generation: u64,
     tables: HashMap<ArchetypeComponents, Table>,
     // lookup: HashMap<ArchetypeComponents, ArchetypeId>
 }
@@ -69,6 +70,14 @@ pub struct Archetypes {
 impl Archetypes {
     pub fn new() -> Archetypes {
         Archetypes::default()
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn cache_tables(&self, cache: &mut Vec<ArchetypeId>) {
+        todo!()
     }
 
     pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
@@ -83,6 +92,7 @@ impl Archetypes {
     }
 
     pub fn query<B: QueryBundle>(&self) -> Option<B::Iter<'_>> {
+        todo!()
         // self.tables.get(id)
     }
     

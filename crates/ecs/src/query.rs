@@ -1,6 +1,6 @@
 use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
-use crate::{archetype::{ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::Param, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
+use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::Param, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
 /// # Safety:
@@ -203,8 +203,9 @@ macro_rules! impl_bundle {
         #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
             type Output<'t> = ($($gen::Output<'t>),*);
-            type ElemPtr<'t> = ($(NonNull<$gen>),*);
-            type Iter<'t> = ArchetypeIter<'t, ($($gen::Output<'t>),*)>;
+            // type ElemPtr<'t> = ($(NonNull<$gen>),*);
+            type ElemPtr<'t> = &'static ();
+            type Iter<'t> = std::slice::Iter<'static, ()>;
 
             fn archetype() -> ArchetypeComponents {
                 let comps: Box<[ComponentId]> = [$($gen::component_id()),*]
@@ -221,7 +222,10 @@ macro_rules! impl_bundle {
                 todo!()
             }
 
-            unsafe fn from_ptr<'t>(ptr: ($(NonNull<$gen>),*)) -> Self::Output<'t> {
+            // unsafe fn from_ptr<'t>(ptr: ($(NonNull<$gen>),*)) -> Self::Output<'t> {
+            //     todo!()
+            // }
+            unsafe fn from_ptr<'t>(ptr: &()) -> Self::Output<'t> {
                 todo!()
             }
         }
@@ -240,81 +244,108 @@ impl_bundle!(A, B, C, D, E, F, G, H, I, J);
 
 pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
     archetypes: &'w Archetypes,
-    state: &'w QueryState,
+    plan: &'w QueryPlan<Q, F>,
     _marker: PhantomData<(Q, F)>
 }
 
 impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
-    pub fn new(world: &'w World, state: &'w QueryState) -> Query<'w, Q, F> {
+    pub fn new(world: &'w World, state: &'w QueryPlan<Q, F>) -> Query<'w, Q, F> {
         Query {
             archetypes: &world.archetypes,
-            state,
+            plan: state,
             _marker: PhantomData
         }
     }
 
-    pub fn iter(&self) -> QueryIter<'_, 'w, Q, F> {
+    pub fn iter(&self) -> QueryIter<'_, Q, F> {
+        // self.plan.update(self.archetypes);
+
         todo!()
         // Q::iter(self)
     }
 }
 
-unsafe impl<'placeholder, Q: QueryBundle, F: FilterGroup> Param for Query<'placeholder, Q, F> {
-    type State = QueryState;
+unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterGroup + 'static> Param for Query<'placeholder, Q, F> {
+    type State = QueryPlan<Q, F>;
     type Output<'w> = Query<'w, Q, F>;
 
     fn access() -> Vec<AccessDesc> {
         Q::access()
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryState) -> Query<'w, Q, F> {
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryPlan<Q, F>) -> Query<'w, Q, F> {
         Query::new(world, state)
     }
 
-    fn init() -> QueryState {
-        QueryState {
-            archetype: Q::archetype()
-        }
+    fn init() -> QueryPlan<Q, F> {
+        QueryPlan::new()
     }
     
-    fn destroy(_: &mut QueryState) {}
+    fn destroy(_: &mut QueryPlan<Q, F>) {}
 }
 
-pub struct QueryState {
-    archetype: ArchetypeComponents
+pub struct QueryPlan<Q: QueryBundle, F: FilterGroup> {
+    generation: u64,
+    // TODO: This could maybe be a smallvec.
+    cached_tables: Vec<ArchetypeId>,
+    _marker: PhantomData<(Q, F)>
 }
 
-pub struct QueryIter<'q, 'w, Q: QueryBundle, F: FilterGroup> {
-    iter: Option<Q::Iter<'w>>,
+impl<Q: QueryBundle, F: FilterGroup> QueryPlan<Q, F> {
+    pub fn new() -> QueryPlan<Q, F> {
+        QueryPlan {
+            generation: u64::MAX,
+            cached_tables: Vec::new(),
+            _marker: PhantomData
+        }
+    }
+
+    /// Updates the cache if required.
+    pub fn update(&mut self, archetypes: &Archetypes) {
+        if self.generation != archetypes.generation() {
+            self.cached_tables.clear();
+            archetypes.cache_tables(&mut self.cached_tables);
+            self.generation = archetypes.generation();
+        }
+    }
+
+    pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> QueryIter<'t, Q, F> {
+        QueryIter {
+            archetypes,
+            tables: self.cached_tables.iter(),
+            column_index: 0,
+            table_index: ArchetypeId(0),
+            _marker: PhantomData
+        }
+    }
+}
+
+pub struct QueryIter<'q, Q: QueryBundle, F: FilterGroup> {
+    archetypes: &'q Archetypes,
+    tables: std::slice::Iter<'q, ArchetypeId>,
+
+    table_index: ArchetypeId,
+    column_index: usize,
     _marker: PhantomData<&'q (Q, F)>
 }
 
 #[diagnostic::do_not_recommend]
 impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
-    type Item = Q::Output<'w>;
-    type IntoIter = QueryIter<'q, 'w, Q, F>;
+    type Item = Q::Output<'q>;
+    type IntoIter = QueryIter<'q, Q, F>;
 
     fn into_iter(self) -> Self::IntoIter {
-        QueryIter::from(self)
+        todo!("update plan");
+        // self.plan.update();
+        self.plan.execute(self.archetypes)
     }
 }
 
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
-    fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
+impl<'q, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, Q, F> {
+    type Item = Q::Output<'q>;
+
+    fn next(&mut self) -> Option<Q::Output<'q>> {
         todo!()
-        // QueryIter {
-        //     archetypes,
-        //     _marker: PhantomData
-        // }
+        // self.iter.as_mut()?.next()
     }
 }
-
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, 'w, Q, F> {
-    type Item = Q::Output<'w>;
-
-    fn next(&mut self) -> Option<Q::Output<'w>> {
-        self.iter.as_mut()?.next()
-    }
-}
-
-impl<'q, 'w, Q: QueryBundle, F: FilterGroup> FusedIterator for QueryIter<'q, 'w, Q, F> {}
