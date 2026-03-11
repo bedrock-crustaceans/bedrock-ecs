@@ -22,7 +22,7 @@ macro_rules! impl_bundle {
                 bitset
             }
 
-            fn new_table(bitset: BitSet, reg: &mut ComponentRegistry) -> Table {
+            fn new_table(bitset: BitSet) -> Table {
                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
                 #[allow(unused)]
@@ -44,7 +44,8 @@ macro_rules! impl_bundle {
                 {
                     let mut counter = 0;
                     $(
-                        table.lookup.insert(reg.get_or_assign::<$gen>(), counter);
+                        println!("Inserting type {}", std::any::type_name::<$gen>());
+                        table.lookup.insert(TypeId::of::<$gen>(), counter);
                         counter += 1;   
                     )*
                 }
@@ -74,7 +75,7 @@ pub unsafe trait SpawnBundle: 'static {
     /// Returns a list of components in this group.
     fn components(reg: &mut ComponentRegistry) -> BitSet;
     /// Creates a new table map to store in the archetype.
-    fn new_table(bitset: BitSet, reg: &mut ComponentRegistry) -> Table;
+    fn new_table(bitset: BitSet) -> Table;
     /// Inserts into an existing archetype.
     fn insert_into(self, storage: &mut Vec<Column>);
 }

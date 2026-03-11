@@ -45,8 +45,6 @@ impl ComponentRegistry {
                 self.next_id - 1
             });
 
-        println!("{} has ID {id}", std::any::type_name::<T>());
-
         ComponentId(id)
     }
 }

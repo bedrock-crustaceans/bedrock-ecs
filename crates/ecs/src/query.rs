@@ -1,4 +1,4 @@
-use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
+use std::{any::TypeId, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use smallvec::{SmallVec, smallvec};
 
@@ -46,7 +46,7 @@ pub unsafe trait QueryBundle {
 
     fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
 
-    fn cache_layout(components: &BitSet) -> SmallVec<[usize; 4]>;
+    fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]>;
 }
 
 unsafe impl QueryBundle for Entity<'_> {
@@ -64,7 +64,7 @@ unsafe impl QueryBundle for Entity<'_> {
         }]
     }
 
-    fn cache_layout(_components: &BitSet) -> SmallVec<[usize; 4]> {
+    fn cache_layout(_lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
         SmallVec::new()
     }
 }
@@ -88,8 +88,12 @@ unsafe impl<T: Component + Send> QueryBundle for &T {
         }]
     }
 
-    fn cache_layout(components: &BitSet) -> SmallVec<[usize; 4]> {
-        todo!()
+    fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
+        let col = *lookup
+            .get(&TypeId::of::<T>())
+            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+
+        smallvec![col]
     }
 }
 
@@ -112,8 +116,8 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
         }]
     }
 
-    fn cache_layout(components: &BitSet) -> SmallVec<[usize; 4]> {
-        todo!()
+    fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
+        smallvec![*lookup.get(&TypeId::of::<T>()).unwrap()]
     }
 }
 
@@ -166,60 +170,21 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
 pub unsafe trait ParamRef: Send {
     type Unref: 'static;
     type Output<'w>: 'w;
-    type Iter<'w>: Iterator<Item = Self::Output<'w>>;
-
-    const EXCLUSIVE: bool;
-
-    // fn access(reg: &mut ComponentRegistry) -> AccessDesc;
 }
 
 unsafe impl ParamRef for Entity<'_> {
     type Unref = Entity<'static>;
     type Output<'w> = Entity<'w>;
-    type Iter<'w> = EntityIter<'w>;
-
-    const EXCLUSIVE: bool = false;
-
-    // fn access(reg: &mut ComponentRegistry) -> AccessDesc {
-    //     AccessDesc {
-    //         ty: AccessType::Entity,
-    //         exclusive: false
-    //     }
-    // }
 }
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Unref = T;
     type Output<'w> = &'w T;
-    type Iter<'w> = ColumnIter<'w, T>;
-
-    const EXCLUSIVE: bool = false;
-
-    // fn access(reg: &mut ComponentRegistry) -> AccessDesc {
-    //     AccessDesc {
-    //         ty: AccessType::Component(ComponentId::of::<T>()),
-    //         exclusive: false
-    //     }
-    // }
 }
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Unref = T;
     type Output<'w> = &'w mut T;
-    type Iter<'w> = ColumnIterMut<'w, T>;
-
-    const EXCLUSIVE: bool = true;
-
-    // fn access() -> AccessDesc {
-    //     AccessDesc {
-    //         ty: AccessType::Component(ComponentId::of::<T>()),
-    //         exclusive: true
-    //     }
-    // }
-
-    // fn component_id() -> Option<ComponentId> {
-    //     Some(ComponentId::of::<T>())
-    // }
 }
 
 pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
@@ -282,11 +247,9 @@ pub struct QueryCache<Q: QueryBundle, F: FilterGroup> {
 impl<Q: QueryBundle, F: FilterGroup> QueryCache<Q, F> {
     pub fn new(archetypes: &mut Archetypes) -> QueryCache<Q, F> {
         let archetype = Q::archetype(&mut archetypes.registry);
-
-        println!("Archetype bitset is: {archetype:?}");
         
         let mut cached_tables = SmallVec::new();
-        archetypes.cache_tables(&archetype, &mut cached_tables);
+        archetypes.cache_tables::<Q>(&archetype, &mut cached_tables);
 
         QueryCache {
             generation: archetypes.generation(),
@@ -300,7 +263,7 @@ impl<Q: QueryBundle, F: FilterGroup> QueryCache<Q, F> {
     pub fn update(&mut self, archetypes: &Archetypes) {
         if self.generation != archetypes.generation() {
             self.cached_tables.clear();
-            archetypes.cache_tables(&self.archetype, &mut self.cached_tables);
+            archetypes.cache_tables::<Q>(&self.archetype, &mut self.cached_tables);
             self.generation = archetypes.generation();
         }
     }

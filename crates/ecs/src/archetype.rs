@@ -58,6 +58,7 @@ pub struct Archetypes {
     generation: u64,
     pub(crate) registry: ComponentRegistry,
     tables: Vec<Table>,
+    /// Maps archetypes to indices in the `tables` vec.
     lookup: HashMap<BitSet, usize>
 }
 
@@ -70,16 +71,18 @@ impl Archetypes {
         self.generation
     }
 
-    pub fn cache_tables(&self, archetype: &BitSet, cache: &mut SmallVec<[CachedTable; 8]>) {
+    pub fn cache_tables<T: QueryBundle>(&self, archetype: &BitSet, cache: &mut SmallVec<[CachedTable; 8]>) {
         cache.clear();
 
-        let iter = self.lookup.keys().enumerate().filter_map(|(i, k)| {
+        let iter = self.lookup.iter().enumerate().filter_map(|(i, (k, &v))| {
             if k.is_subset(archetype) {
                 // Found match
-                println!("{k:?} matches {archetype:?}");
+                let table = &self.tables[v];
+                let cols = T::cache_layout(&table.lookup);
+
                 return Some(CachedTable {
-                    table: i,
-                    cols: todo!()
+                    table: v,
+                    cols
                 })
             }            
 
@@ -100,7 +103,7 @@ impl Archetypes {
             &mut self.tables[*index]
         } else {
             self.lookup.insert(comps.clone(), self.tables.len());
-            let table = Table::new::<B>(comps, &mut self.registry);
+            let table = Table::new::<B>(comps);
             self.tables.push(table);
 
             self.tables.last_mut().unwrap()

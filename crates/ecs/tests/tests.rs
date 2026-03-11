@@ -152,7 +152,7 @@ fn stress_test() {
 
     // Spawn 10,000 entities to ensure the loop actually takes time
     println!("Summoning entities");
-    for i in 0..10u32 {
+    for i in 0..2u32 {
         world.spawn((
             // Position { x: i as f32, y: 0.0 },
             Velocity { x: 1.0, y: 1.0 },

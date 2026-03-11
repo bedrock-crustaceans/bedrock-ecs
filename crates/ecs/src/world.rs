@@ -29,14 +29,18 @@ impl World {
     
     pub fn run(&mut self, schedule: &Schedule) {
         for set in &schedule.sets {
+            for id in set {
+                schedule.systems.get(id).unwrap().call(&self);
+            }
+
             println!("Running next set");
-            rayon::scope(|s| {
-                for id in set {
-                    s.spawn(|_| {
-                        schedule.systems.get(id).unwrap().call(&self);
-                    });
-                }
-            });
+            // rayon::scope(|s| {
+            //     for id in set {
+            //         s.spawn(|_| {
+            //             schedule.systems.get(id).unwrap().call(&self);
+            //         });
+            //     }
+            // });
         }
     }
 

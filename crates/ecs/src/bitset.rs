@@ -12,6 +12,11 @@ impl BitSet {
         BitSet::default()
     }
 
+    /// Returns the amount of words in this bitset.
+    pub fn word_len(&self) -> usize {
+        self.bits.len()
+    }
+
     pub fn with_capacity(cap: usize) -> BitSet {
         BitSet { bits: SmallVec::with_capacity(cap) }
     }
@@ -51,6 +56,13 @@ impl BitSet {
     // Whether `other` is a subset of `self`. This is faster than intersecting and then comparing
     // because this method short-circuits.
     pub fn is_subset(&self, other: &Self) -> bool {
+        if other.word_len() > self.word_len() {
+            // `other` cannot be a subset of `self` if it has more words.
+            if other.bits[self.bits.len()..].iter().any(|&b| b != 0) {
+                return false
+            }
+        }
+
         self.bits
             .iter()
             .zip(other.bits.iter())

@@ -446,14 +446,14 @@ pub struct Table {
     // an the entity at index 5 in `entities` will have its components stored at index
     // 5 in the `columns` field.
     pub(crate) entities: UnsafeCell<Vec<EntityId>>,
-    pub(crate) lookup: HashMap<ComponentId, usize>,
+    pub(crate) lookup: HashMap<TypeId, usize>,
     pub(crate) columns: Vec<Column>
 }
 
 impl Table {
     #[inline]
-    pub fn new<G: SpawnBundle>(bitset: BitSet, reg: &mut ComponentRegistry) -> Table {
-        G::new_table(bitset, reg)
+    pub fn new<G: SpawnBundle>(bitset: BitSet) -> Table {
+        G::new_table(bitset)
     }
 
     pub fn archetype(&self) -> &BitSet {

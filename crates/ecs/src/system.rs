@@ -17,8 +17,6 @@ pub trait System: Sync {
 pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
     fn into_container(self, world: &mut World, id: usize) -> FnContainer<G, Self> {
         let access = G::access(world);
-        println!("Created access desc: {access:?}");
-
         let state = G::init(world);
 
         FnContainer {
@@ -27,8 +25,7 @@ pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
             id,
             system: self,
             access,
-            state: UnsafeCell::new(state),
-            _marker: PhantomData
+            state: UnsafeCell::new(state)
         }
     }
 
@@ -42,7 +39,6 @@ pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     pub system: F,
     pub access: SmallVec<[AccessDesc; 8]>,
     pub state: UnsafeCell<P::State>,
-    pub _marker: PhantomData<P>
 }
 
 unsafe impl<P, F> Send for FnContainer<P, F> 
