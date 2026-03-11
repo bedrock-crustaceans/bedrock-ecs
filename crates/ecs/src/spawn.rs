@@ -1,39 +1,70 @@
-use std::{alloc::Layout, collections::HashMap};
+use std::{alloc::Layout, any::TypeId, collections::HashMap};
 
-use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId, table::Column};
+use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::EntityId, table::{Column, Table}};
+
+#[cfg(debug_assertions)]
+use crate::util::debug::RwFlag;
+
+use std::cell::UnsafeCell;
 
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {
         #[allow(unused_parens)]
         #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: Component),*> SpawnBundle for ($($gen),*) {
-            fn components() -> ArchetypeComponents {
+            fn components() -> Box<[TypeId]> {
                 let boxed = Box::new([
-                    $(ComponentId::of::<$gen>()),*
+                    $(TypeId::of::<$gen>()),*
                 ]);
 
-                ArchetypeComponents(boxed)
+                boxed
             }
 
-            fn new_table_map() -> HashMap<ComponentId, Column> {
-                HashMap::from([
+            fn new_table() -> Table {
+                const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
+
+                let components = Self::components();
+
+                #[allow(unused)]
+                let mut table = Table {
+                    #[cfg(debug_assertions)]
+                    flag: RwFlag::new(),
+
+                    components,
+                    entities: UnsafeCell::new(Vec::new()),
+                    lookup: HashMap::with_capacity(COUNT),
+                    columns: vec![
+                        $(
+                            Column::new::<$gen>()
+                        ),*
+                    ]
+                };
+
+                #[allow(unused)]
+                {
+                    let mut counter = 0;
                     $(
-                        (ComponentId::of::<$gen>(), Column::new::<$gen>())
-                    ),*
-                ])
+                        table.lookup.insert(TypeId::of::<$gen>(), counter);
+                        counter += 1;   
+                    )*
+                }
+
+                table
             }
 
             #[allow(unused_variables)]
-            fn insert_into(self, storage: &mut HashMap<ComponentId, Column>) {
+            fn insert_into(self, storage: &mut Vec<Column>) {
                 #[allow(non_snake_case)]
                 let ($($gen),*) = self;
-                $(
-                    let id = ComponentId::of::<$gen>();
-                    storage
-                        .get_mut(&id)
-                        .expect("Failed to insert component from ComponentBundle")
-                        .push($gen);
-                )*
+
+                #[allow(unused)]
+                {
+                    let mut counter = 0;
+                    $(
+                        storage[counter].push($gen);
+                        counter += 1;
+                    )*
+                }
             }
         }
     }
@@ -41,11 +72,11 @@ macro_rules! impl_bundle {
 
 pub unsafe trait SpawnBundle: 'static {
     /// Returns a list of components in this group.
-    fn components() -> ArchetypeComponents;
+    fn components() -> Box<[TypeId]>;
     /// Creates a new table map to store in the archetype.
-    fn new_table_map() -> HashMap<ComponentId, Column>;
+    fn new_table() -> Table;
     /// Inserts into an existing archetype.
-    fn insert_into(self, storage: &mut HashMap<ComponentId, Column>);
+    fn insert_into(self, storage: &mut Vec<Column>);
 }
 
 

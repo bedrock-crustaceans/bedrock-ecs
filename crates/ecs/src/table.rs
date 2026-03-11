@@ -352,38 +352,31 @@ impl Drop for Column {
     }
 }
 
-/// Iterates over components in a column.
-pub struct ColumnIter<'a, T: 'static> {
-    index: usize,
-    column: &'a Column,
+pub struct ColumnIter<'a, T> {
+    /// Pointer to current component.
+    curr: NonNull<T>,
+    /// Pointer to last component in column.
+    end: NonNull<T>,
     _marker: PhantomData<&'a T>
 }
 
-impl<'a, T: 'static> ColumnIter<'a, T> {
-    pub unsafe fn new(
-        column: &'a Column
-    ) -> ColumnIter<'a, T> {
-        #[cfg(debug_assertions)]
-        column.flag.read_guardless();
-
-        ColumnIter {
-            index: 0,
-            column,
-            _marker: PhantomData
-        }
-    }
-}
-
-impl<'a, T: 'static> Iterator for ColumnIter<'a, T> {
+impl<'a, T> Iterator for ColumnIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {
-        let ptr = self.column.get::<T>(self.index)?;
-        self.index += 1;
+        if self.curr >= self.end {
+            return None
+        }
 
-        Some(unsafe {
-            &*ptr.as_ptr().cast_const()
-        })
+        let item = unsafe {
+            &*self.curr.as_ptr().cast_const()
+        };
+
+        self.curr = unsafe {
+            self.curr.add(1)
+        };
+
+        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -394,46 +387,38 @@ impl<'a, T: 'static> Iterator for ColumnIter<'a, T> {
 
 impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
     fn len(&self) -> usize {
-        self.column.len()
+        let offset = unsafe { self.end.offset_from(self.curr) };
+        offset as usize
     }
 }
 
 impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
 
-#[cfg(debug_assertions)]
-impl<'a, T> Drop for ColumnIter<'a, T> {
-    fn drop(&mut self) {
-        self.column.flag.unlock_guardless();
-    }
+pub struct ColumnIterMut<'a, T> {
+    /// Pointer to current component.
+    curr: NonNull<T>,
+    /// Pointer to last component in column.
+    end: NonNull<T>,
+    _marker: PhantomData<&'a mut T>
 }
 
-/// Iterates over components in an archetype.
-pub struct ColumnIterMut<'a, T: 'static> {
-    index: usize,
-    column: &'a mut Column,
-    _marker: PhantomData<&'a T>
-}
-
-impl<'a, T: 'static> ColumnIterMut<'a, T> {
-    pub unsafe fn new(
-        Column: &'a mut Column
-    ) -> ColumnIterMut<'a, T> {
-        #[cfg(debug_assertions)]
-        Column.flag.write_guardless();
-
-        ColumnIterMut {
-            index: 0,
-            column: Column,
-            _marker: PhantomData
-        }
-    }
-}
-
-impl<'a, T: 'static> Iterator for ColumnIterMut<'a, T> {
+impl<'a, T> Iterator for ColumnIterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<&'a mut T> {
-        todo!()
+        if self.curr >= self.end {
+            return None
+        }
+
+        let item = unsafe {
+            &mut *self.curr.as_ptr()
+        };
+
+        self.curr = unsafe {
+            self.curr.add(1)
+        };
+
+        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -444,53 +429,49 @@ impl<'a, T: 'static> Iterator for ColumnIterMut<'a, T> {
 
 impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
     fn len(&self) -> usize {
-        self.column.len()
+        let offset = unsafe { self.end.offset_from(self.curr) };
+        offset as usize
     }
 }
 
 impl<'a, T> FusedIterator for ColumnIterMut<'a, T> {}
 
-#[cfg(debug_assertions)]
-impl<'a, T> Drop for ColumnIterMut<'a, T> {
-    fn drop(&mut self) {
-        self.column.flag.unlock_guardless();
-    }
-}
-
 #[derive(Debug)]
 pub struct Table {
     #[cfg(debug_assertions)]
-    flag: RwFlag,
+    pub(crate) flag: RwFlag,
 
-    components: ArchetypeComponents,    
+    pub(crate) components: Box<[TypeId]>,    
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
     // an the entity at index 5 in `entities` will have its components stored at index
     // 5 in the `columns` field.
-    entities: UnsafeCell<Vec<EntityId>>,
-    map: HashMap<ComponentId, Column>
+    pub(crate) entities: UnsafeCell<Vec<EntityId>>,
+    pub(crate) lookup: HashMap<TypeId, usize>,
+    pub(crate) columns: Vec<Column>
 }
 
 impl Table {
     pub fn new<G: SpawnBundle>() -> Table {
-        Table {
-            #[cfg(debug_assertions)]
-            flag: RwFlag::new(),
+        G::new_table()
+    }
 
-            components: G::components(),
-            entities: UnsafeCell::new(Vec::new()),
-            map: G::new_table_map()
-        }
+    pub fn components(&self) -> &[TypeId] {
+        &self.components
     }
 
     pub fn insert<G: SpawnBundle>(&mut self, entity: EntityId, components: G) {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.write();
+
         let entities = self.entities.get_mut();
         entities.push(entity);
 
-        components.insert_into(&mut self.map);
+        components.insert_into(&mut self.columns);
     }
 
     pub fn col(&self, id: &ComponentId) -> &Column {
-        self.map.get(&id).expect("Column not found in table")
+        // self.map.get(&id).expect("Column not found in table")
+        todo!()
     }
 
     /// # Safety

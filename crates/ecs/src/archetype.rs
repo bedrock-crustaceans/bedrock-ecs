@@ -1,10 +1,11 @@
 use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::{HashMap, hash_map}, iter::FusedIterator, marker::PhantomData, ptr::NonNull, sync::atomic::Ordering};
 
 use futures::stream::FilterMap;
+use smallvec::SmallVec;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, query::QueryBundle, spawn::SpawnBundle, table::Table, util::{self}};
+use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, query::{CachedTable, QueryBundle}, spawn::SpawnBundle, table::Table, util::{self}};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -26,36 +27,28 @@ impl ArchetypeComponents {
     }
 }
 
-pub struct ArchetypeIter<'a, T> {
-    table_iter: hash_map::Iter<'a, ArchetypeComponents, Table>,
-    curr_table: &'a Table,
+pub struct ArchetypeIter<'a, T: QueryBundle> {
+    /// The current table being iterated over.
+    table: &'a Table,
+    /// The current index
+    index: usize,
     _marker: PhantomData<&'a T>
-
-    // /// Which archetype table we are currently iterating over
-    // table_index: usize,
-    // /// The index within the current archetype table.
-    // col_index: usize,
-    // archetypes: &'a Archetypes,
-    // _marker: PhantomData<&'a T>
 }
 
-impl<'a, T> ArchetypeIter<'a, T> {
-    pub fn new(archetypes: &'a Archetypes) -> Option<ArchetypeIter<'a, T>> {
-        let mut table_iter = archetypes
-            .tables
-            .iter();
-
-        let curr_table = table_iter.next()?.1;        
-        Some(ArchetypeIter {
-            table_iter, curr_table,  _marker: PhantomData
-        })
+impl<'a, T: QueryBundle> ArchetypeIter<'a, T> {
+    pub fn new(table: &'a Table) -> ArchetypeIter<'a, T> {
+        ArchetypeIter {
+            table, 
+            index: 0, 
+            _marker: PhantomData
+        }
     }
 }
 
-impl<'a, T> Iterator for ArchetypeIter<'a, T> {
-    type Item = NonNull<T>;
+impl<'a, T: QueryBundle> Iterator for ArchetypeIter<'a, T> {
+    type Item = T::Output<'a>;
 
-    fn next(&mut self) -> Option<NonNull<T>> {
+    fn next(&mut self) -> Option<T::Output<'a>> {
         todo!()
     }
 }
@@ -63,8 +56,8 @@ impl<'a, T> Iterator for ArchetypeIter<'a, T> {
 #[derive(Default, Debug)]
 pub struct Archetypes {
     generation: u64,
-    tables: HashMap<ArchetypeComponents, Table>,
-    // lookup: HashMap<ArchetypeComponents, ArchetypeId>
+    tables: Vec<Table>,
+    lookup: HashMap<Box<[TypeId]>, usize>
 }
 
 impl Archetypes {
@@ -76,17 +69,37 @@ impl Archetypes {
         self.generation
     }
 
-    pub fn cache_tables(&self, cache: &mut Vec<ArchetypeId>) {
-        todo!()
+    pub fn cache_tables<T: QueryBundle>(&self,  cache: &mut SmallVec<[CachedTable; 8]>) {
+        cache.clear();
+
+        let iter = self.lookup.keys().enumerate().filter_map(|(i, k)| {
+            let cols = T::cache_layout(k);
+
+            // This table contains requested components, cache it.
+            (!cols.is_empty()).then_some(CachedTable {
+                table: i, cols
+            })
+        });
+
+        cache.extend(iter);
     }
 
     pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
+        self.generation += 1;
+        
         let comps = B::components();
-    
-        let table = self.tables.entry(comps.clone())
-            .or_insert_with(|| {
-                Table::new::<B>()
-            });
+
+        // Check whether archetype already exists, otherwise create it
+        let lookup = self.lookup.get(&comps);
+        let table = if let Some(index) = lookup {
+            &mut self.tables[*index]
+        } else {
+            self.lookup.insert(comps, self.tables.len());
+            let table = Table::new::<B>();
+            self.tables.push(table);
+
+            self.tables.last_mut().unwrap()
+        };
 
         table.insert(id, bundle);
     }
@@ -97,7 +110,9 @@ impl Archetypes {
     }
     
     pub fn remove(&mut self, id: &ArchetypeComponents) -> Option<Table> {
-        self.tables.remove(id)
+        self.generation += 1;
+        todo!()
+        // self.tables.remove(id)
     }
 
     // pub fn insert(&mut self, id: EntityId, components: ArchetypeComponents, layout: Layout) {

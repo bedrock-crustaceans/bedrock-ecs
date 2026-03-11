@@ -1,5 +1,7 @@
 use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
+use smallvec::{SmallVec, smallvec};
+
 use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::Param, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
@@ -15,26 +17,24 @@ use crate::graph::{AccessDesc, AccessType};
     note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
 )]
 pub unsafe trait QueryBundle {
-    type Output<'w>;
-    type ElemPtr<'w>;
-    type Iter<'w>: Iterator<Item = Self::ElemPtr<'w>>;
+    /// The item that the query outputs.
+    type Output<'a>;
+    /// The iterators over the columns.
+    type Iter<'a>: Iterator<Item = Self::Output<'a>>;
 
-    fn archetype() -> ArchetypeComponents;
+    fn archetype() -> SmallVec<[TypeId; 4]>;
 
     fn access() -> Vec<AccessDesc>;
 
-    unsafe fn iter<'t>(table: &'t Archetypes) -> Self::Iter<'t>;
-
-    unsafe fn from_ptr<'t>(ptr: Self::ElemPtr<'t>) -> Self::Output<'t>;
+    fn cache_layout(components: &[TypeId]) -> SmallVec<[usize; 4]>;
 }
 
 unsafe impl QueryBundle for Entity<'_> {
     type Output<'w> = Entity<'w>;
-    type ElemPtr<'w> = Entity<'w>;
-    type Iter<'w> = EntityIter<'w>;
+    type Iter<'a> = EntityIter<'a>;
 
-    fn archetype() -> ArchetypeComponents {
-        ArchetypeComponents(Box::new([]))
+    fn archetype() -> SmallVec<[TypeId; 4]> {
+        SmallVec::new()
     }
 
     fn access() -> Vec<AccessDesc> {
@@ -44,22 +44,17 @@ unsafe impl QueryBundle for Entity<'_> {
         }]
     }
 
-    unsafe fn iter(_table: &Archetypes) -> EntityIter {
-        todo!()
-    }
-
-    unsafe fn from_ptr<'t>(ptr: Self::ElemPtr<'t>) -> Self::Output<'t> {
-        ptr
+    fn cache_layout(_components: &[TypeId]) -> SmallVec<[usize; 4]> {
+        SmallVec::new()
     }
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &T {
     type Output<'a> = &'a T;
-    type ElemPtr<'w> = NonNull<T>;
-    type Iter<'w> = ArchetypeIter<'w, T>;
+    type Iter<'a> = ColumnIter<'a, T>;
 
-    fn archetype() -> ArchetypeComponents {
-        ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    fn archetype() -> SmallVec<[TypeId; 4]> {
+        smallvec![TypeId::of::<T>()]
     }
 
     fn access() -> Vec<AccessDesc> {
@@ -69,22 +64,19 @@ unsafe impl<T: Component + Send> QueryBundle for &T {
         }]
     }
 
-    unsafe fn iter(table: &Archetypes) -> ArchetypeIter<'_, T> {
-        todo!()
-    }
-
-    unsafe fn from_ptr<'t>(ptr: NonNull<T>) -> &'t T {
-        unsafe { &*(ptr.as_ptr().cast_const()) }
+    fn cache_layout(components: &[TypeId]) -> SmallVec<[usize; 4]> {
+        components.iter().enumerate().filter_map(|(i, t)| {
+            (t == &TypeId::of::<T>()).then_some(i)
+        }).collect::<SmallVec<[usize; 4]>>()
     }
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &mut T {
     type Output<'a> = &'a mut T;
-    type ElemPtr<'w> = NonNull<T>;
-    type Iter<'w> = ArchetypeIter<'w, T>;
+    type Iter<'a> = ColumnIterMut<'a, T>;
 
-    fn archetype() -> ArchetypeComponents {
-        ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
+    fn archetype() -> SmallVec<[TypeId; 4]> {
+        smallvec![TypeId::of::<T>()]
     }
 
     fn access() -> Vec<AccessDesc> {
@@ -94,12 +86,10 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
         }]
     }
 
-    unsafe fn iter(table: &Archetypes) -> ArchetypeIter<'_, T> {
-        todo!()
-    }
-
-    unsafe fn from_ptr<'w>(ptr: NonNull<T>) -> &'w mut T {
-        unsafe { &mut *ptr.as_ptr() }
+    fn cache_layout(components: &[TypeId]) -> SmallVec<[usize; 4]> {
+        components.iter().enumerate().filter_map(|(i, t)| {
+            (t == &TypeId::of::<T>()).then_some(i)
+        }).collect::<SmallVec<[usize; 4]>>()
     }
 }
 
@@ -198,58 +188,48 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     }
 }
 
-macro_rules! impl_bundle {
-    ($($gen:ident),*) => {
-        #[diagnostic::do_not_recommend]
-        unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
-            type Output<'t> = ($($gen::Output<'t>),*);
-            // type ElemPtr<'t> = ($(NonNull<$gen>),*);
-            type ElemPtr<'t> = &'static ();
-            type Iter<'t> = std::slice::Iter<'static, ()>;
+// macro_rules! impl_bundle {
+//     ($($gen:ident),*) => {
+//         #[diagnostic::do_not_recommend]
+//         unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
+//             type Output<'t> = ($($gen::Output<'t>),*);
+//             type Iter<'t> = JoinedI
 
-            fn archetype() -> ArchetypeComponents {
-                let comps: Box<[ComponentId]> = [$($gen::component_id()),*]
-                    .into_iter().flatten().collect();
+//             fn archetype() -> ArchetypeComponents {
+//                 let comps: Box<[ComponentId]> = [$($gen::component_id()),*]
+//                     .into_iter().flatten().collect();
 
-                ArchetypeComponents(comps)
-            }
+//                 ArchetypeComponents(comps)
+//             }
 
-            fn access() -> Vec<AccessDesc> {
-                vec![$($gen::access()),*]
-            }
+//             fn access() -> Vec<AccessDesc> {
+//                 vec![$($gen::access()),*]
+//             }
+//         }
+//     }
+// }
 
-            unsafe fn iter<'t>(table: &'t Archetypes) -> Self::Iter<'t> {
-                todo!()
-            }
-
-            // unsafe fn from_ptr<'t>(ptr: ($(NonNull<$gen>),*)) -> Self::Output<'t> {
-            //     todo!()
-            // }
-            unsafe fn from_ptr<'t>(ptr: &()) -> Self::Output<'t> {
-                todo!()
-            }
-        }
-    }
-}
-
-impl_bundle!(A, B);
-impl_bundle!(A, B, C);
-impl_bundle!(A, B, C, D);
-impl_bundle!(A, B, C, D, E);
-impl_bundle!(A, B, C, D, E, F);
-impl_bundle!(A, B, C, D, E, F, G);
-impl_bundle!(A, B, C, D, E, F, G, H);
-impl_bundle!(A, B, C, D, E, F, G, H, I);
-impl_bundle!(A, B, C, D, E, F, G, H, I, J);
+// impl_bundle!(A, B);
+// impl_bundle!(A, B, C);
+// impl_bundle!(A, B, C, D);
+// impl_bundle!(A, B, C, D, E);
+// impl_bundle!(A, B, C, D, E, F);
+// impl_bundle!(A, B, C, D, E, F, G);
+// impl_bundle!(A, B, C, D, E, F, G, H);
+// impl_bundle!(A, B, C, D, E, F, G, H, I);
+// impl_bundle!(A, B, C, D, E, F, G, H, I, J);
 
 pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {
     archetypes: &'w Archetypes,
-    plan: &'w QueryPlan<Q, F>,
+    plan: &'w mut QueryPlan<Q, F>,
     _marker: PhantomData<(Q, F)>
 }
 
 impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
-    pub fn new(world: &'w World, state: &'w QueryPlan<Q, F>) -> Query<'w, Q, F> {
+    pub fn new(world: &'w World, state: &'w mut QueryPlan<Q, F>) -> Query<'w, Q, F> {
+        // Update the plan cache
+        state.update(&world.archetypes);
+
         Query {
             archetypes: &world.archetypes,
             plan: state,
@@ -258,10 +238,7 @@ impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
     }
 
     pub fn iter(&self) -> QueryIter<'_, Q, F> {
-        // self.plan.update(self.archetypes);
-
-        todo!()
-        // Q::iter(self)
+        self.plan.execute(self.archetypes)
     }
 }
 
@@ -284,10 +261,17 @@ unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterGroup + 'static> Pa
     fn destroy(_: &mut QueryPlan<Q, F>) {}
 }
 
+#[derive(Debug)]
+pub struct CachedTable {
+    /// The table that contains the components.
+    pub table: usize,
+    /// The columns from this table that contain the components for this query.
+    pub cols: SmallVec<[usize; 4]>
+}
+
 pub struct QueryPlan<Q: QueryBundle, F: FilterGroup> {
     generation: u64,
-    // TODO: This could maybe be a smallvec.
-    cached_tables: Vec<ArchetypeId>,
+    cached_tables: SmallVec<[CachedTable; 8]>,
     _marker: PhantomData<(Q, F)>
 }
 
@@ -295,26 +279,29 @@ impl<Q: QueryBundle, F: FilterGroup> QueryPlan<Q, F> {
     pub fn new() -> QueryPlan<Q, F> {
         QueryPlan {
             generation: u64::MAX,
-            cached_tables: Vec::new(),
+            cached_tables: SmallVec::new(),
             _marker: PhantomData
         }
     }
 
     /// Updates the cache if required.
     pub fn update(&mut self, archetypes: &Archetypes) {
+        println!("{} {}", self.generation, archetypes.generation());
+
         if self.generation != archetypes.generation() {
             self.cached_tables.clear();
-            archetypes.cache_tables(&mut self.cached_tables);
+            archetypes.cache_tables::<Q>(&mut self.cached_tables);
             self.generation = archetypes.generation();
         }
     }
 
     pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> QueryIter<'t, Q, F> {
+        println!("plan is {:?}", self.cached_tables);
+
         QueryIter {
             archetypes,
             tables: self.cached_tables.iter(),
-            column_index: 0,
-            table_index: ArchetypeId(0),
+            columns: todo!(),
             _marker: PhantomData
         }
     }
@@ -322,10 +309,8 @@ impl<Q: QueryBundle, F: FilterGroup> QueryPlan<Q, F> {
 
 pub struct QueryIter<'q, Q: QueryBundle, F: FilterGroup> {
     archetypes: &'q Archetypes,
-    tables: std::slice::Iter<'q, ArchetypeId>,
-
-    table_index: ArchetypeId,
-    column_index: usize,
+    tables: std::slice::Iter<'q, CachedTable>,
+    columns: Q::Iter<'q>,
     _marker: PhantomData<&'q (Q, F)>
 }
 
@@ -335,9 +320,7 @@ impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F
     type IntoIter = QueryIter<'q, Q, F>;
 
     fn into_iter(self) -> Self::IntoIter {
-        todo!("update plan");
-        // self.plan.update();
-        self.plan.execute(self.archetypes)
+        self.iter()
     }
 }
 
@@ -345,7 +328,8 @@ impl<'q, Q: QueryBundle, F: FilterGroup> Iterator for QueryIter<'q, Q, F> {
     type Item = Q::Output<'q>;
 
     fn next(&mut self) -> Option<Q::Output<'q>> {
+        
+
         todo!()
-        // self.iter.as_mut()?.next()
     }
 }
