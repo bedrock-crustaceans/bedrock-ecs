@@ -38,9 +38,9 @@ impl<'t, Q: QueryBundle> Iterator for ZippedColumnIter<'t, Q> {
 )]
 pub unsafe trait QueryBundle {
     /// The item that the query outputs.
-    type Output<'a>;
+    type Output<'a> where Self: 'a;
     /// The iterators over the columns.
-    type Iter<'a>: Iterator<Item = Self::Output<'a>>;
+    type Iter<'a>: Iterator<Item = Self::Output<'a>> where Self: 'a;
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet;
 
@@ -50,8 +50,8 @@ pub unsafe trait QueryBundle {
 }
 
 unsafe impl QueryBundle for Entity<'_> {
-    type Output<'w> = Entity<'w>;
-    type Iter<'a> = EntityIter<'a>;
+    type Output<'w> = Entity<'w> where Self: 'w;
+    type Iter<'a> = EntityIter<'a> where Self: 'a;
 
     fn archetype(_reg: &mut ComponentRegistry) -> BitSet {
         BitSet::new()
@@ -70,8 +70,8 @@ unsafe impl QueryBundle for Entity<'_> {
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &T {
-    type Output<'a> = &'a T;
-    type Iter<'a> = ColumnIter<'a, T>;
+    type Output<'a> = &'a T where Self: 'a;
+    type Iter<'a> = ColumnIter<'a, T> where Self: 'a;
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
         let id = *reg.get_or_assign::<T>();
@@ -98,8 +98,8 @@ unsafe impl<T: Component + Send> QueryBundle for &T {
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &mut T {
-    type Output<'a> = &'a mut T;
-    type Iter<'a> = ColumnIterMut<'a, T>;
+    type Output<'a> = &'a mut T where Self: 'a;
+    type Iter<'a> = ColumnIterMut<'a, T> where Self: 'a;
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
         let id = *reg.get_or_assign::<T>();
@@ -117,47 +117,58 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
     }
 
     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-        smallvec![*lookup.get(&TypeId::of::<T>()).unwrap()]
+        let col = *lookup
+            .get(&TypeId::of::<T>())
+            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+
+        smallvec![col]
     }
 }
 
-// macro_rules! impl_bundle {
-//     ($($gen:ident),*) => {
-//         #[diagnostic::do_not_recommend]
-//         unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
-//             type Output<'t> = ($($gen::Output<'t>),*);
-//             type Iter<'t> = ZippedColumnIter<'t, Self>;
+macro_rules! impl_bundle {
+    ($($gen:ident),*) => {
+        #[diagnostic::do_not_recommend]
+        unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
+            type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
+            type Iter<'t> = ZippedColumnIter<'t, Self> where Self: 't;
 
-//             fn archetype(reg: &mut ComponentRegistry) -> BitSet {
-//                 let mut bitset = BitSet::new();
+            fn archetype(reg: &mut ComponentRegistry) -> BitSet {
+                let mut bitset = BitSet::new();
 
-//                 $(
-//                     let id = reg.get_or_assign(TypeId::of::<$gen::Unref>());
-//                     bitset.set(id);
-//                 )*
+                $(
+                    if !$gen::IS_ENTITY {
+                        let id = $gen::component_id(reg);
+                        bitset.set(*id);    
+                    }
+                )*
 
-//                 bitset
-//             }
+                bitset
+            }
 
-//             fn access() -> Vec<AccessDesc> {
-//                 vec![$($gen::access()),*]
-//             }
+            fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+                smallvec![
+                    $(
+                        $gen::access(reg)
+                    ),*
+                ]
+            }
 
-//             fn cache_layout(components: &BitSet) -> SmallVec<[usize; 4]> {
-//                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
+            fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
+                const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
-//                 let mut cache = SmallVec::with_capacity(COUNT);
-//                 todo!("compare plan bitset with table bitsets");
-//                 // $(
-//                 //     todo!()
-//                 // )*
-//                 cache
-//             }
-//         }
-//     }
-// }
+                let mut cache = SmallVec::with_capacity(COUNT);
+                $(
+                    if !$gen::IS_ENTITY {
+                        cache.push($gen::lookup(lookup));
+                    }
+                )*
+                cache
+            }
+        }
+    }
+}
 
-// impl_bundle!(A, B);
+impl_bundle!(A, B);
 // impl_bundle!(A, B, C);
 // impl_bundle!(A, B, C, D);
 // impl_bundle!(A, B, C, D, E);
@@ -170,21 +181,86 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
 pub unsafe trait ParamRef: Send {
     type Unref: 'static;
     type Output<'w>: 'w;
+
+    const IS_ENTITY: bool;
+
+    fn access(reg: &mut ComponentRegistry) -> AccessDesc;
+    fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
+    fn lookup(map: &HashMap<TypeId, usize>) -> usize;
 }
 
 unsafe impl ParamRef for Entity<'_> {
     type Unref = Entity<'static>;
     type Output<'w> = Entity<'w>;
+
+    const IS_ENTITY: bool = true;
+
+    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Entity,
+            exclusive: false
+        }
+    }
+
+    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+        unreachable!("attempt to lookup component ID of entity");
+    }
+
+    fn lookup(_map: &HashMap<TypeId, usize>) -> usize {
+        unimplemented!("attempt to lookup column index of entity");
+    }
 }
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Unref = T;
     type Output<'w> = &'w T;
+
+    const IS_ENTITY: bool = false;
+
+    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc { 
+            ty: AccessType::Component(reg.get_or_assign::<T>()), 
+            exclusive: false 
+        }
+    }
+
+    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
+        reg.get_or_assign::<T>()
+    }
+
+    fn lookup(map: &HashMap<TypeId, usize>) -> usize {
+        let col = *map
+            .get(&TypeId::of::<T>())
+            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+
+        col
+    }
 }
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Unref = T;
     type Output<'w> = &'w mut T;
+
+    const IS_ENTITY: bool = false;
+
+    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Component(reg.get_or_assign::<T>()),
+            exclusive: true
+        }
+    }
+
+    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
+        reg.get_or_assign::<T>()
+    }
+
+    fn lookup(map: &HashMap<TypeId, usize>) -> usize {
+        let col = *map
+            .get(&TypeId::of::<T>())
+            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+
+        col
+    }
 }
 
 pub struct Query<'w, Q: QueryBundle, F: FilterGroup = ()> {

@@ -122,9 +122,15 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Mass>) {
+fn simple_system(query: Query<&Health>) {
     for component in &query {
         println!("{}", component.0);
+    }
+}
+
+fn second_system(query: Query<(&Health, &Mass)>) {
+    for (health, mass) in &query {
+        println!("health is {health:?}, mass is {mass:?}");
     }
 }
 
@@ -174,7 +180,7 @@ fn stress_test() {
         // .add(Label2, (regen_system, death_system))
         // // Stage 3: The Bottleneck (Collision logic)
         // .add(Label3, collision_system)
-        .add(Label1, simple_system)
+        .add(Label1, (simple_system, second_system))
         .schedule();
 
     world.run(&schedule);
