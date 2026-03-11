@@ -6,7 +6,7 @@ use crate::schedule::ScheduleBuilder;
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
-    pub systems: Systems
+    pub(crate) systems: Systems
 }
 
 impl World {
@@ -23,9 +23,22 @@ impl World {
             world: self
         }
     }
+
+    pub fn entities(&self) -> &Entities {
+        &self.entities
+    }
     
     pub fn run(&mut self, schedule: &Schedule) {
-        todo!()
+        for set in &schedule.sets {
+            println!("Running next set");
+            rayon::scope(|s| {
+                for id in set {
+                    s.spawn(|_| {
+                        schedule.systems.get(id).unwrap().call(&self);
+                    });
+                }
+            });
+        }
     }
 }
 

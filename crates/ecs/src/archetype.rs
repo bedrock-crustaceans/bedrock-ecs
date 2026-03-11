@@ -1,8 +1,10 @@
-use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull, sync::atomic::Ordering};
+use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::{HashMap, hash_map}, iter::FusedIterator, marker::PhantomData, ptr::NonNull, sync::atomic::Ordering};
+
+use futures::stream::FilterMap;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, spawn::SpawnBundle, table::Table, util::{self}};
+use crate::{component::{Component, ComponentId}, entity::{EntityId, EntityMeta}, query::QueryBundle, spawn::SpawnBundle, table::Table, util::{self}};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -17,6 +19,47 @@ impl From<usize> for ArchetypeId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ArchetypeComponents(pub(crate) Box<[ComponentId]>);
 
+impl ArchetypeComponents {
+    /// Whether `other` is a subset of `self`.
+    pub fn is_subset(&self, other: &ArchetypeComponents) -> bool {
+        other.0.iter().all(|o| self.0.contains(o))
+    }
+}
+
+pub struct ArchetypeIter<'a, T> {
+    table_iter: hash_map::Iter<'a, ArchetypeComponents, Table>,
+    curr_table: &'a Table,
+    _marker: PhantomData<&'a T>
+
+    // /// Which archetype table we are currently iterating over
+    // table_index: usize,
+    // /// The index within the current archetype table.
+    // col_index: usize,
+    // archetypes: &'a Archetypes,
+    // _marker: PhantomData<&'a T>
+}
+
+impl<'a, T> ArchetypeIter<'a, T> {
+    pub fn new(archetypes: &'a Archetypes) -> Option<ArchetypeIter<'a, T>> {
+        let mut table_iter = archetypes
+            .tables
+            .iter();
+
+        let curr_table = table_iter.next()?.1;        
+        Some(ArchetypeIter {
+            table_iter, curr_table,  _marker: PhantomData
+        })
+    }
+}
+
+impl<'a, T> Iterator for ArchetypeIter<'a, T> {
+    type Item = NonNull<T>;
+
+    fn next(&mut self) -> Option<NonNull<T>> {
+        todo!()
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct Archetypes {
     tables: HashMap<ArchetypeComponents, Table>,
@@ -28,19 +71,19 @@ impl Archetypes {
         Archetypes::default()
     }
 
-    pub fn insert<G: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: G) {
-        let comps = G::components();
+    pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
+        let comps = B::components();
     
         let table = self.tables.entry(comps.clone())
             .or_insert_with(|| {
-                Table::new::<G>()
+                Table::new::<B>()
             });
 
         table.insert(id, bundle);
     }
 
-    pub fn get(&self, id: &ArchetypeComponents) -> Option<&Table> {
-        self.tables.get(id)
+    pub fn query<B: QueryBundle>(&self) -> Option<B::Iter<'_>> {
+        // self.tables.get(id)
     }
     
     pub fn remove(&mut self, id: &ArchetypeComponents) -> Option<Table> {

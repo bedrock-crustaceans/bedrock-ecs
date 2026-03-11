@@ -19,7 +19,9 @@ type DropFn = unsafe fn(ptr: *mut u8, len: usize);
 unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
     let ptr = ptr as *mut T;
     for i in 0..len {
-        std::ptr::drop_in_place(ptr.add(i));
+        unsafe {
+            std::ptr::drop_in_place(ptr.add(i));
+        }
     }
 }
 

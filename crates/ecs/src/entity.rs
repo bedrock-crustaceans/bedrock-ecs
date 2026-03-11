@@ -63,7 +63,7 @@ impl<'w> EntityMut<'w> {
 }
 
 #[derive(Default)]
-pub(crate) struct Entities {
+pub struct Entities {
     generation: GenerationId,
     indices: BitVec
 }
@@ -71,6 +71,10 @@ pub(crate) struct Entities {
 impl Entities {
     pub fn new() -> Entities {
         Entities::default()
+    }
+
+    pub fn count(&self) -> usize {
+        self.indices.count_ones()
     }
 
     pub fn alloc(&mut self) -> EntityId {

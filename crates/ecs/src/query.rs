@@ -1,8 +1,6 @@
 use std::{any::TypeId, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
-use smallvec::{SmallVec, smallvec};
-
-use crate::{archetype::{ArchetypeComponents, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
+use crate::{archetype::{ArchetypeComponents, ArchetypeIter, Archetypes}, component::{Component, ComponentId}, entity::{Entity, EntityIter}, filter::FilterGroup, param::Param, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
 /// # Safety:
@@ -18,20 +16,21 @@ use crate::graph::{AccessDesc, AccessType};
 )]
 pub unsafe trait QueryBundle {
     type Output<'w>;
-    type Iter<'w>: Iterator<Item = Self::Output<'w>>;
+    type ElemPtr<'w>;
+    type Iter<'w>: Iterator<Item = Self::ElemPtr<'w>>;
 
     fn archetype() -> ArchetypeComponents;
 
     fn access() -> Vec<AccessDesc>;
 
-    unsafe fn iter<'t>(table: &'t Table) -> Self::Iter<'t>;
+    unsafe fn iter<'t>(table: &'t Archetypes) -> Self::Iter<'t>;
 
-    unsafe fn from_ptr<'t>(ptr: NonNull<u8>) -> Self::Output<'t>;
-
+    unsafe fn from_ptr<'t>(ptr: Self::ElemPtr<'t>) -> Self::Output<'t>;
 }
 
 unsafe impl QueryBundle for Entity<'_> {
-    type Output<'a> = Entity<'a>;
+    type Output<'w> = Entity<'w>;
+    type ElemPtr<'w> = Entity<'w>;
     type Iter<'w> = EntityIter<'w>;
 
     fn archetype() -> ArchetypeComponents {
@@ -45,18 +44,19 @@ unsafe impl QueryBundle for Entity<'_> {
         }]
     }
 
-    unsafe fn iter(_table: &Table) -> EntityIter {
+    unsafe fn iter(_table: &Archetypes) -> EntityIter {
         todo!()
     }
 
-    unsafe fn from_ptr<'w>(_ptr: NonNull<u8>) -> Entity<'w> {
-        panic!("Cannot instantiate Entity from pointer");
+    unsafe fn from_ptr<'t>(ptr: Self::ElemPtr<'t>) -> Self::Output<'t> {
+        ptr
     }
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &T {
     type Output<'a> = &'a T;
-    type Iter<'w> = ColumnIter<'w, T>;
+    type ElemPtr<'w> = NonNull<T>;
+    type Iter<'w> = ArchetypeIter<'w, T>;
 
     fn archetype() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
@@ -69,20 +69,19 @@ unsafe impl<T: Component + Send> QueryBundle for &T {
         }]
     }
 
-    unsafe fn iter(table: &Table) -> ColumnIter<T> {
-        let id = ComponentId::of::<T>();
-        let col = table.col(&id);
-        ColumnIter::new(col)
+    unsafe fn iter(table: &Archetypes) -> ArchetypeIter<'_, T> {
+        todo!()
     }
 
-    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w T {
-        unsafe { &*(ptr.as_ptr() as *const T) }
+    unsafe fn from_ptr<'t>(ptr: NonNull<T>) -> &'t T {
+        unsafe { &*(ptr.as_ptr().cast_const()) }
     }
 }
 
 unsafe impl<T: Component + Send> QueryBundle for &mut T {
     type Output<'a> = &'a mut T;
-    type Iter<'w> = ColumnIterMut<'w, T>;
+    type ElemPtr<'w> = NonNull<T>;
+    type Iter<'w> = ArchetypeIter<'w, T>;
 
     fn archetype() -> ArchetypeComponents {
         ArchetypeComponents(Box::new([ComponentId::of::<T>()]))
@@ -95,12 +94,12 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
         }]
     }
 
-    unsafe fn iter(table: &Table) -> ColumnIterMut<T> {
+    unsafe fn iter(table: &Archetypes) -> ArchetypeIter<'_, T> {
         todo!()
     }
 
-    unsafe fn from_ptr<'w>(ptr: NonNull<u8>) -> &'w mut T {
-        unsafe { &mut *(ptr.as_ptr() as *mut T) }
+    unsafe fn from_ptr<'w>(ptr: NonNull<T>) -> &'w mut T {
+        unsafe { &mut *ptr.as_ptr() }
     }
 }
 
@@ -204,7 +203,8 @@ macro_rules! impl_bundle {
         #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
             type Output<'t> = ($($gen::Output<'t>),*);
-            type Iter<'t> = JoinedIter<'t, ($($gen::Output<'t>),*)>;
+            type ElemPtr<'t> = ($(NonNull<$gen>),*);
+            type Iter<'t> = ArchetypeIter<'t, ($($gen::Output<'t>),*)>;
 
             fn archetype() -> ArchetypeComponents {
                 let comps: Box<[ComponentId]> = [$($gen::component_id()),*]
@@ -217,11 +217,11 @@ macro_rules! impl_bundle {
                 vec![$($gen::access()),*]
             }
 
-            unsafe fn iter<'t>(table: &'t Table) -> Self::Iter<'t> {
+            unsafe fn iter<'t>(table: &'t Archetypes) -> Self::Iter<'t> {
                 todo!()
             }
 
-            unsafe fn from_ptr<'t>(ptr: NonNull<u8>) -> Self::Output<'t> {
+            unsafe fn from_ptr<'t>(ptr: ($(NonNull<$gen>),*)) -> Self::Output<'t> {
                 todo!()
             }
         }
@@ -254,7 +254,8 @@ impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
     }
 
     pub fn iter(&self) -> QueryIter<'_, 'w, Q, F> {
-        QueryIter::from(self)
+        todo!()
+        // Q::iter(self)
     }
 }
 
@@ -300,17 +301,11 @@ impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F
 
 impl<'q, 'w, Q: QueryBundle, F: FilterGroup> From<&'q Query<'w, Q, F>> for QueryIter<'q, 'w, Q, F> {
     fn from(query: &'q Query<'w, Q, F>) -> QueryIter<'q, 'w, Q, F> {
-        let archetype = query.archetypes.get(&query.state.archetype);
-        let iter = archetype.map(|a| {
-            unsafe {
-                Q::iter(a)
-            }
-        });
-
-        QueryIter {
-            iter,
-            _marker: PhantomData
-        }
+        todo!()
+        // QueryIter {
+        //     archetypes,
+        //     _marker: PhantomData
+        // }
     }
 }
 

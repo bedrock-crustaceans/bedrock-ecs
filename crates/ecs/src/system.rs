@@ -2,10 +2,10 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
 use std::any::TypeId;
-use crate::{archetype::Archetypes, entity::Entities, param::{Param, ParamBundle}, sealed::Sealer, world::World};
+use crate::{param::{Param, ParamBundle}, sealed::Sealer, world::World};
 use crate::graph::AccessDesc;
 
-pub trait System {
+pub trait System: Sync {
     /// This function takes a self parameter to make the `System` trait dyn-compatible.
     fn access(&self) -> Vec<AccessDesc>;
     /// Attempts to determine the name of this system.
@@ -13,7 +13,7 @@ pub trait System {
     fn call(&self, world: &World);
 }
 
-pub trait ParametrizedSystem<G: ParamBundle>: Sized {
+pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
     fn into_container(self, id: usize) -> FnContainer<G, Self> {
         FnContainer {
             #[cfg(debug_assertions)]
@@ -36,6 +36,16 @@ pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     pub state: UnsafeCell<P::State>,
     pub _marker: PhantomData<P>
 }
+
+unsafe impl<P, F> Send for FnContainer<P, F> 
+where
+    P: ParamBundle,
+    F: ParametrizedSystem<P> {}
+
+unsafe impl<P, F> Sync for FnContainer<P, F> 
+where
+    P: ParamBundle,
+    F: ParametrizedSystem<P> {}
 
 #[derive(Default)]
 pub struct Systems {
@@ -106,14 +116,14 @@ impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContain
     }
 }
 
-impl<F: Fn(P::Output<'_>), P: Param> ParametrizedSystem<P> for F {
+impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     fn call(&self, world: &World, state: &mut P::State) {
         let p = P::fetch::<Sealer>(world, state);
         self(p);
     }
 }
 
-impl<F: Fn(P1::Output<'_>, P2::Output<'_>), P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
+impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
     fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
