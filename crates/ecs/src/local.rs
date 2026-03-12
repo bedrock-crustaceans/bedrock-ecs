@@ -19,8 +19,6 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
 
     fn init(_world: &mut World) -> LocalState<T> { LocalState(T::default())  }
 
-    fn destroy(_state: &mut LocalState<T>) {}
-
     fn fetch<'w, S: Sealed>(_world: &'w World, state: &'w mut LocalState<T>) -> Local<'w, T> {
         Local(&mut state.0)
     }

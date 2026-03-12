@@ -126,57 +126,72 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
 }
 
 macro_rules! impl_bundle {
-    ($($gen:ident),*) => {
-        #[diagnostic::do_not_recommend]
-        unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
-            type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-            type Iter<'t> = ZippedColumnIter<'t, Self> where Self: 't;
-
-            fn archetype(reg: &mut ComponentRegistry) -> BitSet {
-                let mut bitset = BitSet::new();
-
-                $(
-                    if !$gen::IS_ENTITY {
-                        let id = $gen::component_id(reg);
-                        bitset.set(*id);    
-                    }
-                )*
-
-                bitset
+    ($count:expr, $($gen:ident),*) => {
+        paste::paste! {
+            pub struct [< ZippedIterator $count >]<'t, $($gen),*> {
+                index: usize,
+                _marker: PhantomData<&'t ($($gen),*)>
             }
 
-            fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-                smallvec![
+            impl<'t, $($gen: ParamRef + Send),*> Iterator for [< ZippedIterator $count >]<'t, $($gen),*> {
+                type Item = <($($gen),*) as QueryBundle>::Output<'t>;
+
+                fn next(&mut self) -> Option<Self::Item> {
+                    todo!()
+                }
+            }
+
+            #[diagnostic::do_not_recommend]
+            unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
+                type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
+                type Iter<'t> = [< ZippedIterator $count >]<'t, $($gen),*> where Self: 't;
+
+                fn archetype(reg: &mut ComponentRegistry) -> BitSet {
+                    let mut bitset = BitSet::new();
+
                     $(
-                        $gen::access(reg)
-                    ),*
-                ]
-            }
+                        if !$gen::IS_ENTITY {
+                            let id = $gen::component_id(reg);
+                            bitset.set(*id);    
+                        }
+                    )*
 
-            fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-                const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
+                    bitset
+                }
 
-                let mut cache = SmallVec::with_capacity(COUNT);
-                $(
-                    if !$gen::IS_ENTITY {
-                        cache.push($gen::lookup(lookup));
-                    }
-                )*
-                cache
+                fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+                    smallvec![
+                        $(
+                            $gen::access(reg)
+                        ),*
+                    ]
+                }
+
+                fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
+                    const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
+
+                    let mut cache = SmallVec::with_capacity(COUNT);
+                    $(
+                        if !$gen::IS_ENTITY {
+                            cache.push($gen::lookup(lookup));
+                        }
+                    )*
+                    cache
+                }
             }
         }
     }
 }
 
-impl_bundle!(A, B);
-// impl_bundle!(A, B, C);
-// impl_bundle!(A, B, C, D);
-// impl_bundle!(A, B, C, D, E);
-// impl_bundle!(A, B, C, D, E, F);
-// impl_bundle!(A, B, C, D, E, F, G);
-// impl_bundle!(A, B, C, D, E, F, G, H);
-// impl_bundle!(A, B, C, D, E, F, G, H, I);
-// impl_bundle!(A, B, C, D, E, F, G, H, I, J);
+impl_bundle!(2, A, B);
+impl_bundle!(3, A, B, C);
+impl_bundle!(4, A, B, C, D);
+impl_bundle!(5, A, B, C, D, E);
+impl_bundle!(6, A, B, C, D, E, F);
+impl_bundle!(7, A, B, C, D, E, F, G);
+impl_bundle!(8, A, B, C, D, E, F, G, H);
+impl_bundle!(9, A, B, C, D, E, F, G, H, I);
+impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
 
 pub unsafe trait ParamRef: Send {
     type Unref: 'static;
@@ -281,7 +296,7 @@ impl<'w, Q: QueryBundle, F: FilterGroup> Query<'w, Q, F> {
         }
     }
 
-    pub fn iter(&self) -> QueryIter<'_, Q, F> {
+    pub fn iter(&self) -> Q::Iter<'_> {
         self.plan.execute(self.archetypes)
     }
 }
@@ -301,8 +316,6 @@ unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterGroup + 'static> Pa
     fn init(world: &mut World) -> QueryCache<Q, F> {
         QueryCache::new(&mut world.archetypes)
     }
-    
-    fn destroy(_: &mut QueryCache<Q, F>) {}
 }
 
 #[derive(Debug)]
@@ -344,7 +357,7 @@ impl<Q: QueryBundle, F: FilterGroup> QueryCache<Q, F> {
         }
     }
 
-    pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> QueryIter<'t, Q, F> {
+    pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> Q::Iter<'t> {
         println!("plan is {:?}", self.cached_tables);
 
         todo!()
@@ -370,7 +383,7 @@ pub struct QueryIter<'q, Q: QueryBundle, F: FilterGroup> {
 #[diagnostic::do_not_recommend]
 impl<'q, 'w, Q: QueryBundle, F: FilterGroup> IntoIterator for &'q Query<'w, Q, F> {
     type Item = Q::Output<'q>;
-    type IntoIter = QueryIter<'q, Q, F>;
+    type IntoIter = Q::Iter<'q>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()

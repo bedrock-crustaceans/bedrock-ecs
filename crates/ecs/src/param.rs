@@ -22,8 +22,6 @@ pub unsafe trait Param {
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
     fn init(world: &mut World) -> Self::State;
-
-    fn destroy(state: &mut Self::State);
 }
 
 pub unsafe trait ParamBundle {
@@ -44,7 +42,6 @@ unsafe impl Param for () {
     fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut Self::State) -> Self::Output<'w> {}
 
     fn init(_world: &mut World) {}
-    fn destroy(_state: &mut Self::State) {}
 }
 
 macro_rules! impl_bundle {
