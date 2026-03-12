@@ -122,9 +122,9 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<(Entity, &Health)>) {
+fn simple_system(query: Query<&Health>) {
     for component in &query {
-        println!("{:?}", component.1);
+        println!("{:?}", component.0);
     }
 }
 
