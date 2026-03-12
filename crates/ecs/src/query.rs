@@ -1,5 +1,7 @@
 use std::{any::TypeId, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
-
+use std::ops::Add;
+use generic_array::{ArrayLength, GenericArray};
+use generic_array::typenum::Unsigned;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity, EntityIter}, filter::FilterBundle, param::{self, Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
@@ -17,6 +19,7 @@ use crate::graph::{AccessDesc, AccessType};
     note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
 )]
 pub unsafe trait QueryBundle {
+    type AccessCount: ArrayLength + Add;
     /// The item that the query outputs.
     type Output<'a> where Self: 'a;
     /// The iterators over the columns.
@@ -27,92 +30,10 @@ pub unsafe trait QueryBundle {
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet;
 
-    fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
+    fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]>;
+    fn cache_layout(lookup: &HashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount>;
 }
-
-// unsafe impl QueryBundle for Entity<'_> {
-//     type Output<'w> = Entity<'w> where Self: 'w;
-//     type Iter<'a> = EntityIter<'a> where Self: 'a;
-
-//     const COUNT: usize = 1;
-
-//     fn archetype(_reg: &mut ComponentRegistry) -> BitSet {
-//         BitSet::new()
-//     }
-
-//     fn access(_reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-//         smallvec![AccessDesc {
-//             ty: AccessType::Entity,
-//             exclusive: true
-//         }]
-//     }
-
-//     fn cache_layout(_lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-//         SmallVec::new()
-//     }
-// }
-
-// unsafe impl<T: Component + Send> QueryBundle for &T {
-//     type Output<'a> = &'a T where Self: 'a;
-//     type Iter<'a> = ColumnIter<'a, T> where Self: 'a;
-
-//     const COUNT: usize = 1;
-
-//     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
-//         let id = *reg.get_or_assign::<T>();
-//         let mut bitset = BitSet::with_capacity(id / 64);
-//         bitset.set(id);
-//         bitset
-//     }
-
-//     fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-//         let id = reg.get_or_assign::<T>();
-//         smallvec![AccessDesc {
-//             ty: AccessType::Component(id),
-//             exclusive: false
-//         }]
-//     }
-
-//     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-//         let col = *lookup
-//             .get(&TypeId::of::<T>())
-//             .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
-
-//         smallvec![col]
-//     }
-// }
-
-// unsafe impl<T: Component + Send> QueryBundle for &mut T {
-//     type Output<'a> = &'a mut T where Self: 'a;
-//     type Iter<'a> = ColumnIterMut<'a, T> where Self: 'a;
-
-//     const COUNT: usize = 1;
-
-//     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
-//         let id = *reg.get_or_assign::<T>();
-//         let mut bitset = BitSet::with_capacity(id / 64);
-//         bitset.set(id);
-//         bitset
-//     }
-
-//     fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-//         let id = reg.get_or_assign::<T>();
-//         smallvec![AccessDesc {
-//             ty: AccessType::Component(id),
-//             exclusive: true
-//         }]
-//     }
-
-//     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-//         let col = *lookup
-//             .get(&TypeId::of::<T>())
-//             .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
-
-//         smallvec![col]
-//     }
-// }
 
 pub trait QueryIterable<'t>: Sized {
     fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self;
@@ -175,6 +96,7 @@ macro_rules! impl_bundle {
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
+                type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
                 type Iter<'t> = [< IteratorBundle $count >]<'t, $($gen),*> where Self: 't;
 
@@ -193,24 +115,24 @@ macro_rules! impl_bundle {
                     bitset
                 }
 
-                fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-                    smallvec![
-                        $(
-                            $gen::access(reg)
-                        ),*
-                    ]
+                fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount> {
+                    GenericArray::from(
+                        ($(
+                           $gen::access(reg),
+                        )*)
+                    )
                 }
 
-                fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; 4]> {
-                    const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
-
-                    let mut cache = SmallVec::with_capacity(COUNT);
-                    $(
-                        if !$gen::IS_ENTITY {
-                            cache.push($gen::lookup(lookup));
-                        }
-                    )*
-                    cache
+                fn cache_layout(lookup: &HashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount> {
+                    GenericArray::from(
+                        ($(
+                            (if $gen::IS_ENTITY {
+                                usize::MAX
+                            } else {
+                                $gen::lookup(lookup)
+                            }),
+                        )*)
+                    )
                 }
             }
         }
@@ -354,10 +276,11 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
 }
 
 unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query<'placeholder, Q, F> {
+    type AccessCount = Q::AccessCount;
     type State = QueryCache<Q, F>;
     type Output<'w> = Query<'w, Q, F>;
 
-    fn access(world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
         Q::access(&mut world.archetypes.registry)
     }
 

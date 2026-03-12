@@ -13,7 +13,7 @@ pub enum AccessType {
     Entity,
     World,
     Component(ComponentId),
-    Resource(TypeId),
+    Resource(TypeId)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

@@ -2,6 +2,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
 use std::any::TypeId;
+use generic_array::GenericArray;
 use smallvec::SmallVec;
 
 use crate::{param::{Param, ParamBundle}, sealed::Sealer, world::World};
@@ -14,10 +15,10 @@ pub trait System: Sync {
     fn call(&self, world: &World);
 }
 
-pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
-    fn into_container(self, world: &mut World, id: usize) -> FnContainer<G, Self> {
-        let access = G::access(world);
-        let state = G::init(world);
+pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
+    fn into_container(self, world: &mut World, id: usize) -> FnContainer<P, Self> {
+        let access = P::access(world);
+        let state = P::init(world);
 
         FnContainer {
             #[cfg(debug_assertions)]
@@ -29,7 +30,7 @@ pub trait ParametrizedSystem<G: ParamBundle>: Sized + Sync {
         }
     }
 
-    fn call(&self, world: &World, state: &mut G::State);
+    fn call(&self, world: &World, state: &mut P::State);
 }
 
 pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
@@ -37,7 +38,7 @@ pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     pub counter: AtomicUsize,
     pub id: usize,
     pub system: F,
-    pub access: SmallVec<[AccessDesc; 8]>,
+    pub access: GenericArray<AccessDesc, P::AccessCount>,
     pub state: UnsafeCell<P::State>,
 }
 
@@ -90,13 +91,16 @@ where
     }
 }
 
-impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F> {
-    fn access(&self) -> &[AccessDesc] {
-        &self.access
-    }
-
+impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F>
+where
+    (P1, P2): ParamBundle
+{
     fn name(&self) -> String {
         todo!()
+    }
+
+    fn access(&self) -> &[AccessDesc] {
+        &self.access
     }
     
     fn call(&self, world: &World) {
@@ -124,7 +128,11 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     }
 }
 
-impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F {
+impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F
+where
+    (P1, P2): ParamBundle<State = (P1::State, P2::State)>
+{
+
     fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
@@ -185,6 +193,7 @@ impl<F, P1, P2> IntoSystem<(P1, P2)> for F
 where
     P1: Param + 'static,
     P2: Param + 'static,
+    (P1, P2): ParamBundle,
     F: Fn(P1, P2) + 'static,
     F: ParametrizedSystem<(P1, P2)>
 {

@@ -86,10 +86,11 @@ impl Archetypes {
                 let table = &self.tables[v];
                 let cols = Q::cache_layout(&table.lookup);
 
-                return Some(CachedTable {
-                    table: v,
-                    cols
-                })
+                todo!()
+                // return Some(CachedTable {
+                //     table: v,
+                //     cols
+                // })
             }            
 
             None
