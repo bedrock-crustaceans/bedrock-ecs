@@ -98,6 +98,42 @@ impl Column {
         self.layout.size()
     }
 
+    pub fn iter<T: 'static>(&self) -> ColumnIter<'_, T> {
+        assert_eq!(TypeId::of::<T>(), self.ty, "attempt to create column iter with wrong type");
+
+        if let Some(start_ptr) = self.data {
+            ColumnIter {
+                curr: Some(start_ptr.cast::<T>()),
+                remaining: self.len,
+                _marker: PhantomData
+            }
+        } else {
+            ColumnIter {
+                curr: None,
+                remaining: 0,
+                _marker: PhantomData
+            }
+        }
+    }
+
+    pub fn iter_mut<T: 'static>(&self) -> ColumnIterMut<'_, T> {
+        assert_eq!(TypeId::of::<T>(), self.ty, "attempt to create column iter with wrong type");
+
+        if let Some(start_ptr) = self.data {
+            ColumnIterMut {
+                curr: Some(start_ptr.cast::<T>()),
+                remaining: self.len,
+                _marker: PhantomData
+            }
+        } else {
+            ColumnIterMut {
+                curr: None,
+                remaining: 0,
+                _marker: PhantomData
+            }
+        }
+    }
+
     /// Reserves capacity for `n` additional entries.
     pub fn reserve(&mut self, n: usize) {
         assert_ne!(self.layout.size(), 0, "Column::reserve should not be called for ZSTs");
@@ -354,9 +390,9 @@ impl Drop for Column {
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
-    curr: NonNull<T>,
-    /// Pointer to last component in column.
-    end: NonNull<T>,
+    curr: Option<NonNull<T>>,
+    /// Remaining elements
+    remaining: usize,
     _marker: PhantomData<&'a T>
 }
 
@@ -364,19 +400,21 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {
-        if self.curr >= self.end {
+        if self.remaining == 0 && self.curr.is_none() {
             return None
         }
 
+        let ptr = self.curr.as_mut().unwrap();
         let item = unsafe {
-            &*self.curr.as_ptr().cast_const()
+            &*ptr.as_ptr().cast_const()
         };
 
-        self.curr = unsafe {
-            self.curr.add(1)
+        self.remaining -= 1;
+        *ptr = unsafe {
+            ptr.add(1)
         };
 
-        Some(item)
+        Some(item)   
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -387,8 +425,7 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
 
 impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
     fn len(&self) -> usize {
-        let offset = unsafe { self.end.offset_from(self.curr) };
-        offset as usize
+        self.remaining
     }
 }
 
@@ -396,9 +433,9 @@ impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
 
 pub struct ColumnIterMut<'a, T> {
     /// Pointer to current component.
-    curr: NonNull<T>,
-    /// Pointer to last component in column.
-    end: NonNull<T>,
+    curr: Option<NonNull<T>>,
+    /// Remaining elements
+    remaining: usize,
     _marker: PhantomData<&'a mut T>
 }
 
@@ -406,19 +443,21 @@ impl<'a, T> Iterator for ColumnIterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<&'a mut T> {
-        if self.curr >= self.end {
+        if self.remaining == 0 && self.curr.is_none() {
             return None
         }
 
+        let ptr = self.curr.as_mut().unwrap();
         let item = unsafe {
-            &mut *self.curr.as_ptr()
+            &mut *ptr.as_ptr()
         };
 
-        self.curr = unsafe {
-            self.curr.add(1)
+        self.remaining -= 1;
+        *ptr = unsafe {
+            ptr.add(1)
         };
 
-        Some(item)
+        Some(item)   
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -429,8 +468,7 @@ impl<'a, T> Iterator for ColumnIterMut<'a, T> {
 
 impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
     fn len(&self) -> usize {
-        let offset = unsafe { self.end.offset_from(self.curr) };
-        offset as usize
+        self.remaining
     }
 }
 
@@ -470,9 +508,14 @@ impl Table {
         components.insert_into(&mut self.columns);
     }
 
-    pub fn col(&self, id: &ComponentId) -> &Column {
-        // self.map.get(&id).expect("Column not found in table")
-        todo!()
+    pub fn iter<T: 'static>(&self, col: usize) -> ColumnIter<'_, T> {
+        let col = &self.columns[col];
+        col.iter::<T>()
+    }
+
+    pub fn iter_mut<T: 'static>(&self, col: usize) -> ColumnIterMut<'_, T> {
+        let col = &self.columns[col];
+        col.iter_mut::<T>()
     }
 
     /// # Safety

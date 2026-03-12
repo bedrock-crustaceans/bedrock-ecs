@@ -127,6 +127,7 @@ impl<'t> QueryIterable<'t> for EntityIter<'t> {
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
+            #[allow(unused_parens)]
             pub struct [< IteratorBundle $count >]<'t, $($gen: ParamRef + Send),*> {
                 archetypes: &'t Archetypes,
                 cache: std::slice::Iter<'t, CachedTable>,
@@ -136,7 +137,16 @@ macro_rules! impl_bundle {
 
             impl<'t, $($gen: ParamRef + Send),*> QueryIterable<'t> for [< IteratorBundle $count >]<'t, $($gen),*> {
                 fn new(archetypes: &'t Archetypes, cache: &'t [CachedTable]) -> Self {
-                    todo!()
+                    let iters = ($(
+                        $gen::iter()
+                    ),*);
+
+                    Self {
+                        archetypes,
+                        cache: cache.iter(),
+                        iters,
+                        _marker: PhantomData
+                    }
                 }
             }
 
@@ -146,6 +156,7 @@ macro_rules! impl_bundle {
             //     }
             // }
 
+            #[allow(unused_parens)]
             impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
@@ -161,6 +172,7 @@ macro_rules! impl_bundle {
 
             impl<'t, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, $($gen),*> {}
 
+            #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
@@ -226,6 +238,7 @@ pub unsafe trait ParamRef: Send {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc;
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
     fn lookup(map: &HashMap<TypeId, usize>) -> usize;
+    fn iter<'t>() -> Self::Iter<'t>;
 }
 
 unsafe impl ParamRef for Entity<'_> {
@@ -248,6 +261,10 @@ unsafe impl ParamRef for Entity<'_> {
 
     fn lookup(_map: &HashMap<TypeId, usize>) -> usize {
         unimplemented!("attempt to lookup column index of entity");
+    }
+
+    fn iter<'t>() -> EntityIter<'t> {
+        todo!()
     }
 }
 
@@ -276,6 +293,10 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
 
         col
     }
+
+    fn iter<'t>() -> ColumnIter<'t, T> {
+        todo!()
+    }
 }
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
@@ -302,6 +323,10 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
             .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
 
         col
+    }
+
+    fn iter<'t>() -> ColumnIterMut<'t, T> {
+        todo!()
     }
 }
 
