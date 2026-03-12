@@ -5,26 +5,6 @@ use smallvec::{SmallVec, smallvec};
 use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity, EntityIter}, filter::FilterGroup, param::{self, Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
-// pub trait TableIterator: Sized {
-//     fn from_table<'t>(table: &'t Table) -> Self;
-// }
-
-pub struct ZippedColumnIter<'t, Q: QueryBundle> {
-    table: &'t Table,
-    index: usize,
-    _marker: PhantomData<&'t Q>
-}
-
-impl<'t, Q: QueryBundle> Iterator for ZippedColumnIter<'t, Q> {
-    type Item = Q::Output<'t>;
-
-    fn next(&mut self) -> Option<Q::Output<'t>> {
-
-        self.index += 1;
-        todo!()
-    }
-}
-
 /// # Safety:
 ///
 /// The `access` method must correctly return the types this query uses.
@@ -40,7 +20,10 @@ pub unsafe trait QueryBundle {
     /// The item that the query outputs.
     type Output<'a> where Self: 'a;
     /// The iterators over the columns.
-    type Iter<'a>: Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: QueryIterable<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+
+    /// The amount of items in this bundle.
+    const COUNT: usize;
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet;
 
@@ -52,6 +35,8 @@ pub unsafe trait QueryBundle {
 unsafe impl QueryBundle for Entity<'_> {
     type Output<'w> = Entity<'w> where Self: 'w;
     type Iter<'a> = EntityIter<'a> where Self: 'a;
+
+    const COUNT: usize = 1;
 
     fn archetype(_reg: &mut ComponentRegistry) -> BitSet {
         BitSet::new()
@@ -72,6 +57,8 @@ unsafe impl QueryBundle for Entity<'_> {
 unsafe impl<T: Component + Send> QueryBundle for &T {
     type Output<'a> = &'a T where Self: 'a;
     type Iter<'a> = ColumnIter<'a, T> where Self: 'a;
+
+    const COUNT: usize = 1;
 
     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
         let id = *reg.get_or_assign::<T>();
@@ -101,6 +88,8 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
     type Output<'a> = &'a mut T where Self: 'a;
     type Iter<'a> = ColumnIterMut<'a, T> where Self: 'a;
 
+    const COUNT: usize = 1;
+
     fn archetype(reg: &mut ComponentRegistry) -> BitSet {
         let id = *reg.get_or_assign::<T>();
         let mut bitset = BitSet::with_capacity(id / 64);
@@ -125,26 +114,59 @@ unsafe impl<T: Component + Send> QueryBundle for &mut T {
     }
 }
 
+pub trait QueryIterable<'t>: Sized {
+    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self;
+}
+
+impl<'t> QueryIterable<'t> for EntityIter<'t> {
+    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self {
+        todo!()
+    }
+}
+
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
-            pub struct [< ZippedIterator $count >]<'t, $($gen),*> {
-                index: usize,
+            pub struct [< IteratorBundle $count >]<'t, $($gen: ParamRef + Send),*> {
+                archetypes: &'t Archetypes,
+                cache: std::slice::Iter<'t, CachedTable>,
+                iters: ($($gen::Iter<'t>),*),
                 _marker: PhantomData<&'t ($($gen),*)>
             }
 
-            impl<'t, $($gen: ParamRef + Send),*> Iterator for [< ZippedIterator $count >]<'t, $($gen),*> {
-                type Item = <($($gen),*) as QueryBundle>::Output<'t>;
-
-                fn next(&mut self) -> Option<Self::Item> {
+            impl<'t, $($gen: ParamRef + Send),*> QueryIterable<'t> for [< IteratorBundle $count >]<'t, $($gen),*> {
+                fn new(archetypes: &'t Archetypes, cache: &'t [CachedTable]) -> Self {
                     todo!()
                 }
             }
 
+            // impl<'t, $($gen: ParamRef + Send),*> From<(&'t Archetypes, &'t [CachedTable])> for [< IteratorBundle $count >]<'t, $($gen),*> {
+            //     fn from((archetypes, cache): (&'t Archetypes, &'t [CachedTable])) -> Self {
+            //         todo!()
+            //     }
+            // }
+
+            impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
+                type Item = <($($gen),*) as QueryBundle>::Output<'t>;
+
+                #[allow(non_snake_case)]
+                fn next(&mut self) -> Option<Self::Item> {
+                    let ($($gen),*) = &mut self.iters;
+
+                    Some(($(
+                        $gen.next()?
+                    ),*))
+                }
+            }
+
+            impl<'t, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, $($gen),*> {}
+
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t> = [< ZippedIterator $count >]<'t, $($gen),*> where Self: 't;
+                type Iter<'t> = [< IteratorBundle $count >]<'t, $($gen),*> where Self: 't;
+
+                const COUNT: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 
                 fn archetype(reg: &mut ComponentRegistry) -> BitSet {
                     let mut bitset = BitSet::new();
@@ -196,6 +218,7 @@ impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
 pub unsafe trait ParamRef: Send {
     type Unref: 'static;
     type Output<'w>: 'w;
+    type Iter<'t>: Iterator<Item = Self::Output<'t>>;
 
     const IS_ENTITY: bool;
 
@@ -207,6 +230,7 @@ pub unsafe trait ParamRef: Send {
 unsafe impl ParamRef for Entity<'_> {
     type Unref = Entity<'static>;
     type Output<'w> = Entity<'w>;
+    type Iter<'t> = EntityIter<'t>;
 
     const IS_ENTITY: bool = true;
 
@@ -229,6 +253,7 @@ unsafe impl ParamRef for Entity<'_> {
 unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Unref = T;
     type Output<'w> = &'w T;
+    type Iter<'t> = ColumnIter<'t, T>;
 
     const IS_ENTITY: bool = false;
 
@@ -255,6 +280,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Unref = T;
     type Output<'w> = &'w mut T;
+    type Iter<'t> = ColumnIterMut<'t, T>;
 
     const IS_ENTITY: bool = false;
 
@@ -358,9 +384,7 @@ impl<Q: QueryBundle, F: FilterGroup> QueryCache<Q, F> {
     }
 
     pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> Q::Iter<'t> {
-        println!("plan is {:?}", self.cached_tables);
-
-        todo!()
+        Q::Iter::from((archetypes, &self.cached_tables))
 
         // QueryIter {
         //     archetypes,
@@ -370,8 +394,6 @@ impl<Q: QueryBundle, F: FilterGroup> QueryCache<Q, F> {
         // }
     }
 }
-
-
 
 pub struct QueryIter<'q, Q: QueryBundle, F: FilterGroup> {
     archetypes: &'q Archetypes,
