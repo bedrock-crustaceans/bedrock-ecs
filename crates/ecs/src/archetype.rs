@@ -6,6 +6,7 @@ use smallvec::SmallVec;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
 use crate::{bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{EntityId, EntityMeta}, query::{CachedTable, QueryBundle}, spawn::SpawnBundle, table::Table, util::{self}};
+use crate::filter::FilterBundle;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
@@ -71,14 +72,19 @@ impl Archetypes {
         self.generation
     }
 
-    pub fn cache_tables<T: QueryBundle>(&self, archetype: &BitSet, cache: &mut SmallVec<[CachedTable; 8]>) {
+    pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
+        &self, archetype: &BitSet, filter: &F, cache: &mut SmallVec<[CachedTable; 8]>
+    ) {
         cache.clear();
 
         let iter = self.lookup.iter().enumerate().filter_map(|(i, (k, &v))| {
             if k.is_subset(archetype) {
+                // Tables that match `Q`. We now filter these using `F`.
+                println!("Filter is: {:?}", filter.desc());
+
                 // Found match
                 let table = &self.tables[v];
-                let cols = T::cache_layout(&table.lookup);
+                let cols = Q::cache_layout(&table.lookup);
 
                 return Some(CachedTable {
                     table: v,

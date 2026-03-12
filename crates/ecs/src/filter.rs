@@ -1,61 +1,160 @@
 use std::marker::PhantomData;
+use generic_array::{arr, ArrayLength, GenericArray};
+use generic_array::typenum::{Unsigned, U0, U1, U2, U3, U4, U5};
+use crate::{component::Component};
+use crate::archetype::Archetypes;
+use crate::component::ComponentId;
 
-use crate::{component::Component, entity::Entity};
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub enum FilterDesc {
+    #[default]
+    None,
+    With(ComponentId),
+    Without(ComponentId),
+    Added(ComponentId),
+    Changed(ComponentId),
+    Removed(ComponentId)
+}
 
 pub trait Filter {
-    fn filter(entity: &Entity) -> bool;
+    fn init(archetypes: &mut Archetypes) -> Self;
+    fn desc(&self) -> FilterDesc;
 }
 
-pub trait FilterGroup {
-    fn filter(entity: &Entity) -> bool;
+pub trait FilterBundle: Sized {
+    type Arity: ArrayLength;
+
+    const LEN: usize = Self::Arity::USIZE;
+
+    fn init(archetypes: &mut Archetypes) -> Self;
+    fn desc(&self) -> GenericArray<FilterDesc, Self::Arity>;
 }
 
-impl Filter for () {
-    fn filter(_entity: &Entity) -> bool {
-        true
+impl FilterBundle for () {
+    type Arity = U0;
+
+    fn init(_archetypes: &mut Archetypes) -> Self {}
+    fn desc(&self) -> GenericArray<FilterDesc, U0> {
+        GenericArray::default()
     }
 }
 
-impl<F: Filter> FilterGroup for F {
-    fn filter(entity: &Entity) -> bool {
-        F::filter(entity)
+macro_rules! impl_bundle {
+    ($count:expr, $($gen:ident),*) => {
+        paste::paste! {
+            #[allow(unused_parens)]
+            impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
+                type Arity = [< U $count >];
+
+                const LEN: usize = $count;
+
+                fn init(archetypes: &mut Archetypes) -> Self {
+                    ($($gen::init(archetypes)),*)
+                }
+
+                fn desc(&self) -> GenericArray<FilterDesc, Self::Arity> {
+                    #[allow(non_snake_case)]
+                    let ($($gen),*) = &self;
+                    GenericArray::from(($($gen::desc($gen),)*))
+                }
+            }
+        }
     }
 }
 
-impl<F1: Filter, F2: Filter> FilterGroup for (F1, F2) {
-    fn filter(entity: &Entity) -> bool {
-        F1::filter(entity) && F2::filter(entity)
-    }
-}
+impl_bundle!(1, A);
+impl_bundle!(2, A, B);
+impl_bundle!(3, A, B, C);
+impl_bundle!(4, A, B, C, D);
+impl_bundle!(5, A, B, C, D, E);
 
-pub struct With<T> {
-    _marker: PhantomData<T>
-}
-
-pub struct Without<T> {
-    _marker: PhantomData<T>
-}
-
-pub struct Added<T> {
-    _marker: PhantomData<T>
-}
-
-pub struct Removed<T> {
-    _marker: PhantomData<T>
-}
-
-pub struct Changed<T> {
+pub struct With<T: Component> {
+    id: ComponentId,
     _marker: PhantomData<T>
 }
 
 impl<T: Component> Filter for With<T> {
-    fn filter(entity: &Entity) -> bool {
-        entity.has::<T>()
+    fn init(archetypes: &mut Archetypes) -> Self {
+        With {
+            id: archetypes.registry.get_or_assign::<T>(),
+            _marker: PhantomData
+        }
+    }
+
+    fn desc(&self) -> FilterDesc {
+        FilterDesc::With(self.id)
     }
 }
 
+pub struct Without<T: Component> {
+    id: ComponentId,
+    _marker: PhantomData<T>
+}
+
 impl<T: Component> Filter for Without<T> {
-    fn filter(entity: &Entity) -> bool {
-        !entity.has::<T>()
+    fn init(archetypes: &mut Archetypes) -> Self {
+        Without {
+            id: archetypes.registry.get_or_assign::<T>(),
+            _marker: PhantomData
+        }
+    }
+
+    fn desc(&self) -> FilterDesc {
+        FilterDesc::Without(self.id)
+    }
+}
+
+pub struct Added<T: Component> {
+    id: ComponentId,
+    _marker: PhantomData<T>
+}
+
+impl<T: Component> Filter for Added<T> {
+    fn init(archetypes: &mut Archetypes) -> Self {
+        Added {
+            id: archetypes.registry.get_or_assign::<T>(),
+            _marker: PhantomData
+        }
+    }
+
+    fn desc(&self) -> FilterDesc {
+        FilterDesc::Added(self.id)
+    }
+}
+
+
+pub struct Removed<T: Component> {
+    id: ComponentId,
+    _marker: PhantomData<T>
+}
+
+impl<T: Component> Filter for Removed<T> {
+    fn init(archetypes: &mut Archetypes) -> Self {
+        Removed {
+            id: archetypes.registry.get_or_assign::<T>(),
+            _marker: PhantomData
+        }
+    }
+
+    fn desc(&self) -> FilterDesc {
+        FilterDesc::Removed(self.id)
+    }
+}
+
+pub struct Changed<T: Component> {
+    id: ComponentId,
+    _marker: PhantomData<T>
+}
+
+impl<T: Component> Filter for Changed<T> {
+    fn init(archetypes: &mut Archetypes) -> Self {
+        Changed {
+            id: archetypes.registry.get_or_assign::<T>(),
+            _marker: PhantomData
+        }
+    }
+
+    fn desc(&self) -> FilterDesc {
+        FilterDesc::Changed(self.id)
     }
 }

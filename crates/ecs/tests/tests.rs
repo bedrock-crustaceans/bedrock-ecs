@@ -1,6 +1,6 @@
 use ecs::component::Component;
 use ecs::entity::Entity;
-use ecs::filter::Without;
+use ecs::filter::{With, Without};
 use ecs::query::Query;
 use ecs::schedule::{ScheduleBuilder, ScheduleLabel};
 use ecs::world::World;
@@ -122,7 +122,7 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Health>) {
+fn simple_system(query: Query<&Health, With<Mass>>) {
     for component in &query {
         println!("{:?}", component.0);
     }
