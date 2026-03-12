@@ -5,6 +5,10 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+generics = []
+default = []
+
 [dependencies]
 dashmap = "5.4.0"
 futures = "0.3.30"

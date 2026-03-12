@@ -5,7 +5,7 @@ use std::any::TypeId;
 use generic_array::GenericArray;
 use smallvec::SmallVec;
 
-use crate::{param::{Param, ParamBundle}, sealed::Sealer, world::World};
+use crate::{param, param::{Param, ParamBundle}, sealed::Sealer, world::World};
 use crate::graph::AccessDesc;
 
 pub trait System: Sync {
@@ -38,7 +38,10 @@ pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     pub counter: AtomicUsize,
     pub id: usize,
     pub system: F,
+    #[cfg(feature = "generics")]
     pub access: GenericArray<AccessDesc, P::AccessCount>,
+    #[cfg(not(feature = "generics"))]
+    pub access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
     pub state: UnsafeCell<P::State>,
 }
 

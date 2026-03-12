@@ -2,10 +2,11 @@ use std::ops::Add;
 use std::mem::MaybeUninit;
 use generic_array::{ArrayLength, GenericArray};
 use generic_array::typenum::{U0, FoldAdd, Unsigned};
-
-use crate::{sealed::Sealed, world::World};
+use smallvec::SmallVec;
+use crate::{param, sealed::Sealed, world::World};
 use crate::graph::{AccessDesc};
 
+#[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
 
 /// # Safety
@@ -16,12 +17,17 @@ pub const INLINE_SIZE: usize = 8;
     message = "{Self} is not a valid system parameter"
 )]
 pub unsafe trait Param {
+    #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
 
     type State;
     type Output<'w>;
 
+    #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
+
+    #[cfg(not(feature = "generics"))]
+    fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
     #[doc(hidden)]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
@@ -30,19 +36,27 @@ pub unsafe trait Param {
 }
 
 pub unsafe trait ParamBundle {
+    #[cfg(feature = "generics")]
     type AccessCount: ArrayLength;
 
     type State;
 
+    #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
+
+    #[cfg(not(feature = "generics"))]
+    fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
+
     fn init(world: &mut World) -> Self::State;
 }
 
 unsafe impl ParamBundle for () {
+    #[cfg(feature = "generics")]
     type AccessCount = U0;
 
     type State = ();
 
+    #[cfg(feature = "generics")]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U0> {
         // Safety:
         // This is safe because the array has no items and therefore does not require initialization.
@@ -51,9 +65,15 @@ unsafe impl ParamBundle for () {
         unsafe { GenericArray::assume_init(GenericArray::uninit()) }
     }
 
+    #[cfg(not(feature = "generics"))]
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]> {
+        SmallVec::new()
+    }
+
     fn init(_world: &mut World) {}
 }
 
+#[cfg(feature = "generics")]
 macro_rules! create_tarray {
     ($head:ty) => {
         generic_array::typenum::TArr<$head, generic_array::typenum::ATerm>
@@ -63,6 +83,7 @@ macro_rules! create_tarray {
     }
 }
 
+#[cfg(feature = "generics")]
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
@@ -101,6 +122,30 @@ macro_rules! impl_bundle {
                 fn init(world: &mut World) -> Self::State {
                     ($($gen::init(world)),*)
                 }
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "generics"))]
+macro_rules! impl_bundle {
+    ($count:expr, $($gen:ident),*) => {
+        #[allow(unused_parens)]
+        unsafe impl<$($gen: Param),*> ParamBundle for ($($gen),*) {
+            type State = ($($gen::State),*);
+
+            fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]> {
+                let mut access = SmallVec::with_capacity($count);
+
+                $(
+                    access.extend($gen::access(world));
+                )*
+
+                access
+            }
+
+            fn init(world: &mut World) -> Self::State {
+                ($($gen::init(world)),*)
             }
         }
     }
