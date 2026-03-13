@@ -110,7 +110,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg_attr(
-                    feature = "instrument",
+                    feature = "tracing",
                     tracing::instrument(name = "ParamBundle::init", skip_all)
                 )]
                 fn init(world: &mut World) -> Self::State {

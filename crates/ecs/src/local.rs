@@ -35,7 +35,7 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
     }
 
     #[cfg_attr(
-        feature = "instrument",
+        feature = "tracing",
         tracing::instrument(name = "Local::init", skip_all)
     )]
     fn init(_world: &mut World) -> LocalState<T> { 

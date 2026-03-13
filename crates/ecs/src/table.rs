@@ -52,7 +52,7 @@ pub struct Column {
 impl Column {
     /// Creates a new Column for the type `T`.
     #[cfg_attr(
-        feature = "instrument",
+        feature = "tracing",
         tracing::instrument(name = "Column::new", skip_all)
     )]
     pub fn new<T: 'static>() -> Column {

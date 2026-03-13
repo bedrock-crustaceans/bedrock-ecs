@@ -72,7 +72,7 @@ impl Archetypes {
     }
 
     #[cfg_attr(
-        feature = "instrument", 
+        feature = "tracing", 
         tracing::instrument(name = "Archetypes::cache_tables", skip_all)
     )]
     pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
@@ -88,8 +88,7 @@ impl Archetypes {
         let iter = self.lookup.iter().enumerate().filter_map(|(i, (k, &v))| {
             if k.is_subset(archetype) {
                 // This table matches the queried components. We now apply all passive filters.
-                // Dynamic filters will be applied during iteration.
- 
+                // Dynamic filters will be applied during iteration. 
                 if !filter.apply_static_filters(k) {
                     return None
                 }
@@ -110,7 +109,7 @@ impl Archetypes {
     }
 
     #[cfg_attr(
-        feature = "instrument", 
+        feature = "tracing", 
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
     pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {

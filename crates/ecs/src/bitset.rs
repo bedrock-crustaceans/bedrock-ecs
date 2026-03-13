@@ -72,12 +72,13 @@ impl BitSet {
     }
 
     /// Whether `self` and `other` are disjoint.
+    /// I.e. if `self` contains component A then `other` does not and vice versa.
     pub fn is_disjoint(&self, other: &Self) -> bool {
         self.bits
             .iter()
             .zip(other.bits.iter())
             .all(|(a, b)| {
-                a ^ b == 0
+                a & b == 0
             })
     }
 }

@@ -120,7 +120,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg_attr(
-                    feature = "instrument",
+                    feature = "tracing",
                     tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
                 )]
                 fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount> {
@@ -132,7 +132,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg_attr(
-                    feature = "instrument",
+                    feature = "tracing",
                     tracing::instrument(name = "QueryBundle::cache_layout", fields(size = $count), skip_all)
                 )]
                 fn cache_layout(lookup: &HashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount> {
@@ -216,7 +216,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg_attr(
-                    feature = "instrument",
+                    feature = "tracing",
                     tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
                 )]
                 fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
@@ -228,7 +228,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg_attr(
-                    feature = "instrument",
+                    feature = "tracing",
                     tracing::instrument(name = "QueryBundle::cache_layout", fields(size = $count), skip_all)
                 )]
                 fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; param::INLINE_SIZE]> {
@@ -438,7 +438,7 @@ pub struct QueryCache<Q: QueryBundle, F: FilterBundle> {
 
 impl<Q: QueryBundle, F: FilterBundle> QueryCache<Q, F> {
     #[cfg_attr(
-        feature = "instrument",
+        feature = "tracing",
         tracing::instrument(name = "QueryCache::new", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
     pub fn new(archetypes: &mut Archetypes) -> QueryCache<Q, F> {
@@ -461,7 +461,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryCache<Q, F> {
 
     /// Updates the cache if required.
     #[cfg_attr(
-        feature = "instrument",
+        feature = "tracing",
         tracing::instrument(name = "QueryCache::update", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
     pub fn update(&mut self, archetypes: &Archetypes) {

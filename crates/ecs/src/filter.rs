@@ -93,6 +93,7 @@ impl_filter_bundle!(A, B, C);
 impl_filter_bundle!(A, B, C, D);
 impl_filter_bundle!(A, B, C, D, E);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct With<T: FilterComponentBundle> {
     set: BitSet,
     _marker: PhantomData<T>
@@ -112,6 +113,7 @@ impl<T: FilterComponentBundle> Filter for With<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Without<T: FilterComponentBundle> {
     set: BitSet,
     _marker: PhantomData<T>
@@ -131,6 +133,7 @@ impl<T: FilterComponentBundle> Filter for Without<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Added<T: FilterComponentBundle> {
     set: BitSet,
     _marker: PhantomData<T>
@@ -149,6 +152,8 @@ impl<T: FilterComponentBundle> Filter for Added<T> {
         archetype.is_subset(&self.set)
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed<T: FilterComponentBundle> {
     set: BitSet,
     _marker: PhantomData<T>
@@ -168,6 +173,7 @@ impl<T: FilterComponentBundle> Filter for Removed<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed<T: FilterComponentBundle> {
     set: BitSet,
     _marker: PhantomData<T>

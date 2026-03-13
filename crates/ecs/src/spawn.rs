@@ -23,7 +23,7 @@ macro_rules! impl_bundle {
             }
 
             #[cfg_attr(
-                feature = "instrument",
+                feature = "tracing",
                 tracing::instrument(name = "SpawnBundle::new_table", fields(bundle = std::any::type_name::<Self>()) skip_all)  
             )]
             fn new_table(bitset: BitSet) -> Table {
@@ -59,7 +59,7 @@ macro_rules! impl_bundle {
 
             #[allow(unused_variables)]
             #[cfg_attr(
-                feature = "instrument", 
+                feature = "tracing", 
                 tracing::instrument(name = "SpawnBundle::insert_into", fields(bundle = std::any::type_name::<Self>()) skip_all)
             )]
             fn insert_into(self, storage: &mut Vec<Column>) {
