@@ -54,25 +54,6 @@ pub trait ChasingIterator<'t, Q: QueryBundle>: Sized {
     fn new(world: &'t World, cache: &'t [CachedTable<Q::AccessCount>]) -> Self;
 }
 
-#[cfg(feature = "generics")]
-impl<'w, Q: QueryBundle> ChasingIterator<'w, Q> for EntityIter<'w> {
-    fn new(world: &'w World, cache: &'w [CachedTable<Q::AccessCount>]) -> Self {
-        todo!()
-    }
-}
-
-#[cfg(not(feature = "generics"))]
-pub trait ChasingIterator<'w>: Sized {
-    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Option<Self>;
-}
-
-#[cfg(not(feature = "generics"))]
-impl<'t> ChasingIterator<'w> for EntityIter<'w> {
-    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Option<Self> {
-        todo!()
-    }
-}
-
 macro_rules! iter_is_empty {
     ($head:ident $(, $tail:expr)* $(,)?) => {
         // is_empty is unstable
@@ -123,6 +104,8 @@ macro_rules! impl_bundle {
                         return Self::empty(world)
                     };
 
+                    tracing::trace!("starting iterator at table {}", first_cache.table);
+
                     let mut counter = 0;
                     #[allow(unused)]
                     let iters = ($(
@@ -146,13 +129,29 @@ macro_rules! impl_bundle {
             impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, Q, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
-                #[allow(non_snake_case)]
+                #[allow(non_snake_case, unused)]
                 fn next(&mut self) -> Option<Self::Item> {
                     let ($($gen),*) = &mut self.iters;
                     if iter_is_empty!($($gen),*) {
-                        todo!("Iterator is empty")
+                        // Attempt to jump to the next table in cache
+                        let cache = self.cache.next()?;
+
+                        tracing::trace!("jumping to table {} in cache", cache.table);
+
+                        let mut offset = 0;
+                        self.iters = (
+                            $(
+                                {
+                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset]);
+                                    offset += 1;
+                                    it
+                                }
+                            ),*
+                        );
                     }
 
+                    // Have to reborrow to ensure that the line above can modify `self.iters`.
+                    let ($($gen),*) = &mut self.iters;
                     Some((
                         $(
                             unsafe { $gen.next().unwrap_unchecked() }
@@ -440,7 +439,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
 
 pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
     world: &'w World,
-    plan: &'w mut QueryCache<Q, F>,
+    cache: &'w mut QueryCache<Q, F>,
     _marker: PhantomData<(Q, F)>
 }
 
@@ -451,13 +450,14 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
 
         Query {
             world,
-            plan: state,
+            cache: state,
             _marker: PhantomData
         }
     }
 
+    #[inline]
     pub fn iter(&self) -> Q::Iter<'_> {
-        self.plan.execute(self.world)
+        self.cache.iter(self.world)
     }
 }
 
@@ -553,20 +553,9 @@ impl<Q: QueryBundle, F: FilterBundle> QueryCache<Q, F> {
         }
     }
 
-    pub fn execute<'w>(&'w self, world: &'w World) -> Q::Iter<'w> {
+    pub fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w> {
         Q::Iter::new(world, &self.cached_tables)
     }
-}
-
-pub struct QueryIter<'q, Q: QueryBundle, F: FilterBundle> {
-    #[cfg(feature = "generics")]
-    cache: std::slice::Iter<'q, CachedTable<Q::AccessCount>>,
-    #[cfg(not(feature = "generics"))]
-    cache: std::slice::Iter<'q, CachedTable>,
-
-    archetypes: &'q Archetypes,
-    table_iter: Q::Iter<'q>,
-    _marker: PhantomData<&'q (Q, F)>
 }
 
 #[diagnostic::do_not_recommend]
@@ -576,22 +565,5 @@ impl<'q, 'w, Q: QueryBundle, F: FilterBundle> IntoIterator for &'q Query<'w, Q, 
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
-    }
-}
-
-impl<'q, Q: QueryBundle, F: FilterBundle> Iterator for QueryIter<'q, Q, F> {
-    type Item = Q::Output<'q>;
-
-    fn next(&mut self) -> Option<Q::Output<'q>> {
-        if let Some(next) = self.table_iter.next() {
-            return Some(next)
-        }
-
-        // Table has ended, jump to next one
-        let table_index = self.cache.next()?;
-        let table = self.archetypes.table(table_index.table);
-    
-
-        todo!()
     }
 }

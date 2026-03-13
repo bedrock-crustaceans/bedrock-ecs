@@ -95,7 +95,7 @@ impl_filter_bundle!(A, B, C, D, E);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct With<T: FilterComponentBundle> {
-    set: BitSet,
+    bits: BitSet,
     _marker: PhantomData<T>
 }
 
@@ -103,19 +103,19 @@ impl<T: FilterComponentBundle> Filter for With<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
         With {
-            set: T::to_bitset(&mut archetypes.registry),
+            bits: T::to_bitset(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
     fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.set)
+        archetype.is_subset(&self.bits)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Without<T: FilterComponentBundle> {
-    set: BitSet,
+    bits: BitSet,
     _marker: PhantomData<T>
 }
 
@@ -123,19 +123,19 @@ impl<T: FilterComponentBundle> Filter for Without<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
         Without {
-            set: T::to_bitset(&mut archetypes.registry),
+            bits: T::to_bitset(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
     fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_disjoint(&self.set)
+        archetype.is_disjoint(&self.bits)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Added<T: FilterComponentBundle> {
-    set: BitSet,
+    bits: BitSet,
     _marker: PhantomData<T>
 }
 
@@ -143,19 +143,19 @@ impl<T: FilterComponentBundle> Filter for Added<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
         Added {
-            set: T::to_bitset(&mut archetypes.registry),
+            bits: T::to_bitset(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
     fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.set)
+        archetype.is_subset(&self.bits)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed<T: FilterComponentBundle> {
-    set: BitSet,
+    bits: BitSet,
     _marker: PhantomData<T>
 }
 
@@ -163,19 +163,19 @@ impl<T: FilterComponentBundle> Filter for Removed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
         Removed {
-            set: T::to_bitset(&mut archetypes.registry),
+            bits: T::to_bitset(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
     fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_disjoint(&self.set)
+        archetype.is_disjoint(&self.bits)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed<T: FilterComponentBundle> {
-    set: BitSet,
+    bits: BitSet,
     _marker: PhantomData<T>
 }
 
@@ -183,12 +183,12 @@ impl<T: FilterComponentBundle> Filter for Changed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
         Changed {
-            set: T::to_bitset(&mut archetypes.registry),
+            bits: T::to_bitset(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
     fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.set)
+        archetype.is_subset(&self.bits)
     }
 }

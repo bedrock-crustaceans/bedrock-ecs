@@ -48,7 +48,7 @@ macro_rules! impl_bundle {
                 {
                     let mut counter = 0;
                     $(
-                        tracing::info!("inserting type {}", std::any::type_name::<$gen>());
+                        tracing::trace!("inserting type {}", std::any::type_name::<$gen>());
                         table.lookup.insert(TypeId::of::<$gen>(), counter);
                         counter += 1;   
                     )*

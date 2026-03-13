@@ -102,7 +102,7 @@ impl Archetypes {
                     table: v,
                     cols
                 })
-            }            
+            }
 
             // Not a match
             None
@@ -133,6 +133,10 @@ impl Archetypes {
         };
 
         table.insert(id, bundle);
+    }
+
+    pub fn len(&self) -> usize {
+        self.tables.len()
     }
 
     pub fn table(&self, index: usize) -> &Table {
