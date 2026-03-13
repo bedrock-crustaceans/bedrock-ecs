@@ -33,19 +33,6 @@ impl<'w> Entity<'w> {
     }
 }
 
-pub struct EntityIter<'w> {
-    index: usize,
-    _marker: PhantomData<&'w ()>
-}
-
-impl<'w> Iterator for EntityIter<'w> {
-    type Item = Entity<'w>;
-
-    fn next(&mut self) -> Option<Entity<'w>> {
-        todo!()
-    }
-}
-
 pub struct EntityMut<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) id: EntityId

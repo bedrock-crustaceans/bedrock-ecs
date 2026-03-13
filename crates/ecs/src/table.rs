@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::EntityId, spawn::SpawnBundle, util};
+use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut}, util, world::World};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -404,92 +404,6 @@ impl Drop for Column {
     }
 }
 
-pub struct ColumnIter<'a, T> {
-    /// Pointer to current component.
-    curr: Option<NonNull<T>>,
-    /// Remaining elements
-    remaining: usize,
-    _marker: PhantomData<&'a T>
-}
-
-impl<'a, T> Iterator for ColumnIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<&'a T> {
-        if self.remaining == 0 && self.curr.is_none() {
-            return None
-        }
-
-        let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe {
-            &*ptr.as_ptr().cast_const()
-        };
-
-        self.remaining -= 1;
-        *ptr = unsafe {
-            ptr.add(1)
-        };
-
-        Some(item)   
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
-    fn len(&self) -> usize {
-        self.remaining
-    }
-}
-
-impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
-
-pub struct ColumnIterMut<'a, T> {
-    /// Pointer to current component.
-    curr: Option<NonNull<T>>,
-    /// Remaining elements
-    remaining: usize,
-    _marker: PhantomData<&'a mut T>
-}
-
-impl<'a, T> Iterator for ColumnIterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<&'a mut T> {
-        if self.remaining == 0 && self.curr.is_none() {
-            return None
-        }
-
-        let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe {
-            &mut *ptr.as_ptr()
-        };
-
-        self.remaining -= 1;
-        *ptr = unsafe {
-            ptr.add(1)
-        };
-
-        Some(item)   
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
-    fn len(&self) -> usize {
-        self.remaining
-    }
-}
-
-impl<'a, T> FusedIterator for ColumnIterMut<'a, T> {}
-
 #[derive(Debug)]
 pub struct Table {
     #[cfg(debug_assertions)]
@@ -497,9 +411,9 @@ pub struct Table {
 
     pub(crate) archetype: BitSet,    
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
-    // an the entity at index 5 in `entities` will have its components stored at index
+    // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
-    pub(crate) entities: UnsafeCell<Vec<EntityId>>,
+    pub(crate) entities: Vec<EntityId>,
     pub(crate) lookup: HashMap<TypeId, usize>,
     pub(crate) columns: Vec<Column>
 }
@@ -518,8 +432,7 @@ impl Table {
         #[cfg(debug_assertions)]
         let _guard = self.flag.write();
 
-        let entities = self.entities.get_mut();
-        entities.push(entity);
+        self.entities.push(entity);
 
         components.insert_into(&mut self.columns);
     }
@@ -540,11 +453,11 @@ impl Table {
     /// Calls to this function must be externally synchronised. Not abiding by these conditions
     /// induces immediate UB.
     pub unsafe fn len(&self) -> usize {
-        let len = unsafe {
-            &*(self.entities.get() as *const Vec<EntityId>)
-        }.len();
+        // let len = unsafe {
+        //     &*(self.entities.get() as *const Vec<EntityId>)
+        // }.len();
 
-        len
+        self.entities.len()
     }
 
 

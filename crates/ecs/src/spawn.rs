@@ -35,7 +35,7 @@ macro_rules! impl_bundle {
                     flag: RwFlag::new(),
 
                     archetype: bitset,
-                    entities: UnsafeCell::new(Vec::new()),
+                    entities: Vec::new(),
                     lookup: HashMap::with_capacity(COUNT),
                     columns: vec![
                         $(

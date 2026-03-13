@@ -16,6 +16,7 @@ pub mod schedule;
 pub mod sparse_set;
 pub mod spawn;
 pub mod system;
+pub mod table_iterator;
 pub mod table;
 pub mod util;
 pub mod world;

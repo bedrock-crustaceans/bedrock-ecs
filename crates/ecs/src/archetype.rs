@@ -7,6 +7,7 @@ use crate::util::debug::RwFlag;
 use crate::{bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{EntityId, EntityMeta}, query::{CachedTable, QueryBundle}, spawn::SpawnBundle, table::Table, util::{self}};
 use crate::filter::FilterBundle;
 
+#[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArchetypeId(pub(crate) usize);
 
@@ -96,12 +97,14 @@ impl Archetypes {
                 // Found match
                 let table = &self.tables[v];
                 let cols = Q::cache_layout(&table.lookup);
+
                 return Some(CachedTable {
                     table: v,
                     cols
                 })
             }            
 
+            // Not a match
             None
         });
 

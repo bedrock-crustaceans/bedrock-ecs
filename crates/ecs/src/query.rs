@@ -4,7 +4,8 @@ use generic_array::{ArrayLength, GenericArray};
 use generic_array::typenum::Unsigned;
 use smallvec::{SmallVec, smallvec};
 
-use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity, EntityIter}, filter::FilterBundle, param::{self, Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
+use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter};
+use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity}, filter::FilterBundle, param::{self, Param}, sealed::Sealed, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
 /// # Safety:
@@ -23,8 +24,14 @@ pub unsafe trait QueryBundle: Sized {
     type AccessCount: ArrayLength + Add;
     /// The item that the query outputs.
     type Output<'a> where Self: 'a;
+
+    #[cfg(feature = "generics")]
     /// The iterators over the columns.
     type Iter<'a>: QueryIterable<'a, Self> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+
+    #[cfg(not(feature = "generics"))]
+    /// The iterators over the columns.
+    type Iter<'a>: QueryIterable<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
 
     /// The amount of items in this bundle.
     const LEN: usize;
@@ -44,12 +51,24 @@ pub unsafe trait QueryBundle: Sized {
 
 #[cfg(feature = "generics")]
 pub trait QueryIterable<'t, Q: QueryBundle>: Sized {
-    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self;
+    fn new(world: &'t World, cache: &'t [CachedTable<Q::AccessCount>]) -> Self;
 }
 
 #[cfg(feature = "generics")]
-impl<'t, Q: QueryBundle> QueryIterable<'t, Q> for EntityIter<'t> {
-    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self {
+impl<'w, Q: QueryBundle> QueryIterable<'w, Q> for EntityIter<'w> {
+    fn new(world: &'w World, cache: &'w [CachedTable<Q::AccessCount>]) -> Self {
+        todo!()
+    }
+}
+
+#[cfg(not(feature = "generics"))]
+pub trait QueryIterable<'w>: Sized {
+    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Self;
+}
+
+#[cfg(not(feature = "generics"))]
+impl<'t> QueryIterable<'w> for EntityIter<'w> {
+    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Self {
         todo!()
     }
 }
@@ -59,21 +78,21 @@ macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> {
-                archetypes: &'t Archetypes,
-                cache: std::slice::Iter<'t, CachedTable<Q::AccessCount>>,
-                iters: ($($gen::Iter<'t>),*),
-                _marker: PhantomData<&'t ($($gen),*)>
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> {
+                world: &'w World,
+                cache: std::slice::Iter<'w, CachedTable<Q::AccessCount>>,
+                iters: ($($gen::Iter<'w>),*),
+                _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> QueryIterable<'t, Q> for [< IteratorBundle $count >]<'t, Q, $($gen),*> {
-                fn new(archetypes: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self {
+            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> QueryIterable<'w, Q> for [< IteratorBundle $count >]<'w, Q, $($gen),*> {
+                fn new(world: &'w World, cache: &'w [CachedTable<Q::AccessCount>]) -> Self {
                     let iters = ($(
                         $gen::iter()
                     ),*);
 
                     Self {
-                        archetypes,
+                        world,
                         cache: cache.iter(),
                         iters,
                         _marker: PhantomData
@@ -200,7 +219,7 @@ macro_rules! impl_bundle {
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
                 type Iter<'t> = [< IteratorBundle $count >]<'t, $($gen),*> where Self: 't;
 
-                const COUNT: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
+                const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 
                 fn archetype(reg: &mut ComponentRegistry) -> BitSet {
                     let mut bitset = BitSet::new();
@@ -361,7 +380,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
 }
 
 pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
-    archetypes: &'w Archetypes,
+    world: &'w World,
     plan: &'w mut QueryCache<Q, F>,
     _marker: PhantomData<(Q, F)>
 }
@@ -372,14 +391,14 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
         state.update(&world.archetypes);
 
         Query {
-            archetypes: &world.archetypes,
+            world,
             plan: state,
             _marker: PhantomData
         }
     }
 
     pub fn iter(&self) -> Q::Iter<'_> {
-        self.plan.execute(self.archetypes)
+        self.plan.execute(self.world)
     }
 }
 
@@ -421,14 +440,14 @@ pub struct CachedTable {
     /// The table that contains the components.
     pub table: usize,
     /// The columns from this table that contain the components for this query.
-    pub cols: SmallVec<[usize; 4]>
+    pub cols: SmallVec<[usize; param::INLINE_SIZE]>
 }
 
 pub struct QueryCache<Q: QueryBundle, F: FilterBundle> {
     #[cfg(feature = "generics")]
     cached_tables: SmallVec<[CachedTable<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
-    cached_tables: SmallVec<[CachedTable; 8]>,
+    cached_tables: SmallVec<[CachedTable; param::INLINE_SIZE]>,
 
     filter_state: F,
     generation: u64,
@@ -475,15 +494,8 @@ impl<Q: QueryBundle, F: FilterBundle> QueryCache<Q, F> {
         }
     }
 
-    pub fn execute<'t>(&'t self, archetypes: &'t Archetypes) -> Q::Iter<'t> {
-        Q::Iter::new(archetypes, &self.cached_tables)
-
-        // QueryIter {
-        //     archetypes,
-        //     tables: self.cached_tables.iter(),
-        //     columns: todo!(),
-        //     _marker: PhantomData
-        // }
+    pub fn execute<'w>(&'w self, world: &'w World) -> Q::Iter<'w> {
+        Q::Iter::new(world, &self.cached_tables)
     }
 }
 
