@@ -1,6 +1,5 @@
 use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::{HashMap, hash_map}, iter::FusedIterator, marker::PhantomData, ptr::NonNull, sync::atomic::Ordering};
 
-use futures::stream::FilterMap;
 use smallvec::SmallVec;
 
 #[cfg(debug_assertions)]

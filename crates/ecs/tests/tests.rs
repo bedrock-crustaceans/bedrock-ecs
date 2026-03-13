@@ -129,9 +129,9 @@ fn simple_system(query: Query<&Health, With<Mass>>) {
 }
 
 fn second_system(query: Query<(&Health, &Mass)>) {
-    for (health, mass) in &query {
-        println!("health is {health:?}, mass is {mass:?}");
-    }
+    // for (health, mass) in &query {
+    //     println!("health is {health:?}, mass is {mass:?}");
+    // }
 }
 
 struct Label1;

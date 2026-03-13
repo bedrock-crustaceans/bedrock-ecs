@@ -31,7 +31,7 @@ impl AccessDesc {
 #[derive(Debug, Clone)]
 pub(crate) struct GraphNode {
     pub sid: SystemId,
-    pub access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
+    pub access: SmallVec<[AccessDesc; 4]>,
 }
 
 #[derive(Debug, Clone, Default)]
