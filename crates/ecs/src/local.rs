@@ -1,6 +1,8 @@
 use std::{ops::{Deref, DerefMut}};
 use generic_array::GenericArray;
 use generic_array::typenum::U0;
+
+#[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
 
 use crate::{param::{self, Param}, sealed::Sealed, world::World};
@@ -8,6 +10,8 @@ use crate::graph::AccessDesc;
 
 pub struct LocalState<T: Default + Send + 'static>(T);
 
+/// A piece of data local to the system. This is useful to store data that persists between
+/// ticks but is only used by one system.
 pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
 unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {

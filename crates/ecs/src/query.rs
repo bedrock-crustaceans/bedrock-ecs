@@ -27,11 +27,11 @@ pub unsafe trait QueryBundle: Sized {
 
     #[cfg(feature = "generics")]
     /// The iterators over the columns.
-    type Iter<'a>: QueryIterable<'a, Self> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: ChasingIterator<'a, Self> + Iterator<Item = Self::Output<'a>> where Self: 'a;
 
     #[cfg(not(feature = "generics"))]
     /// The iterators over the columns.
-    type Iter<'a>: QueryIterable<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: ChasingIterator<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
 
     /// The amount of items in this bundle.
     const LEN: usize;
@@ -50,26 +50,33 @@ pub unsafe trait QueryBundle: Sized {
 }
 
 #[cfg(feature = "generics")]
-pub trait QueryIterable<'t, Q: QueryBundle>: Sized {
+pub trait ChasingIterator<'t, Q: QueryBundle>: Sized {
     fn new(world: &'t World, cache: &'t [CachedTable<Q::AccessCount>]) -> Self;
 }
 
 #[cfg(feature = "generics")]
-impl<'w, Q: QueryBundle> QueryIterable<'w, Q> for EntityIter<'w> {
+impl<'w, Q: QueryBundle> ChasingIterator<'w, Q> for EntityIter<'w> {
     fn new(world: &'w World, cache: &'w [CachedTable<Q::AccessCount>]) -> Self {
         todo!()
     }
 }
 
 #[cfg(not(feature = "generics"))]
-pub trait QueryIterable<'w>: Sized {
-    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Self;
+pub trait ChasingIterator<'w>: Sized {
+    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Option<Self>;
 }
 
 #[cfg(not(feature = "generics"))]
-impl<'t> QueryIterable<'w> for EntityIter<'w> {
-    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Self {
+impl<'t> ChasingIterator<'w> for EntityIter<'w> {
+    fn new(archetype: &'w World, cache: &'w [CachedTable]) -> Option<Self> {
         todo!()
+    }
+}
+
+macro_rules! iter_is_empty {
+    ($head:ident $(, $tail:expr)* $(,)?) => {
+        // is_empty is unstable
+        $head.len() == 0
     }
 }
 
@@ -85,15 +92,50 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> QueryIterable<'w, Q> for [< IteratorBundle $count >]<'w, Q, $($gen),*> {
+            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> [< IteratorBundle $count >]<'w, Q, $($gen),*> {
+                pub fn empty(world: &'w World) -> Self {
+                    Self {
+                        world,
+                        cache: [].iter(),
+                        iters: ($($gen::Iter::empty(world)),*),                        
+                        _marker: PhantomData
+                    }
+                }
+            }
+
+            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> ChasingIterator<'w, Q> for [< IteratorBundle $count >]<'w, Q, $($gen),*> {
                 fn new(world: &'w World, cache: &'w [CachedTable<Q::AccessCount>]) -> Self {
+                    #[cfg(debug_assertions)]
+                    {
+                        for cached in cache {
+                            let table = world.archetypes.table(cached.table);
+                            let cols = table.columns();
+                            debug_assert!(
+                                cols.iter().all(|c| c.len() == cols[0].len()),
+                                "not all columns are of equal length"
+                            );
+                        }
+                    }
+
+                    let mut cache = cache.iter();
+                    let Some(first_cache) = cache.next() else {
+                        // There are no cached tables, just return an empty iterator.
+                        return Self::empty(world)
+                    };
+
+                    let mut counter = 0;
+                    #[allow(unused)]
                     let iters = ($(
-                        $gen::iter()
+                        {
+                            let it = $gen::iter(world, first_cache.table, first_cache.cols[counter]);
+                            counter += 1;
+                            it
+                        }
                     ),*);
 
                     Self {
                         world,
-                        cache: cache.iter(),
+                        cache,
                         iters,
                         _marker: PhantomData
                     }
@@ -107,10 +149,15 @@ macro_rules! impl_bundle {
                 #[allow(non_snake_case)]
                 fn next(&mut self) -> Option<Self::Item> {
                     let ($($gen),*) = &mut self.iters;
+                    if iter_is_empty!($($gen),*) {
+                        todo!("Iterator is empty")
+                    }
 
-                    Some(($(
-                        $gen.next()?
-                    ),*))
+                    Some((
+                        $(
+                            unsafe { $gen.next().unwrap_unchecked() }
+                        ),*
+                    ))
                 }
             }
 
@@ -277,17 +324,23 @@ impl_bundle!(8, A, B, C, D, E, F, G, H);
 impl_bundle!(9, A, B, C, D, E, F, G, H, I);
 impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
 
+/// Extension trait that adds the `empty` method to construct an empty iterator.
+/// This is used by the query iterators when there are no more remaining components.
+pub trait ParamIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterator {
+    fn empty(world: &'w World) -> Self;
+}
+
 pub unsafe trait ParamRef: Send {
     type Unref: 'static;
     type Output<'w>: 'w;
-    type Iter<'t>: Iterator<Item = Self::Output<'t>>;
+    type Iter<'t>: ParamIterator<'t, Self::Output<'t>>;
 
     const IS_ENTITY: bool;
 
     fn access(reg: &mut ComponentRegistry) -> AccessDesc;
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
     fn lookup(map: &HashMap<TypeId, usize>) -> usize;
-    fn iter<'t>() -> Self::Iter<'t>;
+    fn iter<'t>(world: &'t World, table: usize, col: usize) -> Self::Iter<'t>;
 }
 
 unsafe impl ParamRef for Entity<'_> {
@@ -312,7 +365,7 @@ unsafe impl ParamRef for Entity<'_> {
         unimplemented!("attempt to lookup column index of entity");
     }
 
-    fn iter<'t>() -> EntityIter<'t> {
+    fn iter<'t>(world: &'t World, _table: usize, _col: usize) -> EntityIter<'t> {
         todo!()
     }
 }
@@ -343,8 +396,11 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
         col
     }
 
-    fn iter<'t>() -> ColumnIter<'t, T> {
-        todo!()
+    fn iter<'t>(world: &'t World, table: usize, col: usize) -> ColumnIter<'t, T> {
+        let table = world.archetypes.table(table);
+        let col = table.column(col);
+
+        col.iter()
     }
 }
 
@@ -374,8 +430,11 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
         col
     }
 
-    fn iter<'t>() -> ColumnIterMut<'t, T> {
-        todo!()
+    fn iter<'t>(world: &'t World, table: usize, col: usize) -> ColumnIterMut<'t, T> {
+        let table = world.archetypes.table(table);
+        let col = table.column(col);
+
+        col.iter_mut()
     }
 }
 

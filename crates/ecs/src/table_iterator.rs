@@ -1,6 +1,8 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
-use crate::{entity::{Entity, EntityId}, world::World};
+#[cfg(feature = "generics")]
+use crate::query::CachedTable;
+use crate::{entity::{Entity, EntityId}, query::ParamIterator, world::World};
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
@@ -45,6 +47,17 @@ impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
 
 impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
 
+impl<'a, T> ParamIterator<'a, &'a T> for ColumnIter<'a, T> {
+    fn empty(_world: &'a World) -> ColumnIter<'a, T> {
+        ColumnIter {
+            curr: None,
+            remaining: 0,
+            _marker: PhantomData
+        }
+    }
+}
+
+
 pub struct ColumnIterMut<'a, T> {
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
@@ -57,7 +70,7 @@ impl<'a, T> Iterator for ColumnIterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<&'a mut T> {
-        if self.remaining == 0 && self.curr.is_none() {
+        if self.remaining == 0 || self.curr.is_none() {
             return None
         }
 
@@ -88,6 +101,16 @@ impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
 
 impl<'a, T> FusedIterator for ColumnIterMut<'a, T> {}
 
+impl<'a, T> ParamIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
+    fn empty(_world: &'a World) -> ColumnIterMut<'a, T> {
+        ColumnIterMut {
+            curr: None,
+            remaining: 0,
+            _marker: PhantomData
+        }
+    }
+}
+
 pub struct EntityIter<'w> {
     pub(crate) world: &'w World,
     pub(crate) iter: std::slice::Iter<'w, EntityId>
@@ -113,3 +136,12 @@ impl<'t> ExactSizeIterator for EntityIter<'t> {
 }
 
 impl<'t> FusedIterator for EntityIter<'t> {}
+
+impl<'w> ParamIterator<'w, Entity<'w>> for EntityIter<'w> {
+    fn empty(world: &'w World) -> EntityIter<'w> {
+        EntityIter {
+            world,
+            iter: [].iter()
+        }
+    }
+}

@@ -437,6 +437,14 @@ impl Table {
         components.insert_into(&mut self.columns);
     }
 
+    pub fn columns(&self) -> &[Column] {
+        &self.columns
+    }
+
+    pub fn column(&self, index: usize) -> &Column {
+        &self.columns[index]
+    }
+
     pub fn iter<T: 'static>(&self, col: usize) -> ColumnIter<'_, T> {
         let col = &self.columns[col];
         col.iter::<T>()

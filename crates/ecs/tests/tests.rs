@@ -124,16 +124,19 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Health, Without<Mass>>, counter: Local<usize>) {
+fn simple_system(query: Query<&Health>, counter: Local<usize>) {
+    let iter = query.iter();
+    println!("typename: {}", std::any::type_name_of_val(&iter));
+
     for component in &query {
         tracing::info!("{:?}", component.0);
     }
 }
 
 fn second_system(query: Query<(&Health, &Mass), Added<Health>>) {
-    // for (health, mass) in &query {
-    //     tracing::info!("health is {health:?}, mass is {mass:?}");
-    // }
+    for (health, mass) in &query {
+        tracing::info!("health is {health:?}, mass is {mass:?}");
+    }
 }
 
 struct Label1;
