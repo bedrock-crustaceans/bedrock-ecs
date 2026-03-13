@@ -2,7 +2,7 @@ use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, it
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut}, util, world::World};
+use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut, EntityIter}, util, world::World};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -453,6 +453,13 @@ impl Table {
     pub fn iter_mut<T: 'static>(&self, col: usize) -> ColumnIterMut<'_, T> {
         let col = &self.columns[col];
         col.iter_mut::<T>()
+    }
+
+    pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
+        EntityIter {
+            world,
+            iter: self.entities.iter()
+        }
     }
 
     /// # Safety

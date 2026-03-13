@@ -124,9 +124,9 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Health, Without<Velocity>>, counter: Local<usize>) {
-    for component in &query {
-        tracing::info!("{:?}", component);
+fn simple_system(query: Query<(Entity, &Health), Without<Velocity>>, counter: Local<usize>) {
+    for (entity, component) in &query {
+        tracing::info!("{:?} belongs to {}", component, entity.id());
     }
 }
 

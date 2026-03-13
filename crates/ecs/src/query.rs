@@ -364,8 +364,9 @@ unsafe impl ParamRef for Entity<'_> {
         unimplemented!("attempt to lookup column index of entity");
     }
 
-    fn iter<'t>(world: &'t World, _table: usize, _col: usize) -> EntityIter<'t> {
-        todo!()
+    fn iter<'t>(world: &'t World, table: usize, _col: usize) -> EntityIter<'t> {
+        let table = world.archetypes.table(table);
+        table.iter_entities(world)
     }
 }
 

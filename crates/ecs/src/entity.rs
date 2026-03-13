@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{fmt, marker::PhantomData};
 
 use bitvec::vec::BitVec;
 
@@ -6,6 +6,12 @@ use crate::{component::Component, world::World};
 
 #[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);
+
+impl fmt::Display for EntityId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct GenerationId(pub(crate) usize);
