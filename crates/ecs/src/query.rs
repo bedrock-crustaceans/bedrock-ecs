@@ -7,6 +7,10 @@ use smallvec::{SmallVec, smallvec};
 use crate::{archetype::{ArchetypeComponents, ArchetypeId, ArchetypeIter, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity, EntityIter}, filter::FilterBundle, param::{self, Param}, sealed::Sealed, table::{ColumnIter, ColumnIterMut, Table}, world::World};
 use crate::graph::{AccessDesc, AccessType};
 
+struct TestComponent {}
+
+impl Component for TestComponent {}
+
 /// # Safety:
 ///
 /// The `access` method must correctly return the types this query uses.
@@ -18,13 +22,13 @@ use crate::graph::{AccessDesc, AccessType};
     note = "components in a query must be wrapped in a reference, e.g. `&{Self}` or `&mut {Self}`",
     note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
 )]
-pub unsafe trait QueryBundle {
+pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
     /// The item that the query outputs.
     type Output<'a> where Self: 'a;
     /// The iterators over the columns.
-    type Iter<'a>: QueryIterable<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: QueryIterable<'a, Self> + Iterator<Item = Self::Output<'a>> where Self: 'a;
 
     /// The amount of items in this bundle.
     const COUNT: usize;
@@ -33,24 +37,23 @@ pub unsafe trait QueryBundle {
 
     #[cfg(feature = "generics")]
     fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount>;
-
-    #[cfg(not(feature = "generics"))]
-    fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
-
     #[cfg(feature = "generics")]
     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount>;
-
+    
+    #[cfg(not(feature = "generics"))]
+    fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
     #[cfg(not(feature = "generics"))]
     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; param::INLINE_SIZE]>;
 }
 
 #[cfg(feature = "generics")]
-pub trait QueryIterable<'t>: Sized {
-    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self;
+pub trait QueryIterable<'t, Q: QueryBundle>: Sized {
+    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self;
 }
 
-impl<'t> QueryIterable<'t> for EntityIter<'t> {
-    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self {
+#[cfg(feature = "generics")]
+impl<'t, Q: QueryBundle> QueryIterable<'t, Q> for EntityIter<'t> {
+    fn new(archetype: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self {
         todo!()
     }
 }
@@ -60,15 +63,15 @@ macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'t, $($gen: ParamRef + Send),*> {
+            pub struct [< IteratorBundle $count >]<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> {
                 archetypes: &'t Archetypes,
-                cache: std::slice::Iter<'t, CachedTable>,
+                cache: std::slice::Iter<'t, CachedTable<Q::AccessCount>>,
                 iters: ($($gen::Iter<'t>),*),
                 _marker: PhantomData<&'t ($($gen),*)>
             }
 
-            impl<'t, $($gen: ParamRef + Send),*> QueryIterable<'t> for [< IteratorBundle $count >]<'t, $($gen),*> {
-                fn new(archetypes: &'t Archetypes, cache: &'t [CachedTable]) -> Self {
+            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> QueryIterable<'t, Q> for [< IteratorBundle $count >]<'t, Q, $($gen),*> {
+                fn new(archetypes: &'t Archetypes, cache: &'t [CachedTable<Q::AccessCount>]) -> Self {
                     let iters = ($(
                         $gen::iter()
                     ),*);
@@ -83,7 +86,7 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_parens)]
-            impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
+            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, Q, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case)]
@@ -96,14 +99,14 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'t, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, $($gen),*> {}
+            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, $($gen),*> {}
 
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t> = [< IteratorBundle $count >]<'t, $($gen),*> where Self: 't;
+                type Iter<'t> = [< IteratorBundle $count >]<'t, ($($gen),*), $($gen),*> where Self: 't;
 
                 const COUNT: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 
@@ -393,14 +396,14 @@ unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterBundle + 'static> P
     }
 }
 
-// #[cfg(feature = "generics")]
-// #[derive(Debug)]
-// pub struct CachedTable<N: ArrayLength> {
-//     pub table: usize,
-//     pub cols: GenericArray<usize, N>
-// }
+#[cfg(feature = "generics")]
+#[derive(Debug)]
+pub struct CachedTable<N: ArrayLength> {
+    pub table: usize,
+    pub cols: GenericArray<usize, N>
+}
 
-// #[cfg(not(feature = "generics"))]
+#[cfg(not(feature = "generics"))]
 #[derive(Debug)]
 pub struct CachedTable {
     /// The table that contains the components.
@@ -410,9 +413,9 @@ pub struct CachedTable {
 }
 
 pub struct QueryCache<Q: QueryBundle, F: FilterBundle> {
-    // #[cfg(feature = "generics")]
-    // cached_tables: SmallVec<[CachedTable<Q::AccessCount>; 8]>,
-    // #[cfg(not(feature = "generics"))]
+    #[cfg(feature = "generics")]
+    cached_tables: SmallVec<[CachedTable<Q::AccessCount>; 8]>,
+    #[cfg(not(feature = "generics"))]
     cached_tables: SmallVec<[CachedTable; 8]>,
 
     filter_state: F,
@@ -460,8 +463,12 @@ impl<Q: QueryBundle, F: FilterBundle> QueryCache<Q, F> {
 }
 
 pub struct QueryIter<'q, Q: QueryBundle, F: FilterBundle> {
-    archetypes: &'q Archetypes,
+    #[cfg(feature = "generics")]
+    cache: std::slice::Iter<'q, CachedTable<Q::AccessCount>>,
+    #[cfg(not(feature = "generics"))]
     cache: std::slice::Iter<'q, CachedTable>,
+
+    archetypes: &'q Archetypes,
     table_iter: Q::Iter<'q>,
     _marker: PhantomData<&'q (Q, F)>
 }
