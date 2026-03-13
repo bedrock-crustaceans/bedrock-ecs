@@ -72,7 +72,12 @@ impl Archetypes {
     }
 
     pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
-        &self, archetype: &BitSet, filter: &F, cache: &mut SmallVec<[CachedTable; 8]>
+        &self, archetype: &BitSet, filter: &F, 
+        
+        // #[cfg(feature = "generics")]
+        // cache: &mut SmallVec<[CachedTable<Q::AccessCount>; 8]>,
+        // #[cfg(not(feature = "generics"))]
+        cache: &mut SmallVec<[CachedTable; 8]>
     ) {
         cache.clear();
 

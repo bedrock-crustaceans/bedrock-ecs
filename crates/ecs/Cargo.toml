@@ -7,7 +7,7 @@ edition = "2024"
 
 [features]
 generics = []
-default = []
+default = ["generics"]
 
 [dependencies]
 bitvec = "1.0.1"

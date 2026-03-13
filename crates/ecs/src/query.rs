@@ -44,6 +44,7 @@ pub unsafe trait QueryBundle {
     fn cache_layout(lookup: &HashMap<TypeId, usize>) -> SmallVec<[usize; param::INLINE_SIZE]>;
 }
 
+#[cfg(feature = "generics")]
 pub trait QueryIterable<'t>: Sized {
     fn new(archetype: &'t Archetypes, cache: &'t [CachedTable]) -> Self;
 }
@@ -80,12 +81,6 @@ macro_rules! impl_bundle {
                     }
                 }
             }
-
-            // impl<'t, $($gen: ParamRef + Send),*> From<(&'t Archetypes, &'t [CachedTable])> for [< IteratorBundle $count >]<'t, $($gen),*> {
-            //     fn from((archetypes, cache): (&'t Archetypes, &'t [CachedTable])) -> Self {
-            //         todo!()
-            //     }
-            // }
 
             #[allow(unused_parens)]
             impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
@@ -175,12 +170,6 @@ macro_rules! impl_bundle {
                     }
                 }
             }
-
-            // impl<'t, $($gen: ParamRef + Send),*> From<(&'t Archetypes, &'t [CachedTable])> for [< IteratorBundle $count >]<'t, $($gen),*> {
-            //     fn from((archetypes, cache): (&'t Archetypes, &'t [CachedTable])) -> Self {
-            //         todo!()
-            //     }
-            // }
 
             #[allow(unused_parens)]
             impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
@@ -404,6 +393,14 @@ unsafe impl<'placeholder, Q: QueryBundle + 'static, F: FilterBundle + 'static> P
     }
 }
 
+// #[cfg(feature = "generics")]
+// #[derive(Debug)]
+// pub struct CachedTable<N: ArrayLength> {
+//     pub table: usize,
+//     pub cols: GenericArray<usize, N>
+// }
+
+// #[cfg(not(feature = "generics"))]
 #[derive(Debug)]
 pub struct CachedTable {
     /// The table that contains the components.
@@ -413,10 +410,14 @@ pub struct CachedTable {
 }
 
 pub struct QueryCache<Q: QueryBundle, F: FilterBundle> {
+    // #[cfg(feature = "generics")]
+    // cached_tables: SmallVec<[CachedTable<Q::AccessCount>; 8]>,
+    // #[cfg(not(feature = "generics"))]
+    cached_tables: SmallVec<[CachedTable; 8]>,
+
     filter_state: F,
     generation: u64,
     archetype: BitSet,
-    cached_tables: SmallVec<[CachedTable; 8]>,
     _marker: PhantomData<(Q, F)>
 }
 

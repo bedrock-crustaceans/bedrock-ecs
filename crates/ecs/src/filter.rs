@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 use generic_array::{arr, ArrayLength, GenericArray};
 use generic_array::typenum::{Unsigned, U0, U1, U2, U3, U4, U5};
+#[cfg(not(feature = "generics"))]
+use smallvec::SmallVec;
 use crate::{component::Component};
 use crate::archetype::Archetypes;
 use crate::component::ComponentId;
@@ -27,15 +29,27 @@ pub trait FilterBundle: Sized {
     const LEN: usize = Self::Arity::USIZE;
 
     fn init(archetypes: &mut Archetypes) -> Self;
+
+    #[cfg(feature = "generics")]
     fn desc(&self) -> GenericArray<FilterDesc, Self::Arity>;
+
+    #[cfg(not(feature = "generics"))]
+    fn desc(&self) -> SmallVec<[FilterDesc; 2]>;
 }
 
 impl FilterBundle for () {
     type Arity = U0;
 
     fn init(_archetypes: &mut Archetypes) -> Self {}
+
+    #[cfg(feature = "generics")]
     fn desc(&self) -> GenericArray<FilterDesc, U0> {
         GenericArray::default()
+    }
+
+    #[cfg(not(feature = "generics"))]
+    fn desc(&self) -> SmallVec<[FilterDesc; 2]> {
+        SmallVec::new()
     }
 }
 
@@ -52,10 +66,18 @@ macro_rules! impl_bundle {
                     ($($gen::init(archetypes)),*)
                 }
 
+                #[cfg(feature = "generics")]
                 fn desc(&self) -> GenericArray<FilterDesc, Self::Arity> {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = &self;
                     GenericArray::from(($($gen::desc($gen),)*))
+                }
+
+                #[cfg(not(feature = "generics"))]
+                fn desc(&self) -> SmallVec<[FilterDesc; 2]> {
+                    #[allow(non_snake_case)]
+                    let ($($gen),*) = &self;
+                    smallvec::smallvec![$($gen::desc($gen)),*]
                 }
             }
         }
