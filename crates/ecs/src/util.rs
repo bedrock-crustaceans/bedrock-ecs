@@ -1,5 +1,17 @@
 use std::{alloc::{Layout}};
 
+/// Computes the sum of a list of integers.
+#[cfg(feature = "generics")]
+#[macro_export]
+macro_rules! create_tarray {
+    ($head:ty) => {
+        generic_array::typenum::TArr<$head, generic_array::typenum::ATerm>
+    };
+    ($head:ty, $($tail:ty),*) => {
+        generic_array::typenum::TArr<$head, $crate::create_tarray!($($tail),*)>
+    }
+}
+
 pub fn repeat_layout(layout: Layout, n: usize) -> Layout {
     let size = layout.size();
     let align = layout.align();

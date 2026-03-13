@@ -67,38 +67,17 @@ impl BitSet {
             .iter()
             .zip(other.bits.iter())
             .all(|(a, b)| {
-                (a & b).eq(b)
+                a & b == *b
             })
     }
 
-    /// Finds the intersection between `self` and `other`.
-    pub fn intersect(&self, other: &Self) -> Self {
-        let intersect = self.bits
+    /// Whether `self` and `other` are disjoint.
+    pub fn is_disjoint(&self, other: &Self) -> bool {
+        self.bits
             .iter()
             .zip(other.bits.iter())
-            .map(|(a, b)| {
-                a & b
+            .all(|(a, b)| {
+                a ^ b == 0
             })
-            .collect::<SmallVec<[u64; INLINE_COUNT]>>();
-
-        BitSet { bits: intersect }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::bitset::BitSet;
-
-    #[test]
-    fn test_bitset() {
-        let mut set1 = BitSet::new();
-        set1.set(3);
-
-        let mut set2 = BitSet::new();
-        set2.set(4);
-        set2.set(3);
-
-        let inter = set2.intersect(&set1);
-        println!("{inter:?}");
     }
 }

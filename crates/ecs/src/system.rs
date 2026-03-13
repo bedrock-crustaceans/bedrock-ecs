@@ -94,7 +94,10 @@ where
     (P1, P2): ParamBundle
 {
     fn name(&self) -> String {
-        todo!()
+        let type_name = std::any::type_name::<F>();
+        let split = type_name.split("::").last().unwrap_or("unknown");
+
+        split.to_owned()
     }
 
     fn access(&self) -> &[AccessDesc] {

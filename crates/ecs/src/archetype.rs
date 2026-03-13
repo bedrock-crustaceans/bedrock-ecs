@@ -87,21 +87,20 @@ impl Archetypes {
 
         let iter = self.lookup.iter().enumerate().filter_map(|(i, (k, &v))| {
             if k.is_subset(archetype) {
-                // Tables that match `Q`. We now filter these using `F`.
-                
+                // This table matches the queried components. We now apply all passive filters.
+                // Dynamic filters will be applied during iteration.
+ 
+                if !filter.apply_static_filters(k) {
+                    return None
+                }
 
                 // Found match
                 let table = &self.tables[v];
                 let cols = Q::cache_layout(&table.lookup);
-
-                // todo!()
-                // return Some(CachedTable {
-                //     table: v,
-                //     cols
-                // })
-
-            
-                return None
+                return Some(CachedTable {
+                    table: v,
+                    cols
+                })
             }            
 
             None

@@ -74,26 +74,16 @@ unsafe impl ParamBundle for () {
 }
 
 #[cfg(feature = "generics")]
-macro_rules! create_tarray {
-    ($head:ty) => {
-        generic_array::typenum::TArr<$head, generic_array::typenum::ATerm>
-    };
-    ($head:ty, $($tail:ty),*) => {
-        generic_array::typenum::TArr<$head, create_tarray!($($tail),*)>
-    }
-}
-
-#[cfg(feature = "generics")]
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
             #[allow(unused_parens)]
             unsafe impl<$($gen: Param),*> ParamBundle for ($($gen),*)
             where
-                create_tarray!($($gen::AccessCount),*): FoldAdd,
-                <create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output: ArrayLength
+                crate::create_tarray!($($gen::AccessCount),*): FoldAdd,
+                <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output: ArrayLength
             {
-                type AccessCount = <create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
+                type AccessCount = <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
                 type State = ($($gen::State),*);
 
                 #[allow(unused)]

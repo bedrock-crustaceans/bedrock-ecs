@@ -1,6 +1,6 @@
 use ecs::component::Component;
 use ecs::entity::Entity;
-use ecs::filter::{With, Without};
+use ecs::filter::{Added, With, Without};
 use ecs::local::Local;
 use ecs::query::Query;
 use ecs::schedule::{ScheduleBuilder, ScheduleLabel};
@@ -130,7 +130,7 @@ fn simple_system(query: Query<&Health, With<Mass>>, counter: Local<usize>) {
     }
 }
 
-fn second_system(query: Query<(&Health, &Mass)>) {
+fn second_system(query: Query<(&Health, &Mass), Added<Health>>) {
     // for (health, mass) in &query {
     //     tracing::info!("health is {health:?}, mass is {mass:?}");
     // }
