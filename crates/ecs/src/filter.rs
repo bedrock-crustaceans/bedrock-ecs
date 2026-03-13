@@ -67,6 +67,10 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg(feature = "generics")]
+                #[cfg_attr(
+                    feature = "instrument", 
+                    tracing::instrument(name = "FilterBundle::desc", skip_all)
+                )]
                 fn desc(&self) -> GenericArray<FilterDesc, Self::Arity> {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = &self;
@@ -74,6 +78,10 @@ macro_rules! impl_bundle {
                 }
 
                 #[cfg(not(feature = "generics"))]
+                #[cfg_attr(
+                    feature = "instrument", 
+                    tracing::instrument(name = "FilterBundle::desc", skip_all)
+                )]
                 fn desc(&self) -> SmallVec<[FilterDesc; 2]> {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = &self;

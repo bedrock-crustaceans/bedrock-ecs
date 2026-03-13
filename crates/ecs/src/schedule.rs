@@ -30,6 +30,7 @@ macro_rules! impl_bundle {
                     let ($([<$gen:lower>]),*) = self;
                     $(
                         let boxed = [<$gen:lower>].into_system(schedule.world);
+                        
                         let sid = SystemId::of::<$gen, [<$gen Fun>]>();
                         schedule.graph.add_node(GraphNode {
                             sid, access: boxed.access().into()
@@ -85,7 +86,7 @@ impl<'w> ScheduleBuilder<'w> {
     }
 
     pub fn schedule(mut self) -> Schedule {
-        println!("Rendered: {}", self.graph.render(&self.systems));
+        tracing::info!("Rendered: {}", self.graph.render(&self.systems));
         self.graph.sort(self.systems)
     }
 }

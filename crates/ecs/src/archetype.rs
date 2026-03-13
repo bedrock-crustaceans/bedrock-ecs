@@ -71,6 +71,10 @@ impl Archetypes {
         self.generation
     }
 
+    #[cfg_attr(
+        feature = "instrument", 
+        tracing::instrument(name = "Archetypes::cache_tables", skip_all)
+    )]
     pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
         &self, archetype: &BitSet, filter: &F, 
         
@@ -84,17 +88,20 @@ impl Archetypes {
         let iter = self.lookup.iter().enumerate().filter_map(|(i, (k, &v))| {
             if k.is_subset(archetype) {
                 // Tables that match `Q`. We now filter these using `F`.
-                println!("Filter is: {:?}", filter.desc());
+                
 
                 // Found match
                 let table = &self.tables[v];
                 let cols = Q::cache_layout(&table.lookup);
 
-                todo!()
+                // todo!()
                 // return Some(CachedTable {
                 //     table: v,
                 //     cols
                 // })
+
+            
+                return None
             }            
 
             None
@@ -103,6 +110,10 @@ impl Archetypes {
         cache.extend(iter);
     }
 
+    #[cfg_attr(
+        feature = "instrument", 
+        tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
+    )]
     pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
         self.generation += 1;
         
@@ -132,21 +143,6 @@ impl Archetypes {
         todo!()
         // self.tables.remove(id)
     }
-
-    // pub fn insert(&mut self, id: EntityId, components: ArchetypeComponents, layout: Layout) {
-    //     let idx = self.lookup.get(&components).copied().unwrap_or_else(|| {
-    //         let archetype = Archetype::new(components.clone(), layout);
-    //         self.archetypes.push(archetype);
-            
-    //         let id = ArchetypeId::from(self.archetypes.len() - 1);
-    //         self.lookup.insert(components, id);
-
-    //         id
-    //     });
-
-    //     let archetype = &mut self.archetypes[idx.0];
-    //     todo!();
-    // }
 }
 
 #[cfg(test)]
@@ -173,7 +169,6 @@ mod test {
         archetypes.insert(EntityId(1), Test { hello: 1 });
         archetypes.insert(EntityId(2), Test { hello: 2 });
 
-        // println!("{archetypes:?}");
         println!("Dropping archetypes");
     }
 }

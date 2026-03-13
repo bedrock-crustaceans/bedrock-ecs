@@ -51,6 +51,10 @@ pub struct Column {
 
 impl Column {
     /// Creates a new Column for the type `T`.
+    #[cfg_attr(
+        feature = "instrument",
+        tracing::instrument(name = "Column::new", skip_all)
+    )]
     pub fn new<T: 'static>() -> Column {
         // The static requirement on `T` ensures that the type does not contain any references.
 
@@ -62,6 +66,12 @@ impl Column {
 
         let layout = Layout::new::<T>();
         if std::mem::size_of::<T>() == 0 {
+            tracing::trace!(
+                "created new column for ZST `{}`, needs drop: {}", 
+                std::any::type_name::<T>(), 
+                std::mem::needs_drop::<T>()
+            );
+
             // Produce a valid non-null pointer for the ZST even though we will never use it.
             let ptr = NonNull::<T>::dangling().cast::<u8>();
 
@@ -77,6 +87,12 @@ impl Column {
                 drop_fn
             }
         } else {
+            tracing::trace!(
+                "created new column for `{}`, needs drop: {}", 
+                std::any::type_name::<T>(), 
+                std::mem::needs_drop::<T>()
+            );
+
             Column {
                 #[cfg(debug_assertions)]
                 flag: RwFlag::new(),
@@ -216,7 +232,7 @@ impl Column {
         // The computed offset does not overflow `isize` by the assert above and the original pointer
         // `self.data` is derived from an allocation while the offset result is within the allocation due
         // to the check that `self.len < self.cap`.
-        let Column_ptr = unsafe {
+        let column_ptr = unsafe {
             self.data.unwrap().add(offset)
         };
         
@@ -226,7 +242,7 @@ impl Column {
         // Additionally `std::ptr::write` semantically moves `data` into the Column, ensuring it does
         // not get dropped. This ensures there is no use after free.
         unsafe {
-            std::ptr::write(Column_ptr.cast::<T>().as_ptr(), data);
+            std::ptr::write(column_ptr.cast::<T>().as_ptr(), data);
         }
 
         self.len += 1;

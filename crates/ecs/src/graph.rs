@@ -113,12 +113,12 @@ impl ScheduleGraph {
     }
 
     pub fn sort(&mut self, systems: HashMap<SystemId, Box<dyn System>>) -> Schedule {
-        println!("Generating dependency graph...");
+        tracing::debug!("Generating dependency graph...");
 
         // Create edges between all conflicting systems
         self.build_dependencies();
 
-        println!("Rendered: {}", self.render(&systems));
+        tracing::debug!("Rendered: {}", self.render(&systems));
 
         let mut sets = Vec::new();
         let mut current_set = self.in_degrees
@@ -127,7 +127,7 @@ impl ScheduleGraph {
             .filter_map(|(i, deg)| 0.eq(deg).then_some(i))
             .collect::<Vec<_>>();
 
-        println!("Finding optimal schedule...");
+        tracing::debug!("Finding optimal schedule...");
         while !current_set.is_empty() {
             let mut next_set = Vec::new();
 
@@ -156,7 +156,7 @@ impl ScheduleGraph {
             }).collect::<Vec<_>>()
         }).collect::<Vec<_>>();
 
-        println!("Optimal schedule: {named:?}");
+        tracing::info!("Optimal schedule: {named:?}");
 
         Schedule {
             systems,

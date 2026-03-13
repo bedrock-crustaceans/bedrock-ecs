@@ -102,12 +102,12 @@ mod test {
         set.push(3);
         set.push(4);
 
-        println!("{set:?}");
+        tracing::info!("{set:?}");
 
         set.remove(2);
 
         assert!(set.get(2).is_none());
 
-        println!("{set:?}");
+        tracing::info!("{set:?}");
     }
 }

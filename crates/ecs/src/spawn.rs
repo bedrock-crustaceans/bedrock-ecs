@@ -22,6 +22,10 @@ macro_rules! impl_bundle {
                 bitset
             }
 
+            #[cfg_attr(
+                feature = "instrument",
+                tracing::instrument(name = "SpawnBundle::new_table", fields(bundle = std::any::type_name::<Self>()) skip_all)  
+            )]
             fn new_table(bitset: BitSet) -> Table {
                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
@@ -44,7 +48,7 @@ macro_rules! impl_bundle {
                 {
                     let mut counter = 0;
                     $(
-                        println!("Inserting type {}", std::any::type_name::<$gen>());
+                        tracing::info!("inserting type {}", std::any::type_name::<$gen>());
                         table.lookup.insert(TypeId::of::<$gen>(), counter);
                         counter += 1;   
                     )*
@@ -54,6 +58,10 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_variables)]
+            #[cfg_attr(
+                feature = "instrument", 
+                tracing::instrument(name = "SpawnBundle::insert_into", fields(bundle = std::any::type_name::<Self>()) skip_all)
+            )]
             fn insert_into(self, storage: &mut Vec<Column>) {
                 #[allow(non_snake_case)]
                 let ($($gen),*) = self;

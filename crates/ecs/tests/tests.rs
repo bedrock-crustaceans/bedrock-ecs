@@ -1,9 +1,11 @@
 use ecs::component::Component;
 use ecs::entity::Entity;
 use ecs::filter::{With, Without};
+use ecs::local::Local;
 use ecs::query::Query;
 use ecs::schedule::{ScheduleBuilder, ScheduleLabel};
 use ecs::world::World;
+use tracing::Level;
 
 #[derive(Debug, Copy, Clone)]
 struct Position { x: f32, y: f32 }
@@ -26,7 +28,7 @@ impl Component for Mass {}
 impl Component for Static {}
 
 // fn movement_system(query: Query<(&Velocity, &mut Position)>) {
-//     println!("movement_system called");
+//     tracing::info!("movement_system called");
 
 //     for (vel, mut pos) in &query {
 //         // Force floating point unit (FPU) stress
@@ -39,7 +41,7 @@ impl Component for Static {}
 // }
 
 // fn gravity_system(query: Query<(&Mass, &mut Velocity), Without<Static>>) {
-//     println!("gravity_system called");
+//     tracing::info!("gravity_system called");
 
 //     for (mass, mut vel) in &query {
 //         // Simulated orbital gravity pull towards center (0,0)
@@ -47,12 +49,12 @@ impl Component for Static {}
 //         vel.y -= (9.81 * mass.0) / dist_sq;
 //         vel.x += 0.01; // Constant cross-wind stress
 
-//         println!("Velocity is {vel:?}");
+//         tracing::info!("Velocity is {vel:?}");
 //     }
 // }
 
 // fn combat_system(query: Query<(&Position, &Faction, &mut Health)>) {
-//     println!("combat_system called");
+//     tracing::info!("combat_system called");
 
 //     // Collecting to a Vec is a common ECS stressor: it tests allocation 
 //     // and linear iteration outside of the ECS storage.
@@ -72,7 +74,7 @@ impl Component for Static {}
 // }
 
 // fn collision_system(query: Query<(Entity, &mut Position, &mut Velocity, &Mass)>) {
-//     println!("collision_system called");
+//     tracing::info!("collision_system called");
 
 //     let entities: Vec<_> = query.iter().map(|(e, p, _, m)| (e, *p, m.0)).collect();
 
@@ -101,7 +103,7 @@ impl Component for Static {}
 // }
 
 // fn regen_system(query: Query<&mut Health>) {
-//     println!("regen_system called");
+//     tracing::info!("regen_system called");
 
 //     for mut health in &query {
 //         // High-frequency small updates
@@ -110,7 +112,7 @@ impl Component for Static {}
 // }
 
 // fn death_system(query: Query<(Entity, &Health)>) {
-//     println!("death_system called");
+//     tracing::info!("death_system called");
 
 //     for (entity, health) in &query {
 //         if health.0 <= 0.0 {
@@ -122,15 +124,15 @@ impl Component for Static {}
 //     }
 // }
 
-fn simple_system(query: Query<&Health, With<Mass>>) {
+fn simple_system(query: Query<&Health, With<Mass>>, counter: Local<usize>) {
     for component in &query {
-        println!("{:?}", component.0);
+        tracing::info!("{:?}", component.0);
     }
 }
 
 fn second_system(query: Query<(&Health, &Mass)>) {
     // for (health, mass) in &query {
-    //     println!("health is {health:?}, mass is {mass:?}");
+    //     tracing::info!("health is {health:?}, mass is {mass:?}");
     // }
 }
 
@@ -154,10 +156,20 @@ impl ScheduleLabel for Label3 {
 
 #[test]
 fn stress_test() {
+    tracing_subscriber::fmt()
+        // .without_time()
+        // .with_target(false)
+        // .with_thread_names(true)
+        // .with_file(true)
+        // .with_line_number(true)
+        .with_max_level(Level::TRACE)
+        .compact()
+        .init();
+
     let mut world = World::new();
 
     // Spawn 10,000 entities to ensure the loop actually takes time
-    println!("Summoning entities");
+    tracing::info!("Summoning entities");
     for i in 0..2u32 {
         world.spawn((
             // Position { x: i as f32, y: 0.0 },
@@ -170,9 +182,9 @@ fn stress_test() {
 
     world.spawn(Health(12.0));
 
-    println!("World has {} entities", world.entities().count());
+    tracing::info!("World has {} entities", world.entities().count());
 
-    println!("Generating schedule...");
+    tracing::info!("Generating schedule...");
     let schedule = ScheduleBuilder::new(&mut world)
         // // Stage 1: High Parallelism (Physics + Combat)
         // .add(Label1, (movement_system, gravity_system, combat_system))

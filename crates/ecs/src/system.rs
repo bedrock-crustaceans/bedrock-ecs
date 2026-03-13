@@ -55,11 +55,6 @@ where
     P: ParamBundle,
     F: ParametrizedSystem<P> {}
 
-#[derive(Default)]
-pub struct Systems {
-    storage: Vec<Box<dyn System>>
-}
-
 impl<P, F> System for FnContainer<P, F> 
 where
     P: Param,
@@ -141,31 +136,6 @@ where
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
 
         self(p1, p2);
-    }
-}
-
-impl Systems {
-    pub fn new() -> Systems {
-        Systems::default()
-    }
-
-    pub fn reserve(&mut self, n: usize) {
-        self.storage.reserve(n);
-    }
-
-    pub fn push<P, S: IntoSystem<P>>(&mut self, world: &mut World, system: S) {
-        let system = system.into_system(world);
-        let desc= system.access();
-
-        println!("System desc: {desc:?}");
-
-        self.storage.push(system);
-    }
-
-    pub fn call(&self, world: &World) {
-        for sys in &self.storage {
-            sys.call(world);
-        }
     }
 }
 

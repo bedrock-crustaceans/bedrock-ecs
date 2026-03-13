@@ -1,4 +1,4 @@
-use crate::{archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, spawn::SpawnBundle, system::Systems};
+use crate::{archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, spawn::SpawnBundle};
 use crate::graph::Schedule;
 use crate::schedule::ScheduleBuilder;
 
@@ -33,7 +33,7 @@ impl World {
                 schedule.systems.get(id).unwrap().call(&self);
             }
 
-            println!("Running next set");
+            tracing::info!("Running next set");
             // rayon::scope(|s| {
             //     for id in set {
             //         s.spawn(|_| {

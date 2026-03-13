@@ -119,7 +119,13 @@ macro_rules! impl_bundle {
                     }
                 }
 
+                #[cfg_attr(
+                    feature = "instrument",
+                    tracing::instrument(name = "ParamBundle::init", skip_all)
+                )]
                 fn init(world: &mut World) -> Self::State {
+                    tracing::trace!("initialising {} system parameter state(s)", Self::AccessCount::USIZE);
+
                     ($($gen::init(world)),*)
                 }
             }

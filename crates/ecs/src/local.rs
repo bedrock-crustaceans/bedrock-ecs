@@ -34,7 +34,14 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
         Local(&mut state.0)
     }
 
-    fn init(_world: &mut World) -> LocalState<T> { LocalState(T::default())  }
+    #[cfg_attr(
+        feature = "instrument",
+        tracing::instrument(name = "Local::init", skip_all)
+    )]
+    fn init(_world: &mut World) -> LocalState<T> { 
+        tracing::trace!("created internal state for `Local<{}>`", std::any::type_name::<T>());
+        LocalState(T::default())  
+    }
 }
 
 impl<'s, T: Default + Send> Deref for Local<'s, T> {
