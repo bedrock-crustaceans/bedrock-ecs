@@ -4,7 +4,7 @@ use generic_array::typenum::U1;
 #[cfg(not(feature = "generics"))]
 use smallvec::{SmallVec, smallvec};
 
-use crate::graph::Schedule;
+use crate::{graph::Schedule, resource::ResourceBundle};
 #[cfg(not(feature = "generics"))]
 use crate::param;
 use crate::schedule::ScheduleBuilder;
@@ -45,6 +45,10 @@ impl World {
         self.flag.write_guardless();
 
         EntityMut { id, world: self }
+    }
+
+    pub fn add_resources<R: ResourceBundle>(&mut self, resources: R) {
+        resources.insert_into(&mut self.resources);
     }
 
     #[inline]

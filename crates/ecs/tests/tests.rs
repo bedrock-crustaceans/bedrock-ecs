@@ -1,5 +1,5 @@
 use ecs::{
-    Component, Entity, Query, Res, Resource, ScheduleBuilder, ScheduleLabel, Without, World,
+    Component, Entity, Query, Res, ResMut, Resource, ScheduleBuilder, ScheduleLabel, Without, World
 };
 use tracing::Level;
 
@@ -60,8 +60,8 @@ fn second_system(query: Query<(&Health, &Mass)>) {
     }
 }
 
-fn resource_system(res: Res<(GlobalTimer, GlobalTimer)>) {
-    let time = &res.0;
+fn resource_system(res: ResMut<GlobalTimer>) {
+    let time = res.0;
     println!("Time is {time:?}");
 }
 
@@ -117,6 +117,7 @@ fn stress_test() {
         ));
     }
 
+    world.add_resources(GlobalTimer(5));
     world.spawn(Health(69.0));
 
     tracing::info!("World has {} entities", world.entities().count());

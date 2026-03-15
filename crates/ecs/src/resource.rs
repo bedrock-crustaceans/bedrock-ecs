@@ -38,55 +38,22 @@ pub trait Resource: Send + Sync + 'static {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
-pub trait ResourceBundle: Send + Sync + 'static {
-    type AccessCount: ArrayLength + Add;
-
-    #[cfg(feature = "generics")]
-    fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
-
-    #[cfg(not(feature = "generics"))]
-    fn access(world: &mut World) -> SmallVec<[AccessDesc; 4]>;
-
-    fn contains(resources: &Resources) -> bool;
+pub trait ResourceBundle {
+    fn insert_into(self, resources: &mut Resources);
 }
 
 macro_rules! impl_bundle {
-    ($count:literal, $($gen:ident),*) => {
-        paste::paste! {
-            #[allow(unused_parens)]
-            impl<$($gen:Resource),*> ResourceBundle for ($($gen),*) {
-                #[cfg(feature = "generics")]
-                type AccessCount = generic_array::typenum::[< U $count >];
+    ($count:expr, $($gen:ident),*) => {
+        #[allow(unused_parens)]
+        impl<$($gen: Resource),*> ResourceBundle for ($($gen),*) {
+            fn insert_into(self, resources: &mut Resources) {
+                #[allow(non_snake_case)]
+                let ($($gen),*) = self;
 
-                #[cfg(feature = "generics")]
-                fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
-                    GenericArray::from(
-                        ($(
-                            // This is done inside the macro instead of defining an `access`
-                            // method in order to make the `Resource` trait dyn compatible.
-                            //
-                            // `ResourceId::of` requires `Self` to be `Sized` but that would make
-                            // `Resource` dyn incompatible.
-                            AccessDesc {
-                                ty: AccessType::Resource(ResourceId::of::<$gen>()),
-                                exclusive: false
-                            },
-                        )*)
-                    )
-                }
-
-                #[cfg(not(feature = "generics"))]
-                fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-                    smallvec::smallvec![
-                        $(
-                            $gen::access()
-                        ),*
-                    ]
-                }
-
-                fn contains(resources: &Resources) -> bool {
-                    $(resources.storage.contains_key(&ResourceId::of::<$gen>()))&&*
-                }
+                resources.reserve($count);
+                $(
+                    resources.insert($gen);
+                )*
             }
         }
     }
@@ -94,74 +61,182 @@ macro_rules! impl_bundle {
 
 impl_bundle!(1, A);
 impl_bundle!(2, A, B);
+impl_bundle!(3, A, B, C);
+impl_bundle!(4, A, B, C, D);
+impl_bundle!(5, A, B, C, D, E);
 
 /// Obtains a shared reference to a global [`Resource`].
 ///
 /// The system will panic if the given resource does not exist, so make sure to create it before
 /// attempting to use the resource.
-pub struct Res<'s, R: ResourceBundle> {
-    inner: &'s R,
-}
+pub struct Res<'s, R: Resource>(&'s R);
 
-impl<'s, R: ResourceBundle> Deref for Res<'s, R> {
+impl<'s, R: Resource> Deref for Res<'s, R> {
     type Target = R;
 
     fn deref(&self) -> &R {
-        self.inner
+        self.0
     }
 }
 
-unsafe impl<R: ResourceBundle> Param for Res<'_, R> {
+pub struct ResState {
+    system: &'static str,
+    resource: &'static str
+}
+
+unsafe impl<R: Resource> Param for Res<'_, R> {
     #[cfg(feature = "generics")]
-    type AccessCount = R::AccessCount;
+    type AccessCount = U1;
     type Output<'s> = Res<'s, R>;
-    type State = ();
+
+    // Keep track of system and resource name for logging purposes.
+    type State = ResState;
 
     #[cfg(feature = "generics")]
-    fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
-        R::access(world)
+    #[inline]
+    fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
+        GenericArray::from((
+            AccessDesc {
+                ty: AccessType::Resource(ResourceId::of::<R>()),
+                exclusive: false
+            },
+        ))
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(world: &mut World) -> SmallVec<[AccessDesc; 4]> {
-        R::access(world)
+    #[inline]
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; 4]> {
+        smallvec![
+            AccessDesc {
+                ty: AccessType::Resource(ResourceId::of::<R>()),
+                exclusive: false
+            }
+        ]
     }
 
-    fn init(world: &mut World, meta: &SystemMeta) {
-        if R::contains(&world.resources) {
-            return;
-        }
-
+    fn init(world: &mut World, meta: &SystemMeta) -> ResState {
         let full_name = std::any::type_name::<R>();
+        // Attempt to extract type name.
+        let res_name = full_name.split("::").last().unwrap_or(full_name);
+
+        if world.resources.contains::<R>() {
+            return ResState {
+                resource: res_name,
+                system: meta.name
+            }
+        }
 
         // Check whether the resource exists and warn otherwise
         tracing::warn!(
-            "`Res<{}>` is used by system `{}` but resource(s) do not exist. Attempting to access these before they are initialized will cause a panic.",
-            full_name,
+            "`Res<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
+            res_name,
             meta.name
         );
+
+        ResState {
+            resource: res_name,
+            system: meta.name
+        }
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> Res<'w, R> {
-        todo!()
+    #[inline]
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut ResState) -> Res<'w, R> {
+        let Some(res) = world.resources.get::<R>() else {
+            tracing::error!(
+                "System `{}` attempted to access `Res<{}>` which does not exist",
+                state.system, state.resource 
+            );
+
+            panic!("cannot access non-existent resource");
+        };
+
+        Res(res)
     }
 }
 
-pub struct ResMut<'s, R: ResourceBundle> {
-    inner: &'s mut R,
-}
+pub struct ResMut<'s, R: Resource>(&'s mut R);
 
-impl<'s, R: ResourceBundle> Deref for ResMut<'s, R> {
+impl<'s, R: Resource> Deref for ResMut<'s, R> {
     type Target = R;
 
     fn deref(&self) -> &R {
-        self.inner
+        self.0
     }
 }
 
-impl<'s, R: ResourceBundle> DerefMut for ResMut<'s, R> {
+impl<'s, R: Resource> DerefMut for ResMut<'s, R> {
     fn deref_mut(&mut self) -> &mut R {
-        self.inner
+        self.0
+    }
+}
+
+unsafe impl<R: Resource> Param for ResMut<'_, R> {
+    #[cfg(feature = "generics")]
+    type AccessCount = U1;
+    type Output<'s> = ResMut<'s, R>;
+
+    // Keep track of system and resource name for logging purposes.
+    type State = ResState;
+
+    #[cfg(feature = "generics")]
+    #[inline]
+    fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
+        GenericArray::from((
+            AccessDesc {
+                ty: AccessType::Resource(ResourceId::of::<R>()),
+                exclusive: false
+            },
+        ))
+    }
+
+    #[cfg(not(feature = "generics"))]
+    #[inline]
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; 4]> {
+        smallvec![
+            AccessDesc {
+                ty: AccessType::Resource(ResourceId::of::<R>()),
+                exclusive: false
+            }
+        ]
+    }
+
+    fn init(world: &mut World, meta: &SystemMeta) -> ResState {
+        let full_name = std::any::type_name::<R>();
+        // Attempt to extract type name.
+        let res_name = full_name.split("::").last().unwrap_or(full_name);
+
+        if world.resources.contains::<R>() {
+            return ResState {
+                resource: res_name,
+                system: meta.name
+            }
+        }
+
+        // Check whether the resource exists and warn otherwise
+        tracing::warn!(
+            "`ResMut<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
+            res_name,
+            meta.name
+        );
+
+        ResState {
+            resource: res_name,
+            system: meta.name
+        }
+    }
+
+    #[inline]
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut ResState) -> ResMut<'w, R> {
+        let Some(res) = (unsafe { world.resources.get_mut_unchecked::<R>() }) else {
+            tracing::error!(
+                "System `{}` attempted to access `ResMut<{}>` which does not exist",
+                state.system, state.resource 
+            );
+
+            panic!("cannot access non-existent resource");
+        };
+
+        ResMut(res)
     }
 }
 
@@ -172,6 +247,7 @@ pub struct Resources {
 
 impl Resources {
     /// Creates a new container for resources.
+    #[inline]
     pub fn new() -> Resources {
         Resources::default()
     }
@@ -182,9 +258,15 @@ impl Resources {
         self.storage.insert(id, UnsafeCell::new(Box::new(resource)));
     }
 
+    #[inline]
+    pub fn reserve(&mut self, additional: usize) {
+        self.storage.reserve(additional);
+    }
+
     /// Does the container have these resources?
-    pub fn contains<R: ResourceBundle>(&self) -> bool {
-        R::contains(self)
+    #[inline]
+    pub fn contains<R: Resource>(&self) -> bool {
+        self.storage.contains_key(&ResourceId::of::<R>())
     }
 
     pub fn get<R: Resource>(&self) -> Option<&R> {
@@ -203,6 +285,15 @@ impl Resources {
             .get_mut() // Take resource out of unsafe cell.
             .as_any_mut()
             .downcast_mut::<R>()
+    }
+
+    // Safety: This should only be called if you will have guaranteed unique access to this resource.
+    pub(crate) unsafe fn get_mut_unchecked<R: Resource>(&self) -> Option<&mut R> {
+        let id = ResourceId::of::<R>();
+        let cell = self.storage.get(&id)?;
+        let boxed = unsafe { &mut *cell.get() };
+
+        boxed.as_any_mut().downcast_mut::<R>()
     }
 
     pub fn remove<R: Resource>(&mut self) -> Option<Box<R>> {

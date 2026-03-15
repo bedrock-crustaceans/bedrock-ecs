@@ -29,7 +29,7 @@ pub use crate::filter::{Added, Changed, Filter, FilterBundle, Removed, With, Wit
 pub use crate::local::Local;
 pub use crate::param::{Param, ParamBundle};
 pub use crate::query::{Query, QueryBundle, QueryMeta, TableCache};
-pub use crate::resource::{Res, ResMut, Resource, ResourceBundle, ResourceId};
+pub use crate::resource::{Res, ResMut, Resource, ResourceId};
 pub use crate::schedule::{ScheduleBuilder, ScheduleLabel};
 pub use crate::signature::Signature;
 pub use crate::world::World;
