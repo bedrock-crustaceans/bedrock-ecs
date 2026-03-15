@@ -1,16 +1,27 @@
+use generic_array::GenericArray;
+use smallvec::SmallVec;
+use std::any::TypeId;
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, marker::PhantomData};
-use std::any::TypeId;
-use generic_array::GenericArray;
-use smallvec::SmallVec;
 
-use crate::{param, param::{Param, ParamBundle}, sealed::Sealer, world::World};
 use crate::graph::AccessDesc;
+use crate::{
+    param,
+    param::{Param, ParamBundle},
+    sealed::Sealer,
+    world::World,
+};
+
+#[derive(Debug)]
+pub struct SystemMeta {
+    pub(crate) id: SystemId,
+    pub(crate) name: &'static str,
+}
 
 pub trait System: Sync {
     /// Attempts to determine the name of this system.
-    fn name(&self) -> String;
+    fn name(&self) -> &'static str;
     /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
     /// Runs the system.
@@ -19,14 +30,21 @@ pub trait System: Sync {
 
 pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
     fn into_container(self, world: &mut World, id: SystemId) -> SystemContainer<P, Self> {
+        let mut name = std::any::type_name::<Self>();
+        if !name.contains('{') {
+            name = name.split("::").last().unwrap_or(name)
+        }
+
         let access = P::access(world);
-        let state = P::init(world);
+        let meta = SystemMeta { id, name };
+
+        let state = P::init(world, &meta);
 
         SystemContainer {
-            id,
+            meta,
             system: self,
             access,
-            state: UnsafeCell::new(state)
+            state: UnsafeCell::new(state),
         }
     }
 
@@ -34,10 +52,10 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
 }
 
 /// Wraps the system and all of its metadata.
-/// 
+///
 /// This is where the the states and metadata are stored.
 pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
-    id: SystemId,
+    meta: SystemMeta,
     system: F,
     #[cfg(feature = "generics")]
     access: GenericArray<AccessDesc, P::AccessCount>,
@@ -46,26 +64,28 @@ pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     state: UnsafeCell<P::State>,
 }
 
-unsafe impl<P, F> Send for SystemContainer<P, F> 
+unsafe impl<P, F> Send for SystemContainer<P, F>
 where
     P: ParamBundle,
-    F: ParametrizedSystem<P> {}
+    F: ParametrizedSystem<P>,
+{
+}
 
-unsafe impl<P, F> Sync for SystemContainer<P, F> 
+unsafe impl<P, F> Sync for SystemContainer<P, F>
 where
     P: ParamBundle,
-    F: ParametrizedSystem<P> {}
+    F: ParametrizedSystem<P>,
+{
+}
 
-impl<P, F> System for SystemContainer<P, F> 
+impl<P, F> System for SystemContainer<P, F>
 where
     P: Param,
     F: ParametrizedSystem<P>,
 {
-    fn name(&self) -> String {
-        let type_name = std::any::type_name::<F>();
-        let split = type_name.split("::").last().unwrap_or("unknown");
-
-        split.to_owned()
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.meta.name
     }
 
     fn access(&self) -> &[AccessDesc] {
@@ -83,19 +103,17 @@ where
 
 impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for SystemContainer<(P1, P2), F>
 where
-    (P1, P2): ParamBundle
+    (P1, P2): ParamBundle,
 {
-    fn name(&self) -> String {
-        let type_name = std::any::type_name::<F>();
-        let split = type_name.split("::").last().unwrap_or("unknown");
-
-        split.to_owned()
+    #[inline]
+    fn name(&self) -> &'static str {
+        self.meta.name
     }
 
     fn access(&self) -> &[AccessDesc] {
         &self.access
     }
-    
+
     fn call(&self, world: &World) {
         // SAFETY:
         // This is safe because every system has a unique state. At the same time a system
@@ -112,11 +130,11 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     }
 }
 
-impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param> ParametrizedSystem<(P1, P2)> for F
+impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param>
+    ParametrizedSystem<(P1, P2)> for F
 where
-    (P1, P2): ParamBundle<State = (P1::State, P2::State)>
+    (P1, P2): ParamBundle<State = (P1::State, P2::State)>,
 {
-
     fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
         let p1 = P1::fetch::<Sealer>(world, &mut state.0);
         let p2 = P2::fetch::<Sealer>(world, &mut state.1);
@@ -140,7 +158,7 @@ impl<F, P> IntoSystem<P> for F
 where
     P: Param + 'static,
     F: Fn(P) + 'static,
-    F: ParametrizedSystem<P>
+    F: ParametrizedSystem<P>,
 {
     fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
         Box::new(self.into_container(world, id))
@@ -154,7 +172,7 @@ where
     P2: Param + 'static,
     (P1, P2): ParamBundle,
     F: Fn(P1, P2) + 'static,
-    F: ParametrizedSystem<(P1, P2)>
+    F: ParametrizedSystem<(P1, P2)>,
 {
     fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
         Box::new(self.into_container(world, id))

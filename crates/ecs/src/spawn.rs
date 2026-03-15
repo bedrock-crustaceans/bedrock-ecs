@@ -1,8 +1,14 @@
 use std::{alloc::Layout, any::TypeId, collections::HashMap};
 
-use crate::{archetype::{Archetypes}, signature::Signature, component::{Component, ComponentId, ComponentRegistry}, entity::EntityId, table::{Column, Table}};
+use crate::{
+    archetype::Archetypes,
+    component::{Component, ComponentId, ComponentRegistry},
+    entity::EntityId,
+    signature::Signature,
+    table::{Column, Table},
+};
 
-use rustc_hash::{FxHashMap, FxBuildHasher};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
@@ -26,7 +32,7 @@ macro_rules! impl_bundle {
 
             #[cfg_attr(
                 feature = "tracing",
-                tracing::instrument(name = "SpawnBundle::new_table", fields(bundle = std::any::type_name::<Self>()) skip_all)  
+                tracing::instrument(name = "SpawnBundle::new_table", fields(bundle = std::any::type_name::<Self>()) skip_all)
             )]
             fn new_table(sig: Signature) -> Table {
                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
@@ -52,7 +58,7 @@ macro_rules! impl_bundle {
                     $(
                         tracing::trace!("inserting type {}", std::any::type_name::<$gen>());
                         table.lookup.insert(TypeId::of::<$gen>(), counter);
-                        counter += 1;   
+                        counter += 1;
                     )*
                 }
 
@@ -61,7 +67,7 @@ macro_rules! impl_bundle {
 
             #[allow(unused_variables)]
             #[cfg_attr(
-                feature = "tracing", 
+                feature = "tracing",
                 tracing::instrument(name = "SpawnBundle::insert_into", fields(bundle = std::any::type_name::<Self>()) skip_all)
             )]
             fn insert_into(self, storage: &mut Vec<Column>) {
@@ -89,7 +95,6 @@ pub unsafe trait SpawnBundle: 'static {
     /// Inserts into an existing archetype.
     fn insert_into(self, storage: &mut Vec<Column>);
 }
-
 
 impl_bundle!();
 impl_bundle!(A);

@@ -1,11 +1,8 @@
-use std::any::TypeId;
-use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::path::Path;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::component::ComponentId;
-use crate::{param, query};
+use crate::resource::ResourceId;
 use crate::system::{System, SystemId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -13,19 +10,23 @@ pub enum AccessType {
     Entity,
     World,
     Component(ComponentId),
+    Resource(ResourceId),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AccessDesc {
     pub(crate) ty: AccessType,
-    pub(crate) exclusive: bool
+    pub(crate) exclusive: bool,
 }
 
 impl AccessDesc {
     pub fn has_conflict(&self, other: &AccessDesc) -> bool {
         // `World` conflicts with every other resource.
         let conflict_ty = self.ty == other.ty || self.ty == AccessType::World;
-        println!("is_conflict_ty: {conflict_ty}, {:?} {:?}", self.ty, other.ty);
+        println!(
+            "is_conflict_ty: {conflict_ty}, {:?} {:?}",
+            self.ty, other.ty
+        );
         conflict_ty && (self.exclusive || other.exclusive)
     }
 }
@@ -60,8 +61,8 @@ impl ScheduleGraph {
     }
 
     fn build_dependencies(&mut self) {
-        let mut last_writer: HashMap<AccessType, usize> = HashMap::new();
-        let mut readers: HashMap<AccessType, Vec<usize>> = HashMap::new();
+        let mut last_writer: FxHashMap<AccessType, usize> = FxHashMap::default();
+        let mut readers: FxHashMap<AccessType, Vec<usize>> = FxHashMap::default();
 
         for (i, node) in self.nodes.iter().enumerate() {
             for access in &node.access {
@@ -130,7 +131,7 @@ impl ScheduleGraph {
         for i in &a.access {
             for j in &b.access {
                 if i.has_conflict(j) {
-                    return true
+                    return true;
                 }
             }
         }
@@ -139,7 +140,7 @@ impl ScheduleGraph {
     }
 
     /// Produces a dotviz file.
-    pub(crate) fn render(&self, systems: &HashMap<SystemId, Box<dyn System>>) -> String {
+    pub(crate) fn render(&self, systems: &FxHashMap<SystemId, Box<dyn System>>) -> String {
         let mut out = String::from("digraph {");
 
         for (i, nodes) in self.adjacency.iter().enumerate() {
@@ -154,12 +155,12 @@ impl ScheduleGraph {
                 out.push_str(&format!("{i_name} -> {j_name};"));
             }
         }
-        
+
         out.push('}');
         out
     }
 
-    pub fn sort(&mut self, systems: HashMap<SystemId, Box<dyn System>>) -> Schedule {
+    pub fn sort(&mut self, systems: FxHashMap<SystemId, Box<dyn System>>) -> Schedule {
         tracing::debug!("Generating dependency graph...");
 
         // Create edges between all conflicting systems
@@ -168,7 +169,8 @@ impl ScheduleGraph {
         tracing::debug!("Rendered: {}", self.render(&systems));
 
         let mut sets = Vec::new();
-        let mut current_set = self.in_degrees
+        let mut current_set = self
+            .in_degrees
             .iter()
             .enumerate()
             .filter_map(|(i, deg)| 0.eq(deg).then_some(i))
@@ -191,34 +193,31 @@ impl ScheduleGraph {
         }
 
         // Map node index to system ID
-        let sets = sets.iter().map(|set| {
-            set.iter().map(|&node| {
-                self.nodes[node].sid
-            }).collect::<Vec<_>>()
-        }).collect::<Vec<_>>();
+        let sets = sets
+            .iter()
+            .map(|set| {
+                set.iter()
+                    .map(|&node| self.nodes[node].sid)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
 
-        let named = sets.iter().map(|ids| {
-            ids.iter().map(|id| {
-                systems.get(id).unwrap().name()
-            }).collect::<Vec<_>>()
-        }).collect::<Vec<_>>();
+        let named = sets
+            .iter()
+            .map(|ids| {
+                ids.iter()
+                    .map(|id| systems.get(id).unwrap().name())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
 
         tracing::info!("Optimal schedule: {named:?}");
 
-        Schedule {
-            systems,
-            sets
-        }
+        Schedule { systems, sets }
     }
 }
 
 pub struct Schedule {
-    pub(crate) systems: HashMap<SystemId, Box<dyn System>>,
-    pub(crate) sets: Vec<Vec<SystemId>>
-}
-
-impl Schedule {
-    pub fn render<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
-        todo!()
-    }
+    pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
+    pub(crate) sets: Vec<Vec<SystemId>>,
 }

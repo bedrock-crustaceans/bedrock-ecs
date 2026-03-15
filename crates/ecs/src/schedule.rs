@@ -1,5 +1,6 @@
+use rustc_hash::FxHashMap;
 use std::any::TypeId;
-use std::collections::HashMap;
+
 use crate::graph::{GraphNode, Schedule, ScheduleGraph};
 use crate::param::ParamBundle;
 use crate::system::{IntoSystem, System, SystemId};
@@ -31,7 +32,7 @@ macro_rules! impl_bundle {
                     $(
                         let sid = SystemId::of::<$gen, [<$gen Fun>]>();
                         let boxed = [<$gen:lower>].into_system(schedule.world, sid);
-                        
+
                         schedule.graph.add_node(GraphNode {
                             sid, access: boxed.access().into()
                         });
@@ -64,7 +65,7 @@ pub struct SystemLabelId(pub(crate) TypeId);
 pub struct ScheduleBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) graph: ScheduleGraph,
-    pub(crate) systems: HashMap<SystemId, Box<dyn System>>,
+    pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
 }
 
 impl<'w> ScheduleBuilder<'w> {
@@ -72,13 +73,14 @@ impl<'w> ScheduleBuilder<'w> {
         ScheduleBuilder {
             world,
             graph: ScheduleGraph::new(),
-            systems: HashMap::new()
+            systems: FxHashMap::default(),
         }
     }
 
     pub fn add<L, G, P>(mut self, label: L, systems: G) -> ScheduleBuilder<'w>
     where
-        L: ScheduleLabel, G: SystemBundle<P>
+        L: ScheduleLabel,
+        G: SystemBundle<P>,
     {
         systems.insert_into(&mut self);
 

@@ -1,21 +1,33 @@
-use std::{any::TypeId, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
-use std::ops::Add;
 use generic_array::{ArrayLength, GenericArray};
 use smallvec::{SmallVec, smallvec};
+use std::ops::Add;
+use std::{
+    any::TypeId, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull,
+};
 
 use rustc_hash::FxHashMap;
 
 use crate::entity::GenerationId;
-use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter};
-use crate::{archetype::{Archetypes}, signature::Signature, component::{Component, ComponentId, ComponentRegistry}, entity::{Entity}, filter::FilterBundle, param::{self, Param}, sealed::Sealed, world::World};
 use crate::graph::{AccessDesc, AccessType};
+use crate::system::SystemMeta;
+use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter};
+use crate::{
+    archetype::Archetypes,
+    component::{Component, ComponentId, ComponentRegistry},
+    entity::Entity,
+    filter::FilterBundle,
+    param::{self, Param},
+    sealed::Sealed,
+    signature::Signature,
+    world::World,
+};
 
 /// A collection of types that can be queried.
-/// 
-/// This is implemented for tuples of types that implement [`ParamRef`]. 
+///
+/// This is implemented for tuples of types that implement [`ParamRef`].
 /// In other words, this represents collection of component references or entities that appear
 /// inside a `Query<...>`.
-/// 
+///
 /// # Safety:
 ///
 /// The `access` method must correctly return the types this query uses.
@@ -33,17 +45,23 @@ pub unsafe trait QueryBundle: Sized {
     type AccessCount: ArrayLength + Add;
 
     /// The item that the query outputs. This is what is actually given to the system when ran.
-    type Output<'a> where Self: 'a;
+    type Output<'a>
+    where
+        Self: 'a;
 
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a>: HoppingIterator<'a, Self> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: HoppingIterator<'a, Self> + Iterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
 
     #[cfg(not(feature = "generics"))]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a>: HoppingIterator<'a> + Iterator<Item = Self::Output<'a>> where Self: 'a;
+    type Iter<'a>: HoppingIterator<'a> + Iterator<Item = Self::Output<'a>>
+    where
+        Self: 'a;
 
     /// The amount of items in this bundle.
     const LEN: usize;
@@ -58,12 +76,12 @@ pub unsafe trait QueryBundle: Sized {
 
     #[cfg(feature = "generics")]
     /// Finds all required columns from a lookup table.
-    /// 
+    ///
     /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
     /// It however is not aware of the columns. This function then figures out which columns are useful
     /// and in which order they should be queried.
     fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount>;
-    
+
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
@@ -71,7 +89,7 @@ pub unsafe trait QueryBundle: Sized {
 
     #[cfg(not(feature = "generics"))]
     /// Finds all required columns from a lookup table.
-    /// 
+    ///
     /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
     /// It however is not aware of the columns. This function then figures out which columns are useful
     /// and in which order they should be queried.
@@ -79,7 +97,7 @@ pub unsafe trait QueryBundle: Sized {
 }
 
 /// An iterator that can jump from table to table.
-/// 
+///
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(feature = "generics")]
 pub trait HoppingIterator<'t, Q: QueryBundle>: Sized {
@@ -88,21 +106,21 @@ pub trait HoppingIterator<'t, Q: QueryBundle>: Sized {
 
     // /// Estimates the total amount of components remaining, including remaining tables.
     // /// This estimate does not apply filters and will therefore always overestimate.
-    // /// 
+    // ///
     // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
     // /// computing the length isn't a simple operation. The query needs to look through all of the
     // /// future tables and compute their lengths. Therefore this method has a performance cost.
     // fn estimate_len(&self) -> usize;
 
     /// Returns the length of the iterator of the *current* table.
-    /// 
+    ///
     /// A hopping iterator jumps between tables and this function returns the remaining
     /// components in the current table, *not* the total amount of components.
     fn current_len(&self) -> usize;
 }
 
 /// An iterator that can jump from table to table.
-/// 
+///
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(not(feature = "generics"))]
 pub trait HoppingIterator<'t>: Sized {
@@ -111,14 +129,14 @@ pub trait HoppingIterator<'t>: Sized {
 
     // /// Estimates the total amount of components remaining, including remaining tables.
     // /// This estimate does not apply filters and will therefore always overestimate.
-    // /// 
+    // ///
     // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
     // /// computing the length isn't a simple operation. The query needs to look through all of the
     // /// future tables and compute their lengths. Therefore this method has a performance cost.
     // fn estimate_len(&self) -> usize;
 
     /// Returns the length of the iterator of the *current* table.
-    /// 
+    ///
     /// A hopping iterator jumps between tables and this function returns the remaining
     /// components in the current table, *not* the total amount of components.
     fn current_len(&self) -> usize;
@@ -129,7 +147,7 @@ pub trait HoppingIterator<'t>: Sized {
 macro_rules! iter_len {
     ($head:ident $(, $tail:expr)* $(,)?) => {
         $head.len()
-    }
+    };
 }
 
 #[cfg(feature = "generics")]
@@ -151,13 +169,13 @@ macro_rules! impl_bundle {
             impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> [< IteratorBundle $count >]<'w, Q, $($gen),*> {
                 /// Creates an empty iterator that always returns `None`. This exists because
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-                /// 
+                ///
                 /// [`Empty`]: std::iter::Empty
                 pub fn empty(world: &'w World) -> Self {
                     Self {
                         world,
                         cache: [].iter(),
-                        iters: ($($gen::Iter::empty(world)),*),                        
+                        iters: ($($gen::Iter::empty(world)),*),
                         _marker: PhantomData
                     }
                 }
@@ -265,7 +283,7 @@ macro_rules! impl_bundle {
                             sig.set(*id);
                         }
                     )*
-                    
+
                     sig
                 }
 
@@ -334,7 +352,7 @@ macro_rules! impl_bundle {
                             debug_assert!(
                                 cols.iter().all(|c| c.len() == cols[0].len()),
                                 "not all columns are of equal length"
-                            );  
+                            );
                         }
                     }
 
@@ -459,34 +477,34 @@ impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
 pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterator {
     /// Creates an empty iterator that always returns `None`. This exists because
     /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-    /// 
+    ///
     /// [`Empty`]: std::iter::Empty
     fn empty(world: &'w World) -> Self;
 }
 
 /// A reference that can be used in a query. This is either [`Entity`], or a mutable/immutable reference
 /// to a type implementing [`Component`].
-/// 
+///
 /// # Safety
-/// 
-/// Implementors of this trait should uphold the following conditions: 
+///
+/// Implementors of this trait should uphold the following conditions:
 /// - `Unref` must be the exact type you would get if you were to remove the reference, i.e. if `Self = &T` then
 /// `Self::Unref` must be `T`.
-/// 
+///
 /// - `Output<'w>` must equal `Self` but with its lifetime bound to `'w`. Incorrect lifetimes will lead to use after
 /// free situations.
-/// 
+///
 /// - `Iter<'t>` must be an iterator that only returns mutable references if `Self`'s access descriptor also
 /// indicates it requires mutable access.
-/// 
+///
 /// - `IS_ENTITY` must only be set to true when implementing this trait for [`Entity`].
-/// 
+///
 /// - `access` must return the correct descriptor, indicating which resources this parameter uses.
 /// Incorrect descriptors will cause undefined behaviour through mutable reference aliasing.
-/// 
+///
 /// - `component_id` must return the correct ID for `Self::Unref`. Incorrect component IDs will cause the query
 /// cache to read the wrong columns, which means data is interpreted with the incorrect type.
-/// 
+///
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::Entity
 pub unsafe trait ParamRef: Send {
@@ -507,22 +525,22 @@ pub unsafe trait ParamRef: Send {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc;
 
     /// Returns the component ID of this type.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics when `Self` is an entity since entities do not have a component ID.
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
 
     /// Returns column index that `Self` is contained in.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics when `Self` is an entity since entities are not stored in columns.
     /// It also panics if the column is not found.
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize;
 
     /// Returns an iterator over the column in the given table.
-    /// 
+    ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
     fn iter<'t>(world: &'t World, table: usize, col: usize) -> Self::Iter<'t>;
 }
@@ -537,7 +555,7 @@ unsafe impl ParamRef for Entity<'_> {
     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Entity,
-            exclusive: false
+            exclusive: false,
         }
     }
 
@@ -563,9 +581,9 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     const IS_ENTITY: bool = false;
 
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
-        AccessDesc { 
-            ty: AccessType::Component(reg.get_or_assign::<T>()), 
-            exclusive: false 
+        AccessDesc {
+            ty: AccessType::Component(reg.get_or_assign::<T>()),
+            exclusive: false,
         }
     }
 
@@ -574,9 +592,10 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map
-            .get(&TypeId::of::<T>())
-            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
+            "table column lookup failed for component {}",
+            std::any::type_name::<T>()
+        ));
 
         col
     }
@@ -599,7 +618,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
-            exclusive: true
+            exclusive: true,
         }
     }
 
@@ -608,9 +627,10 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map
-            .get(&TypeId::of::<T>())
-            .expect(&format!("table column lookup failed for component {}", std::any::type_name::<T>()));
+        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
+            "table column lookup failed for component {}",
+            std::any::type_name::<T>()
+        ));
 
         col
     }
@@ -630,8 +650,8 @@ pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
 
 impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     /// Creates a new query.
-    /// 
-    /// A new query is created every time a system is ran while the 
+    ///
+    /// A new query is created every time a system is ran while the
     /// [`QueryCache`] is persistent across runs by storing it in the system state.
     pub(crate) fn new(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
         // Update the plan cache
@@ -639,7 +659,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
 
         Query {
             world,
-            cache: state
+            cache: state,
         }
     }
 
@@ -674,7 +694,7 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
         Query::new(world, state)
     }
 
-    fn init(world: &mut World) -> QueryMeta<Q, F> {
+    fn init(world: &mut World, _meta: &SystemMeta) -> QueryMeta<Q, F> {
         QueryMeta::new(&mut world.archetypes)
     }
 }
@@ -686,7 +706,7 @@ pub struct TableCache<N: ArrayLength> {
     /// The index of the table in the archetypes container.
     pub table: usize,
     /// The columns within this table that should be queried.
-    pub cols: GenericArray<usize, N>
+    pub cols: GenericArray<usize, N>,
 }
 
 /// A collection of columns in a table.
@@ -696,12 +716,12 @@ pub struct TableCache {
     /// The table that contains the components.
     pub table: usize,
     /// The columns from this table that contain the components for this query.
-    pub cols: SmallVec<[usize; param::INLINE_SIZE]>
+    pub cols: SmallVec<[usize; param::INLINE_SIZE]>,
 }
 
 /// The metadata of the query.
-/// 
-/// This caches the locations of desired components in the database. It also keeps track of the state of the 
+///
+/// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
 pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     #[cfg(feature = "generics")]
@@ -716,7 +736,7 @@ pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     generation: u64,
     /// The archetype bitset of this query. This is used to quickly discard tables that do not match the query.
     archetype: Signature,
-    _marker: PhantomData<(Q, F)>
+    _marker: PhantomData<(Q, F)>,
 }
 
 impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
@@ -728,7 +748,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
     pub(crate) fn new(archetypes: &mut Archetypes) -> QueryMeta<Q, F> {
         let archetype = Q::signature(&mut archetypes.registry);
         let filter_state = F::init(archetypes);
-        
+
         let mut cached = SmallVec::new();
         archetypes.cache_tables::<Q, F>(&archetype, &filter_state, &mut cached);
 
@@ -739,7 +759,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
             generation: archetypes.generation(),
             archetype,
             cache: cached,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -754,7 +774,12 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
             self.cache.clear();
             archetypes.cache_tables::<Q, F>(&self.archetype, &self.filter_state, &mut self.cache);
 
-            tracing::trace!("refreshing archetype table cache ({} -> {}), {} tables cached", self.generation, archetypes.generation(), self.cache.len());
+            tracing::trace!(
+                "refreshing archetype table cache ({} -> {}), {} tables cached",
+                self.generation,
+                archetypes.generation(),
+                self.cache.len()
+            );
 
             self.generation = archetypes.generation();
         }
@@ -780,7 +805,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
 
     /// The current generation of the cache. This corresponds to the archetype generation if the cache is up
     /// to date. If the generations do not match, the cache is refreshed on the next system call.
-    /// 
+    ///
     /// If this is accessed inside of a system, it should always be up to date.
     #[inline]
     pub fn generation(&self) -> u64 {

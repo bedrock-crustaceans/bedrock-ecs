@@ -1,14 +1,14 @@
-use std::{ops::{Deref, DerefMut}};
 use generic_array::GenericArray;
 use generic_array::typenum::U0;
+use std::ops::{Deref, DerefMut};
 
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
 
+use crate::graph::AccessDesc;
 #[cfg(not(feature = "generics"))]
 use crate::param;
-use crate::{param::Param, sealed::Sealed, world::World};
-use crate::graph::AccessDesc;
+use crate::{param::Param, sealed::Sealed, system::SystemMeta, world::World};
 
 pub struct LocalState<T: Default + Send + 'static>(T);
 
@@ -44,9 +44,12 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
         feature = "tracing",
         tracing::instrument(name = "Local::init", skip_all)
     )]
-    fn init(_world: &mut World) -> LocalState<T> { 
-        tracing::trace!("created internal state for `Local<{}>`", std::any::type_name::<T>());
-        LocalState(T::default())  
+    fn init(_world: &mut World, _meta: &SystemMeta) -> LocalState<T> {
+        tracing::trace!(
+            "created internal state for `Local<{}>`",
+            std::any::type_name::<T>()
+        );
+        LocalState(T::default())
     }
 }
 

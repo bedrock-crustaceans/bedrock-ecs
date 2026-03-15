@@ -1,4 +1,7 @@
-use std::arch::x86_64::{__m128i, __m256i, _mm_load_si128, _mm256_and_si256, _mm256_andnot_si256, _mm256_load_si256, _mm256_loadu_ps, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_testz_si256};
+use std::arch::x86_64::{
+    __m128i, __m256i, _mm_load_si128, _mm256_and_si256, _mm256_andnot_si256, _mm256_load_si256,
+    _mm256_loadu_ps, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_testz_si256,
+};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
@@ -9,7 +12,7 @@ const SIMD_LANES: usize = 4;
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct Signature {
     // bits: SmallVec<[u64; INLINE_COUNT]>
-    bits: [u64; WORD_COUNT]
+    bits: [u64; WORD_COUNT],
 }
 
 impl Signature {
@@ -41,10 +44,7 @@ impl Signature {
 
     /// Counts the amount of bits set to 1 in this bitset.
     pub fn count_ones(&self) -> u32 {
-        self.bits
-            .iter()
-            .map(|w| w.count_ones())
-            .sum()
+        self.bits.iter().map(|w| w.count_ones()).sum()
     }
 
     // Whether `other` is a subset of `self`. This is faster than intersecting and then comparing
@@ -59,15 +59,13 @@ impl Signature {
         self.bits
             .iter()
             .zip(other.bits.iter())
-            .all(|(a, b)| {
-                a & b == *b
-            })
+            .all(|(a, b)| a & b == *b)
     }
 
     #[inline]
     #[target_feature(enable = "sse4.1")]
     pub fn contains_sse(&self, other: &Self) -> bool {
-        use std::arch::x86_64::{__m128i, _mm_loadu_si128, _mm_andnot_si128, _mm_testc_si128};
+        use std::arch::x86_64::{__m128i, _mm_andnot_si128, _mm_loadu_si128, _mm_testc_si128};
 
         let va = unsafe { _mm_loadu_si128(self.bits.as_ptr().cast::<__m128i>()) };
         let vb = unsafe { _mm_loadu_si128(other.bits.as_ptr().cast::<__m128i>()) };
@@ -81,15 +79,15 @@ impl Signature {
         self.bits
             .iter()
             .zip(other.bits.iter())
-            .all(|(a, b)| {
-                a & b == 0
-            })
+            .all(|(a, b)| a & b == 0)
     }
 
     #[inline]
     #[target_feature(enable = "avx2")]
     fn is_disjoint_avx(&self, other: &Self) -> bool {
-        use std::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_andnot_si256, _mm256_testz_si256};
+        use std::arch::x86_64::{
+            __m256i, _mm256_andnot_si256, _mm256_loadu_si256, _mm256_testz_si256,
+        };
 
         let len = self.bits.len().min(other.bits.len());
         let mut i = 0;
@@ -144,18 +142,14 @@ fn bitset_benchmark(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("signature_contains", size * 64),
             &(sig.clone(), sig2.clone()),
-            |b, i| {
-                b.iter(|| signature_contains(i))
-            }
+            |b, i| b.iter(|| signature_contains(i)),
         );
 
         group.throughput(Throughput::Bits((size * 64) as u64));
         group.bench_with_input(
             BenchmarkId::new("signature_contains_simd128", size * 64),
             &(sig, sig2),
-            |b, i| {
-                b.iter(|| unsafe { signature_contains_simd128(i) })
-            }
+            |b, i| b.iter(|| unsafe { signature_contains_simd128(i) }),
         );
     }
     group.finish();

@@ -2,23 +2,33 @@ use generic_array::GenericArray;
 #[cfg(feature = "generics")]
 use generic_array::typenum::U1;
 #[cfg(not(feature = "generics"))]
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
+use crate::graph::Schedule;
 #[cfg(not(feature = "generics"))]
 use crate::param;
+use crate::schedule::ScheduleBuilder;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{Component, ComponentBundle, EntityId, Param, archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, graph::{AccessDesc, AccessType}, spawn::SpawnBundle};
-use crate::graph::Schedule;
-use crate::schedule::ScheduleBuilder;
+use crate::{
+    Component, ComponentBundle, EntityId, Param,
+    archetype::Archetypes,
+    component::ComponentRegistry,
+    entity::{Entities, EntityMut},
+    graph::{AccessDesc, AccessType},
+    resource::Resources,
+    spawn::SpawnBundle,
+    system::SystemMeta,
+};
 
 #[derive(Default)]
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
+    pub(crate) resources: Resources,
 
     #[cfg(debug_assertions)]
-    pub(crate) flag: RwFlag
+    pub(crate) flag: RwFlag,
 }
 
 impl World {
@@ -34,15 +44,12 @@ impl World {
         #[cfg(debug_assertions)]
         self.flag.write_guardless();
 
-        EntityMut {
-            id,
-            world: self,
-        }
+        EntityMut { id, world: self }
     }
 
     #[inline]
     pub fn has_components<T: ComponentBundle>(&self, entity: EntityId) -> bool {
-        self.archetypes.has_components::<T>(entity)    
+        self.archetypes.has_components::<T>(entity)
     }
 
     #[inline]
@@ -59,7 +66,7 @@ impl World {
     pub fn entities_mut(&mut self) -> &mut Entities {
         &mut self.entities
     }
-    
+
     pub fn run(&mut self, schedule: &Schedule) {
         for set in &schedule.sets {
             for id in set {
@@ -85,16 +92,16 @@ impl World {
 unsafe impl Param for &World {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
-    
+
     type State = ();
-    
+
     type Output<'w> = &'w World;
-    
+
     #[cfg(feature = "generics")]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
         GenericArray::from((AccessDesc {
             ty: AccessType::World,
-            exclusive: false
+            exclusive: false,
         },))
     }
 
@@ -105,12 +112,17 @@ unsafe impl Param for &World {
             exclusive: false
         }]
     }
-    
-    fn fetch<'w, S: crate::sealed::Sealed>(world: &'w World, _state: &'w mut Self::State) -> Self::Output<'w> {
+
+    fn fetch<'w, S: crate::sealed::Sealed>(
+        world: &'w World,
+        _state: &'w mut Self::State,
+    ) -> Self::Output<'w> {
         world
     }
-    
-    fn init(_world: &mut World) {}
+
+    fn init(_world: &mut World, _meta: &SystemMeta) {
+        unimplemented!("A world cannot initialise another world");
+    }
 }
 
 unsafe impl Send for World {}

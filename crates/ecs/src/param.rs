@@ -1,23 +1,22 @@
-use std::ops::Add;
-use std::mem::MaybeUninit;
-use generic_array::{ArrayLength, GenericArray};
-use generic_array::typenum::{U0, FoldAdd, Unsigned};
-use smallvec::SmallVec;
+use crate::graph::AccessDesc;
+use crate::system::SystemMeta;
 use crate::{param, sealed::Sealed, world::World};
-use crate::graph::{AccessDesc};
+use generic_array::typenum::{FoldAdd, U0, Unsigned};
+use generic_array::{ArrayLength, GenericArray};
+use smallvec::SmallVec;
+use std::mem::MaybeUninit;
+use std::ops::Add;
 
 #[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
 
 /// Implemented by all types that can used as parameters in a system.
-/// 
+///
 /// # Safety
 ///
 /// The `access` method must correctly return the types it accesses. Incorrect implementation will
 /// lead to reference aliasing and immediate UB.
-#[diagnostic::on_unimplemented(
-    message = "{Self} is not a valid system parameter"
-)]
+#[diagnostic::on_unimplemented(message = "{Self} is not a valid system parameter")]
 pub unsafe trait Param {
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
@@ -34,22 +33,22 @@ pub unsafe trait Param {
     #[doc(hidden)]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
-    fn init(world: &mut World) -> Self::State;
+    fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
 /// A collection of parameters.
-/// 
+///
 /// A system collects all of its parameters into a tuple that implements this trait.
 /// This allows easy access to all of the parameters at once.
-/// 
+///
 /// # Safety
-/// 
+///
 /// - `AccessCount` must return the exact amount of resources accessed by all parameters combined.
 /// For example, if the bundle consists of two parameters that each access one resource, then `AccessCount` must
 /// equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
-/// 
+///
 /// - `access` must correctly return each of the components that the parameters use, including
-/// correct mutability information. Incorrect access descriptors will give wrong information to the scheduler 
+/// correct mutability information. Incorrect access descriptors will give wrong information to the scheduler
 /// and cause mutable reference aliasing.
 pub unsafe trait ParamBundle {
     /// The amount of resources that this parameter collection requires.
@@ -69,7 +68,7 @@ pub unsafe trait ParamBundle {
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
     /// Initializes the internal states of all parameters in this collection.
-    fn init(world: &mut World) -> Self::State;
+    fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
 unsafe impl ParamBundle for () {
@@ -92,7 +91,7 @@ unsafe impl ParamBundle for () {
         SmallVec::new()
     }
 
-    fn init(_world: &mut World) {}
+    fn init(_world: &mut World, meta: &SystemMeta) {}
 }
 
 #[cfg(feature = "generics")]
@@ -110,7 +109,7 @@ macro_rules! impl_bundle {
                 /// This is computed by collecting the individual counts from each parameter into a
                 /// typenum array and then summing them all.
                 type AccessCount = <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
-                
+
                 /// The states of all the parameters, this is simply a tuple of all of them.
                 type State = ($($gen::State),*);
 
@@ -145,10 +144,10 @@ macro_rules! impl_bundle {
                     feature = "tracing",
                     tracing::instrument(name = "ParamBundle::init", skip_all)
                 )]
-                fn init(world: &mut World) -> Self::State {
+                fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
                     tracing::trace!("initialising {} system parameter state(s)", Self::AccessCount::USIZE);
 
-                    ($($gen::init(world)),*)
+                    ($($gen::init(world, meta)),*)
                 }
             }
         }
@@ -172,8 +171,8 @@ macro_rules! impl_bundle {
                 access
             }
 
-            fn init(world: &mut World) -> Self::State {
-                ($($gen::init(world)),*)
+            fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
+                ($($gen::init(world, meta)),*)
             }
         }
     }

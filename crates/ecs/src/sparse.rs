@@ -1,3 +1,1 @@
-pub struct SparseSet {
-    
-}
+pub struct SparseSet {}

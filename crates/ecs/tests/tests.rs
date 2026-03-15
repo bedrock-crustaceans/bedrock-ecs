@@ -1,10 +1,18 @@
-use ecs::{Component, Entity, Query, ScheduleBuilder, ScheduleLabel, Without, World};
+use ecs::{
+    Component, Entity, Query, Res, Resource, ScheduleBuilder, ScheduleLabel, Without, World,
+};
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone)]
-struct Position { x: f32, y: f32 }
+struct Position {
+    x: f32,
+    y: f32,
+}
 #[derive(Debug, Copy, Clone)]
-struct Velocity { x: f32, y: f32 }
+struct Velocity {
+    x: f32,
+    y: f32,
+}
 #[derive(Debug, Copy, Clone)]
 struct Health(f32);
 #[derive(Debug, Copy, Clone)]
@@ -21,6 +29,23 @@ impl Component for Faction {}
 impl Component for Mass {}
 impl Component for Static {}
 
+#[derive(Debug)]
+struct GlobalTimer(u32);
+
+impl Resource for GlobalTimer {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+}
+
 fn simple_system(query: Query<(Entity, &Health), Without<Mass>>) {
     for (entity, health) in &query {
         tracing::info!("Massless entity {} has {:?} health", entity.id(), health.0);
@@ -29,11 +54,16 @@ fn simple_system(query: Query<(Entity, &Health), Without<Mass>>) {
     }
 }
 
-// fn second_system(query: Query<(&Health, &Mass)>) {
-//     for (health, mass) in &query {
-//         tracing::info!("health is {health:?}, mass is {mass:?}");
-//     }
-// }
+fn second_system(query: Query<(&Health, &Mass)>) {
+    for (health, mass) in &query {
+        tracing::info!("health is {health:?}, mass is {mass:?}");
+    }
+}
+
+fn resource_system(res: Res<(GlobalTimer, GlobalTimer)>) {
+    let time = &res.0;
+    println!("Time is {time:?}");
+}
 
 struct Label1;
 
@@ -93,7 +123,7 @@ fn stress_test() {
 
     tracing::info!("Generating schedule...");
     let schedule = ScheduleBuilder::new(&mut world)
-        .add(Label1, (simple_system))
+        .add(Label1, (simple_system, second_system, resource_system))
         .schedule();
 
     world.run(&schedule);

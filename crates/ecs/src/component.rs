@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use crate::Signature;
 
 /// A component ID.
-/// 
+///
 /// This is a unique ID that is assigned to every component type.
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -36,18 +36,18 @@ pub trait Component: 'static {}
 
 /// A collection of components used in a filter. This trait makes it possible to use tuples
 /// of components inside of filters rather than just a single component.
-/// 
+///
 /// It enables filters such as `With<(Health, Transform)>`.
 pub trait ComponentBundle {
     /// Converts this bundle to a signature to compare against archetype tables. If a component had not been
-    /// registered, this method will register it. 
-    /// 
+    /// registered, this method will register it.
+    ///
     /// In the signature, the indices corresponding the components of this bundle are set to 1.
     fn get_or_assign_signature(reg: &mut ComponentRegistry) -> Signature;
 
     /// Converts this bundle to a signature to compare against archetype tables. If a component had not been
     /// this function will return `None`.
-    /// 
+    ///
     /// In the signature, the indices corresponding the components of this bundle are set to 1.
     fn get_signature(reg: &ComponentRegistry) -> Option<Signature>;
 }
@@ -86,7 +86,7 @@ impl_filter_bundle!(A, B, C, D);
 impl_filter_bundle!(A, B, C, D, E);
 
 /// Maintains a consistent mapping from component type IDs to unique integers.
-/// 
+///
 /// This is used to reduce the size of component IDs from random 128-bit type id hashes to
 /// smaller consecutive 64-bit IDs.
 #[derive(Debug, Default)]
@@ -94,7 +94,7 @@ pub struct ComponentRegistry {
     /// The map from type IDs to component IDs.
     mapping: FxHashMap<TypeId, usize>,
     /// The next ID to be assigned to a component.
-    next_id: usize
+    next_id: usize,
 }
 
 impl ComponentRegistry {
@@ -102,7 +102,7 @@ impl ComponentRegistry {
     pub fn new() -> ComponentRegistry {
         ComponentRegistry {
             mapping: FxHashMap::default(),
-            next_id: 0
+            next_id: 0,
         }
     }
 
@@ -116,14 +116,11 @@ impl ComponentRegistry {
     pub fn get_or_assign<T: Component>(&mut self) -> ComponentId {
         let ty_id = TypeId::of::<T>();
 
-        let id = self.mapping
-            .get(&ty_id)
-            .copied()
-            .unwrap_or_else(|| {
-                self.mapping.insert(ty_id, self.next_id);
-                self.next_id += 1;
-                self.next_id - 1
-            });
+        let id = self.mapping.get(&ty_id).copied().unwrap_or_else(|| {
+            self.mapping.insert(ty_id, self.next_id);
+            self.next_id += 1;
+            self.next_id - 1
+        });
 
         ComponentId(id)
     }

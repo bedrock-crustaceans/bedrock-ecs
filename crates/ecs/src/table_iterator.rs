@@ -4,14 +4,18 @@ use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 use crate::query::TableCache;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwGuard;
-use crate::{entity::{Entity, EntityId}, query::EmptyableIterator, world::World};
+use crate::{
+    entity::{Entity, EntityId},
+    query::EmptyableIterator,
+    world::World,
+};
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
     pub(crate) remaining: usize,
-    pub(crate) _marker: PhantomData<&'a T>
+    pub(crate) _marker: PhantomData<&'a T>,
 }
 
 impl<'a, T> Iterator for ColumnIter<'a, T> {
@@ -19,20 +23,16 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
 
     fn next(&mut self) -> Option<&'a T> {
         if self.remaining == 0 && self.curr.is_none() {
-            return None
+            return None;
         }
 
         let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe {
-            &*ptr.as_ptr().cast_const()
-        };
+        let item = unsafe { &*ptr.as_ptr().cast_const() };
 
         self.remaining -= 1;
-        *ptr = unsafe {
-            ptr.add(1)
-        };
+        *ptr = unsafe { ptr.add(1) };
 
-        Some(item)   
+        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -54,18 +54,17 @@ impl<'a, T> EmptyableIterator<'a, &'a T> for ColumnIter<'a, T> {
         ColumnIter {
             curr: None,
             remaining: 0,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 }
-
 
 pub struct ColumnIterMut<'a, T> {
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
     pub(crate) remaining: usize,
-    pub(crate) _marker: PhantomData<&'a mut T>
+    pub(crate) _marker: PhantomData<&'a mut T>,
 }
 
 impl<'a, T> Iterator for ColumnIterMut<'a, T> {
@@ -73,20 +72,16 @@ impl<'a, T> Iterator for ColumnIterMut<'a, T> {
 
     fn next(&mut self) -> Option<&'a mut T> {
         if self.remaining == 0 || self.curr.is_none() {
-            return None
+            return None;
         }
 
         let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe {
-            &mut *ptr.as_ptr()
-        };
+        let item = unsafe { &mut *ptr.as_ptr() };
 
         self.remaining -= 1;
-        *ptr = unsafe {
-            ptr.add(1)
-        };
+        *ptr = unsafe { ptr.add(1) };
 
-        Some(item)   
+        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -108,7 +103,7 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
         ColumnIterMut {
             curr: None,
             remaining: 0,
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 }
@@ -118,7 +113,7 @@ pub struct EntityIter<'w> {
     pub(crate) iter: std::slice::Iter<'w, EntityId>,
 
     #[cfg(debug_assertions)]
-    pub(crate) _guard: RwGuard<'w, false>
+    pub(crate) _guard: RwGuard<'w, false>,
 }
 
 impl<'w> Iterator for EntityIter<'w> {
@@ -153,7 +148,7 @@ impl<'w> EmptyableIterator<'w, Entity<'w>> for EntityIter<'w> {
             iter: [].iter(),
 
             #[cfg(debug_assertions)]
-            _guard: world.flag.read()
+            _guard: world.flag.read(),
         }
     }
 }

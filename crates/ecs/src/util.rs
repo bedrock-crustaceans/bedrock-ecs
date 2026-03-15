@@ -1,4 +1,4 @@
-use std::{alloc::{Layout}};
+use std::alloc::Layout;
 
 /// Creates an array of type system integers.
 #[cfg(feature = "generics")]
@@ -18,7 +18,9 @@ pub fn repeat_layout(layout: Layout, n: usize) -> Layout {
     let align = layout.align();
 
     let padded = (size + align - 1) & !(align - 1);
-    let total = padded.checked_mul(n).expect("Array capacity has overflowed");
+    let total = padded
+        .checked_mul(n)
+        .expect("Array capacity has overflowed");
 
     Layout::from_size_align(total, align).expect("Invalid array layout")
 }
@@ -47,13 +49,13 @@ pub mod debug {
 
     #[derive(Debug, Default)]
     pub struct RwFlag {
-        state: AtomicU8
+        state: AtomicU8,
     }
 
     impl RwFlag {
         pub fn new() -> RwFlag {
             RwFlag {
-                state: AtomicU8::new(UNLOCKED)
+                state: AtomicU8::new(UNLOCKED),
             }
         }
 
@@ -65,7 +67,7 @@ pub mod debug {
             let prev = self.state.fetch_max(1, Ordering::SeqCst);
             assert_eq!(prev, UNLOCKED, "RwFlag was write, cannot read");
             // tracing::info!("Lock guard read");
-            
+
             RwGuard(self)
         }
 

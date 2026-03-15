@@ -1,20 +1,31 @@
-use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
+use std::{
+    alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator,
+    marker::PhantomData, ptr::NonNull,
+};
 
 use rustc_hash::FxHashMap;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{signature::Signature, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut, EntityIter}, util, world::World};
+use crate::{
+    component::{ComponentId, ComponentRegistry},
+    entity::{Entity, EntityId},
+    signature::Signature,
+    spawn::SpawnBundle,
+    table_iterator::{ColumnIter, ColumnIterMut, EntityIter},
+    util,
+    world::World,
+};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
 
 /// Drops `len` items of type `T` contained in `ptr`.
-/// 
+///
 /// This function is used to invoke the `Drop` implementation on the items in a `Column`.
-/// 
+///
 /// # Safety
-/// 
+///
 /// This function must only be called when the following conditions are met:
 /// - `ptr` is a valid pointer to an array of objects of type `T`.
 /// - `len` is less than or equal to the amount of objects contained in the array starting at `ptr`.
@@ -42,14 +53,14 @@ pub struct Column {
     /// The capacity of this Column.
     cap: usize,
     /// An optional pointer to the buffer that holds the Column data.
-    /// 
+    ///
     /// This field is `None` if and only if `cap` is 0.
     data: Option<NonNull<u8>>,
     /// The function that is called when an item is dropped.
-    /// 
+    ///
     /// This field is `None` if the item does not require dropping, i.e.
     /// `std::mem::needs_drop<T>` returned false.
-    drop_fn: Option<DropFn>
+    drop_fn: Option<DropFn>,
 }
 
 impl Column {
@@ -70,8 +81,8 @@ impl Column {
         let layout = Layout::new::<T>();
         if std::mem::size_of::<T>() == 0 {
             tracing::trace!(
-                "created new column for ZST `{}`, needs drop: {}", 
-                std::any::type_name::<T>(), 
+                "created new column for ZST `{}`, needs drop: {}",
+                std::any::type_name::<T>(),
                 std::mem::needs_drop::<T>()
             );
 
@@ -87,12 +98,12 @@ impl Column {
                 // Set capacity to max to disable allocations.
                 cap: usize::MAX,
                 data: Some(ptr),
-                drop_fn
+                drop_fn,
             }
         } else {
             tracing::trace!(
-                "created new column for `{}`, needs drop: {}", 
-                std::any::type_name::<T>(), 
+                "created new column for `{}`, needs drop: {}",
+                std::any::type_name::<T>(),
                 std::mem::needs_drop::<T>()
             );
 
@@ -104,13 +115,13 @@ impl Column {
                 len: 0,
                 cap: 0,
                 data: None,
-                drop_fn
+                drop_fn,
             }
         }
     }
 
     /// Returns the size of an entry in bytes. This includes potential padding.
-    /// 
+    ///
     /// In other words, this is equivalent to `std::mem::size_of::<T>()` where
     /// `T` is the type contained in this `Column`.
     pub fn entry_size(&self) -> usize {
@@ -118,44 +129,56 @@ impl Column {
     }
 
     pub fn iter<T: 'static>(&self) -> ColumnIter<'_, T> {
-        assert_eq!(TypeId::of::<T>(), self.ty, "attempt to create column iter with wrong type");
+        assert_eq!(
+            TypeId::of::<T>(),
+            self.ty,
+            "attempt to create column iter with wrong type"
+        );
 
         if let Some(start_ptr) = self.data {
             ColumnIter {
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
-                _marker: PhantomData
+                _marker: PhantomData,
             }
         } else {
             ColumnIter {
                 curr: None,
                 remaining: 0,
-                _marker: PhantomData
+                _marker: PhantomData,
             }
         }
     }
 
     pub fn iter_mut<T: 'static>(&self) -> ColumnIterMut<'_, T> {
-        assert_eq!(TypeId::of::<T>(), self.ty, "attempt to create column iter with wrong type");
+        assert_eq!(
+            TypeId::of::<T>(),
+            self.ty,
+            "attempt to create column iter with wrong type"
+        );
 
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
-                _marker: PhantomData
+                _marker: PhantomData,
             }
         } else {
             ColumnIterMut {
                 curr: None,
                 remaining: 0,
-                _marker: PhantomData
+                _marker: PhantomData,
             }
         }
     }
 
     /// Reserves capacity for `n` additional entries.
     pub fn reserve(&mut self, n: usize) {
-        assert_ne!(self.layout.size(), 0, "Column::reserve should not be called for ZSTs");
+        assert_ne!(
+            self.layout.size(),
+            0,
+            "Column::reserve should not be called for ZSTs"
+        );
 
         #[cfg(debug_assertions)]
         let _guard = self.flag.write();
@@ -163,32 +186,31 @@ impl Column {
         if n == 0 {
             // Don't bother allocating for 0 size. This also ensures that we do not try to allocate
             // an empty array of zero size.
-            return
+            return;
         }
 
         let cap = self.cap + n;
         let new_layout = util::repeat_layout(self.layout, cap);
 
-        assert!(new_layout.size() <= isize::MAX as usize, "Allocation too large");
+        assert!(
+            new_layout.size() <= isize::MAX as usize,
+            "Allocation too large"
+        );
 
         let ptr = if let Some(ptr) = self.data {
             // Safety:
-            // 
+            //
             // This is safe because layout has a non-zero size, which is upheld by the assertion.
             // Additionally, the given layout is the same as the one used in the original allocation since it is
             // stored in the Column unchanged. Furthermore, the pointer used to reallocate is the one
             // that was originally allocated using `alloc` and the new size is less than or equal to `isize::MAX`.
-            unsafe {
-                std::alloc::realloc(ptr.as_ptr(), self.layout, new_layout.size())
-            }
+            unsafe { std::alloc::realloc(ptr.as_ptr(), self.layout, new_layout.size()) }
         } else {
             // Safety:
-            // 
+            //
             // This is safe because layout has a non-zero size, which is upheld by the assertion and
             // by the check for `n == 0`.
-            unsafe {
-                std::alloc::alloc(new_layout)
-            }
+            unsafe { std::alloc::alloc(new_layout) }
         };
 
         // If this line panics, the `Drop` impl will be called with the unchanged pointer, hence
@@ -197,10 +219,10 @@ impl Column {
         self.cap = cap;
     }
 
-    /// Pushes a new entry into the column. 
-    /// 
+    /// Pushes a new entry into the column.
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`. This `T` is not stored in the `Column` type to prevent the runtime cost of dynamic dispatch.
     pub fn push<T: 'static>(&mut self, data: T) {
@@ -228,17 +250,18 @@ impl Column {
         }
 
         let offset = self.layout.size() * self.len;
-        assert!(offset <= isize::MAX as usize, "Pointer offset overflow in Column::push");
+        assert!(
+            offset <= isize::MAX as usize,
+            "Pointer offset overflow in Column::push"
+        );
 
         // Safety:
         //
         // The computed offset does not overflow `isize` by the assert above and the original pointer
         // `self.data` is derived from an allocation while the offset result is within the allocation due
         // to the check that `self.len < self.cap`.
-        let column_ptr = unsafe {
-            self.data.unwrap().add(offset)
-        };
-        
+        let column_ptr = unsafe { self.data.unwrap().add(offset) };
+
         // Safety:
         //
         // This is safe since the pointer is guaranteed to be valid by the length check above.
@@ -252,12 +275,12 @@ impl Column {
     }
 
     /// Obtains a pointer to the given entry in the Column.
-    /// 
-    /// This function returns `None` if the index did not exist. 
-    /// 
+    ///
+    /// This function returns `None` if the index did not exist.
+    ///
     /// This function is not marked unsafe because obtaining the pointer itself is a safe operation.
     /// The reference aliasing rules must be upheld manually when dereferencing this pointer however.
-    /// 
+    ///
     /// In other words, if there exists a muColumn reference to this `Column`, you cannot dereference the returned
     /// pointer. If there exists an immuColumn reference to this `Column`, you must cast the pointer to a `*const T` and
     /// only use it as an immuColumn pointer. If there exist no references, you can do either.
@@ -269,11 +292,14 @@ impl Column {
         );
 
         if index >= self.len {
-            return None
+            return None;
         }
 
         let offset = self.layout.size() * index;
-        assert!(offset <= isize::MAX as usize, "Pointer offset overflow in Column::get");
+        assert!(
+            offset <= isize::MAX as usize,
+            "Pointer offset overflow in Column::get"
+        );
 
         // Safety:
         //
@@ -282,15 +308,13 @@ impl Column {
         // above we know that `index < self.len` and the offset result is within this allocation.
         //
         // By the assertion we also know that the pointer is pointing to some type `T`.
-        Some(unsafe {
-            self.data.unwrap().add(offset).cast::<T>()
-        })
+        Some(unsafe { self.data.unwrap().add(offset).cast::<T>() })
     }
 
     /// Removes the item at index and moves the last item in the Column to the, now empty, slot.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if the index is out of bounds.
     pub fn swap_remove(&mut self, idx: usize) {
         #[cfg(debug_assertions)]
@@ -300,7 +324,10 @@ impl Column {
 
         let data_ptr = self.data.unwrap().as_ptr();
         let dst_offset = self.entry_size() * idx;
-        assert!(dst_offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove dst pointer");
+        assert!(
+            dst_offset <= isize::MAX as usize,
+            "Pointer offset overflow in Column::swap_remove dst pointer"
+        );
 
         // The item to remove and copy into
         //
@@ -309,9 +336,7 @@ impl Column {
         // The offset is guaranteed not to overflow `isize` by the assertion above.
         // Furthermore, `data_ptr` is a valid pointer into an allocation and by the
         // `idx >= self.len` check above, the offset result is also within the allocation.
-        let dst_ptr = unsafe {            
-            data_ptr.add(dst_offset)
-        };
+        let dst_ptr = unsafe { data_ptr.add(dst_offset) };
 
         // Drop the item if necessary
         self.drop_fn.inspect(|f| {
@@ -329,7 +354,10 @@ impl Column {
 
         if idx != self.len - 1 {
             let src_offset = self.entry_size() * (self.len() - 1);
-            assert!(src_offset <= isize::MAX as usize, "Pointer offset overflow in Column::swap_remove src pointer");
+            assert!(
+                src_offset <= isize::MAX as usize,
+                "Pointer offset overflow in Column::swap_remove src pointer"
+            );
 
             // The last item in the array. Will be copied to the empty slot
             //
@@ -338,9 +366,7 @@ impl Column {
             // The offset is guaranteed not to overflow `isize` by the assertion above.
             // Furthermore, `data_ptr` is a valid pointer into an allocation and by the
             // fact the count is `self.len() - 1`, the offset result is also within the allocation.
-            let src_ptr = unsafe {
-                data_ptr.add(src_offset)
-            };
+            let src_ptr = unsafe { data_ptr.add(src_offset) };
 
             // Then copy the last item into the now empty slot.
             //
@@ -390,7 +416,7 @@ impl Drop for Column {
                 unsafe {
                     drop_fn(ptr.as_ptr(), self.len);
                 }
-            }   
+            }
 
             if self.layout.size() != 0 {
                 let layout = util::repeat_layout(self.layout, self.cap);
@@ -409,12 +435,12 @@ impl Drop for Column {
 
 /// A table is the main storage container for entity components. It is made for a specific archetype only
 /// and consists of a list of columns for each component.
-/// 
+///
 /// Consider the archetype `(Health, Transform)` then its corresponding table contains
 /// two columns: one for `Health` and another for `Transform`.
-/// 
+///
 /// # Safety
-/// 
+///
 /// Tables are always to read from during a tick since entities will only be summoned in between ticks.
 #[derive(Debug)]
 pub struct Table {
@@ -435,7 +461,7 @@ pub struct Table {
     /// All columns that this table contains. Most users will know exactly which column they want.
     /// Therefore, this is a vector, avoiding the cost of hashing. In case the column index is unknown,
     /// the `lookup` table can be used to find it.
-    pub(crate) columns: Vec<Column>
+    pub(crate) columns: Vec<Column>,
 }
 
 impl Table {
@@ -478,7 +504,7 @@ impl Table {
             iter: self.entities.iter(),
 
             #[cfg(debug_assertions)]
-            _guard: self.flag.read()
+            _guard: self.flag.read(),
         }
     }
 

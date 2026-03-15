@@ -7,7 +7,7 @@ const SIMD_LANES: usize = 4;
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct Signature {
     // bits: SmallVec<[u64; INLINE_COUNT]>
-    bits: [u64; WORD_COUNT]
+    bits: [u64; WORD_COUNT],
 }
 
 impl Signature {
@@ -17,7 +17,7 @@ impl Signature {
     }
 
     /// Whether this bitset is empty.
-    /// 
+    ///
     /// Empty can mean that it either has no words or all bits are set to 0.
     pub fn is_empty(&self) -> bool {
         self.bits.iter().all(|w| *w == 0)
@@ -39,10 +39,7 @@ impl Signature {
 
     /// Counts the amount of bits set to 1 in this bitset.
     pub fn count_ones(&self) -> u32 {
-        self.bits
-            .iter()
-            .map(|w| w.count_ones())
-            .sum()
+        self.bits.iter().map(|w| w.count_ones()).sum()
     }
 
     // Whether `other` is a subset of `self`. This is faster than intersecting and then comparing
@@ -51,9 +48,7 @@ impl Signature {
         self.bits
             .iter()
             .zip(other.bits.iter())
-            .all(|(a, b)| {
-                a & b == *b
-            })
+            .all(|(a, b)| a & b == *b)
     }
 
     /// Whether `self` and `other` are disjoint.
@@ -62,8 +57,6 @@ impl Signature {
         self.bits
             .iter()
             .zip(other.bits.iter())
-            .all(|(a, b)| {
-                a & b == 0
-            })
+            .all(|(a, b)| a & b == 0)
     }
 }

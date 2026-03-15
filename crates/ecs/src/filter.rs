@@ -1,28 +1,28 @@
-use std::marker::PhantomData;
+use crate::archetype::Archetypes;
+use crate::component::Component;
+use crate::component::{ComponentBundle, ComponentRegistry};
+use crate::signature::Signature;
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
-use crate::signature::Signature;
-use crate::{component::Component};
-use crate::archetype::Archetypes;
-use crate::component::{ComponentBundle, ComponentRegistry};
+use std::marker::PhantomData;
 
 /// Implements the filtering functionality in queries.
 pub trait Filter {
     /// Initialises the filter state.
-    /// 
+    ///
     /// With most filters this just creates a bitset used to match with the archetype tables.
     fn init(archetypes: &mut Archetypes) -> Self;
 
     /// Applies the static filter, returning whether the table should be accepted.
-    /// 
+    ///
     /// Before a query fetches the requested data, it will cache the tables it intends to access.
     /// These tables are found by performing a bitwise and of the query bitset and archetype bitset.
-    /// 
+    ///
     /// If this fails, the table is ignored, otherwise we continue to the filtering stage.
     /// This is when the static filters are applied, these are filters that can be applied to whole archetype
     /// tables without needing any tick-specific or entity-specific information.
-    /// 
-    /// Examples of fully static filters are [`With`] and [`Without`]. Other dynamic filters also have 
+    ///
+    /// Examples of fully static filters are [`With`] and [`Without`]. Other dynamic filters also have
     /// a static part. The [`Changed`] filter statically filters for tables that include its component for example.
     /// This does not require any runtime info.
     fn apply_static_filter(&self, archetype: &Signature) -> bool;
@@ -34,12 +34,12 @@ pub trait FilterBundle: Sized {
     const LEN: usize;
 
     /// Initialises the filter state of all filters in this collection.
-    /// 
+    ///
     /// With most filters this just creates a bitset used to match with the archetype tables.
     fn init(archetypes: &mut Archetypes) -> Self;
 
     /// Applies the static filter of all filters in this collection.
-    /// 
+    ///
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_static_filters(&self, archetype: &Signature) -> bool;
 }
@@ -83,21 +83,24 @@ impl_bundle!(4, A, B, C, D);
 impl_bundle!(5, A, B, C, D, E);
 
 /// Filters out all entities that do not have component `T`.
-/// 
+///
 /// Multiple components can also be used to filter for multiple components, i.e. `With<(Health, Transform)>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct With<T: ComponentBundle> {
     /// The bits of the components that the archetype table should have.
     signature: Signature,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: ComponentBundle> Filter for With<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
+        tracing::trace!(
+            "constructing filter signature for `{}`",
+            std::any::type_name::<Self>()
+        );
         With {
             signature: T::get_or_assign_signature(&mut archetypes.registry),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -107,21 +110,24 @@ impl<T: ComponentBundle> Filter for With<T> {
 }
 
 /// Filters out all entities that have component `T`.
-/// 
+///
 /// Multiple components can also be used to filter for multiple components, i.e. `With<(Health, Transform)>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Without<T: ComponentBundle> {
     /// The bits of the components that the archetype table should not have.
     signature: Signature,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: ComponentBundle> Filter for Without<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
+        tracing::trace!(
+            "constructing filter signature for `{}`",
+            std::any::type_name::<Self>()
+        );
         Without {
             signature: T::get_or_assign_signature(&mut archetypes.registry),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -133,15 +139,18 @@ impl<T: ComponentBundle> Filter for Without<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Added<T: ComponentBundle> {
     signature: Signature,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: ComponentBundle> Filter for Added<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
+        tracing::trace!(
+            "constructing filter signature for `{}`",
+            std::any::type_name::<Self>()
+        );
         Added {
             signature: T::get_or_assign_signature(&mut archetypes.registry),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -153,15 +162,18 @@ impl<T: ComponentBundle> Filter for Added<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed<T: ComponentBundle> {
     signature: Signature,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: ComponentBundle> Filter for Removed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
+        tracing::trace!(
+            "constructing filter signature for `{}`",
+            std::any::type_name::<Self>()
+        );
         Removed {
             signature: T::get_or_assign_signature(&mut archetypes.registry),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 
@@ -173,15 +185,18 @@ impl<T: ComponentBundle> Filter for Removed<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed<T: ComponentBundle> {
     signature: Signature,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 impl<T: ComponentBundle> Filter for Changed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
+        tracing::trace!(
+            "constructing filter signature for `{}`",
+            std::any::type_name::<Self>()
+        );
         Changed {
             signature: T::get_or_assign_signature(&mut archetypes.registry),
-            _marker: PhantomData
+            _marker: PhantomData,
         }
     }
 

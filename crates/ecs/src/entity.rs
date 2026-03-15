@@ -24,6 +24,7 @@ impl fmt::Display for EntityId {
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct GenerationId(pub(crate) usize);
 
+/// Having an instance of this entity means you have exclusive access to the entire world.
 pub struct EntityMut<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) id: EntityId,
@@ -49,7 +50,7 @@ impl<'w> Entity<'w> {
     }
 
     /// Checks whether this entity has all the given components.
-    /// 
+    ///
     /// This has relatively large overhead per entity compared to queries.
     pub fn has<T: ComponentBundle>(&self) -> bool {
         self.world.has_components::<T>(self.id)
@@ -66,7 +67,7 @@ impl<'w> Drop for Entity<'w> {
 #[derive(Default)]
 pub struct Entities {
     generation: GenerationId,
-    indices: BitVec
+    indices: BitVec,
 }
 
 impl Entities {
