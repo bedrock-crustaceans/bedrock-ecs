@@ -1,52 +1,44 @@
 use smallvec::SmallVec;
 
-const INLINE_COUNT: usize = 4;
+const WORD_COUNT: usize = 4;
+const SIMD_LANES: usize = 4;
 
+/// A set of bits, similar to `Vec<bool>` but more efficient with memory.
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
-pub struct BitSet {
-    bits: SmallVec<[u64; INLINE_COUNT]>
+pub struct Signature {
+    // bits: SmallVec<[u64; INLINE_COUNT]>
+    bits: [u64; WORD_COUNT]
 }
 
-impl BitSet {
-    pub fn new() -> BitSet {
-        BitSet::default()
+impl Signature {
+    /// Creates a new, empty bitset.
+    pub fn new() -> Signature {
+        Signature::default()
     }
 
-    /// Returns the amount of words in this bitset.
-    pub fn word_len(&self) -> usize {
-        self.bits.len()
-    }
-
-    pub fn with_capacity(cap: usize) -> BitSet {
-        BitSet { bits: SmallVec::with_capacity(cap) }
-    }
-
+    /// Whether this bitset is empty.
+    /// 
+    /// Empty can mean that it either has no words or all bits are set to 0.
     pub fn is_empty(&self) -> bool {
-        self.bits.is_empty()
+        self.bits.iter().all(|w| *w == 0)
     }
 
+    /// Sets a bit to 1.
     pub fn set(&mut self, index: usize) {
         let word = index / 64;
-        if self.bits.len() <= word {
-            self.bits.resize(word + 1, 0);
-        }
-
         let bit = index % 64;
         self.bits[word] |= 1 << bit;
     }
 
+    /// Sets a bit to 0.
     pub fn unset(&mut self, index: usize) {
         let word = index / 64;
-        if self.bits.len() <= word {
-            // Outside bitset, will already be 0 when accessed.
-            return
-        }
-
         let bit = index % 64;
         self.bits[word] &= !(1 << bit);
     }
 
-    pub fn ones(&self) -> u32 {
+    /// Counts the amount of bits set to 1 in this bitset.
+    pub fn count_ones(&self) -> u32 {
         self.bits
             .iter()
             .map(|w| w.count_ones())
@@ -55,14 +47,7 @@ impl BitSet {
 
     // Whether `other` is a subset of `self`. This is faster than intersecting and then comparing
     // because this method short-circuits.
-    pub fn is_subset(&self, other: &Self) -> bool {
-        if other.word_len() > self.word_len() {
-            // `other` cannot be a subset of `self` if it has more words.
-            if other.bits[self.bits.len()..].iter().any(|&b| b != 0) {
-                return false
-            }
-        }
-
+    pub fn contains(&self, other: &Self) -> bool {
         self.bits
             .iter()
             .zip(other.bits.iter())

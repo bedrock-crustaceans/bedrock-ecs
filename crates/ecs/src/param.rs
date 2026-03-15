@@ -9,9 +9,11 @@ use crate::graph::{AccessDesc};
 #[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
 
+/// Implemented by all types that can used as parameters in a system.
+/// 
 /// # Safety
 ///
-/// The `access` must correctly return the types it accesses. Incorrect implementation will
+/// The `access` method must correctly return the types it accesses. Incorrect implementation will
 /// lead to reference aliasing and immediate UB.
 #[diagnostic::on_unimplemented(
     message = "{Self} is not a valid system parameter"
@@ -35,18 +37,38 @@ pub unsafe trait Param {
     fn init(world: &mut World) -> Self::State;
 }
 
+/// A collection of parameters.
+/// 
+/// A system collects all of its parameters into a tuple that implements this trait.
+/// This allows easy access to all of the parameters at once.
+/// 
+/// # Safety
+/// 
+/// - `AccessCount` must return the exact amount of resources accessed by all parameters combined.
+/// For example, if the bundle consists of two parameters that each access one resource, then `AccessCount` must
+/// equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
+/// 
+/// - `access` must correctly return each of the components that the parameters use, including
+/// correct mutability information. Incorrect access descriptors will give wrong information to the scheduler 
+/// and cause mutable reference aliasing.
 pub unsafe trait ParamBundle {
+    /// The amount of resources that this parameter collection requires.
+    /// This is used to compute, at compile time, how large the system metadata must be.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength;
 
+    /// A collection of all individual parameter states in the collection.
     type State;
 
+    /// Returns the resources that this collection of parameters accesses.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
+    /// Returns the resources that this collection of parameters accesses.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
+    /// Initializes the internal states of all parameters in this collection.
     fn init(world: &mut World) -> Self::State;
 }
 
@@ -80,10 +102,16 @@ macro_rules! impl_bundle {
             #[allow(unused_parens)]
             unsafe impl<$($gen: Param),*> ParamBundle for ($($gen),*)
             where
+                // Ensure that we can sum the array of lengths.
                 crate::create_tarray!($($gen::AccessCount),*): FoldAdd,
                 <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output: ArrayLength
             {
+                /// The total amount of resources accessed by this parameter collection.
+                /// This is computed by collecting the individual counts from each parameter into a
+                /// typenum array and then summing them all.
                 type AccessCount = <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
+                
+                /// The states of all the parameters, this is simply a tuple of all of them.
                 type State = ($($gen::State),*);
 
                 #[allow(unused)]
@@ -104,6 +132,10 @@ macro_rules! impl_bundle {
                         }
                     )*
 
+                    // Safety:
+                    //
+                    // This is safe because we have initialised all members of the array, assuming
+                    // `Self::AccessCount` is implemented correctly, which is a condition of implementing the trait.
                     unsafe {
                         array.assume_init()
                     }

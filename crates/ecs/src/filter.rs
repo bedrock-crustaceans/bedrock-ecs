@@ -1,40 +1,56 @@
 use std::marker::PhantomData;
-use generic_array::{arr, ArrayLength, GenericArray};
-use generic_array::typenum::{FoldAdd, U0, U1, U2, U3, U4, U5, Unsigned};
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
-use crate::bitset::BitSet;
+use crate::signature::Signature;
 use crate::{component::Component};
 use crate::archetype::Archetypes;
-use crate::component::{ComponentId, ComponentRegistry};
+use crate::component::{ComponentBundle, ComponentRegistry};
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub enum FilterDesc {
-    #[default]
-    None,
-    With(ComponentId),
-    Without(ComponentId),
-    Added(ComponentId),
-    Changed(ComponentId),
-    Removed(ComponentId)
-}
-
+/// Implements the filtering functionality in queries.
 pub trait Filter {
+    /// Initialises the filter state.
+    /// 
+    /// With most filters this just creates a bitset used to match with the archetype tables.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool;
+    /// Applies the static filter, returning whether the table should be accepted.
+    /// 
+    /// Before a query fetches the requested data, it will cache the tables it intends to access.
+    /// These tables are found by performing a bitwise and of the query bitset and archetype bitset.
+    /// 
+    /// If this fails, the table is ignored, otherwise we continue to the filtering stage.
+    /// This is when the static filters are applied, these are filters that can be applied to whole archetype
+    /// tables without needing any tick-specific or entity-specific information.
+    /// 
+    /// Examples of fully static filters are [`With`] and [`Without`]. Other dynamic filters also have 
+    /// a static part. The [`Changed`] filter statically filters for tables that include its component for example.
+    /// This does not require any runtime info.
+    fn apply_static_filter(&self, archetype: &Signature) -> bool;
 }
 
+/// A collection of filters.
 pub trait FilterBundle: Sized {
+    /// The amount of filters contained in this collection.
+    const LEN: usize;
+
+    /// Initialises the filter state of all filters in this collection.
+    /// 
+    /// With most filters this just creates a bitset used to match with the archetype tables.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    fn apply_static_filters(&self, archetype: &BitSet) -> bool;
+    /// Applies the static filter of all filters in this collection.
+    /// 
+    /// See [`Filter::apply_static_filter`] for more information about static filters.
+    fn apply_static_filters(&self, archetype: &Signature) -> bool;
 }
 
 impl FilterBundle for () {
+    const LEN: usize = 0;
+
     fn init(_archetypes: &mut Archetypes) -> Self {}
 
-    fn apply_static_filters(&self, _archetype: &BitSet) -> bool {
+    /// The empty filter always returns true.
+    fn apply_static_filters(&self, _archetype: &Signature) -> bool {
         true
     }
 }
@@ -44,11 +60,13 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[allow(unused_parens)]
             impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
+                const LEN: usize = $count;
+
                 fn init(archetypes: &mut Archetypes) -> Self {
                     ($($gen::init(archetypes)),*)
                 }
 
-                fn apply_static_filters(&self, archetype: &BitSet) -> bool {
+                fn apply_static_filters(&self, archetype: &Signature) -> bool {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = self;
                     $($gen.apply_static_filter(archetype))&&+
@@ -64,131 +82,110 @@ impl_bundle!(3, A, B, C);
 impl_bundle!(4, A, B, C, D);
 impl_bundle!(5, A, B, C, D, E);
 
-pub trait FilterComponentBundle {
-    /// Converts this bundle to a bitset to compare against archetype tables.
-    fn to_bitset(reg: &mut ComponentRegistry) -> BitSet;
-}
-
-macro_rules! impl_filter_bundle {
-    ($($gen:ident),*) => {
-        paste::paste! {
-            #[allow(unused_parens)]
-            impl<$($gen:Component),*> FilterComponentBundle for ($($gen),*) {
-                fn to_bitset(reg: &mut ComponentRegistry) -> BitSet {
-                    let mut set = BitSet::new();
-                    $(
-                        let id = reg.get_or_assign::<$gen>();
-                        set.set(*id);
-                    )*
-                    set
-                }
-            }
-        }
-    }
-}
-
-impl_filter_bundle!(A);
-impl_filter_bundle!(A, B);
-impl_filter_bundle!(A, B, C);
-impl_filter_bundle!(A, B, C, D);
-impl_filter_bundle!(A, B, C, D, E);
-
+/// Filters out all entities that do not have component `T`.
+/// 
+/// Multiple components can also be used to filter for multiple components, i.e. `With<(Health, Transform)>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct With<T: FilterComponentBundle> {
-    bits: BitSet,
+pub struct With<T: ComponentBundle> {
+    /// The bits of the components that the archetype table should have.
+    signature: Signature,
     _marker: PhantomData<T>
 }
 
-impl<T: FilterComponentBundle> Filter for With<T> {
+impl<T: ComponentBundle> Filter for With<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
+        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
         With {
-            bits: T::to_bitset(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.bits)
+    fn apply_static_filter(&self, sig: &Signature) -> bool {
+        sig.contains(&self.signature)
     }
 }
 
+/// Filters out all entities that have component `T`.
+/// 
+/// Multiple components can also be used to filter for multiple components, i.e. `With<(Health, Transform)>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Without<T: FilterComponentBundle> {
-    bits: BitSet,
+pub struct Without<T: ComponentBundle> {
+    /// The bits of the components that the archetype table should not have.
+    signature: Signature,
     _marker: PhantomData<T>
 }
 
-impl<T: FilterComponentBundle> Filter for Without<T> {
+impl<T: ComponentBundle> Filter for Without<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
+        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
         Without {
-            bits: T::to_bitset(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_disjoint(&self.bits)
+    fn apply_static_filter(&self, sig: &Signature) -> bool {
+        sig.is_disjoint(&self.signature)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Added<T: FilterComponentBundle> {
-    bits: BitSet,
+pub struct Added<T: ComponentBundle> {
+    signature: Signature,
     _marker: PhantomData<T>
 }
 
-impl<T: FilterComponentBundle> Filter for Added<T> {
+impl<T: ComponentBundle> Filter for Added<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
+        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
         Added {
-            bits: T::to_bitset(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.bits)
+    fn apply_static_filter(&self, sig: &Signature) -> bool {
+        sig.contains(&self.signature)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Removed<T: FilterComponentBundle> {
-    bits: BitSet,
+pub struct Removed<T: ComponentBundle> {
+    signature: Signature,
     _marker: PhantomData<T>
 }
 
-impl<T: FilterComponentBundle> Filter for Removed<T> {
+impl<T: ComponentBundle> Filter for Removed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
+        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
         Removed {
-            bits: T::to_bitset(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_disjoint(&self.bits)
+    fn apply_static_filter(&self, sig: &Signature) -> bool {
+        sig.is_disjoint(&self.signature)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Changed<T: FilterComponentBundle> {
-    bits: BitSet,
+pub struct Changed<T: ComponentBundle> {
+    signature: Signature,
     _marker: PhantomData<T>
 }
 
-impl<T: FilterComponentBundle> Filter for Changed<T> {
+impl<T: ComponentBundle> Filter for Changed<T> {
     fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!("constructing filter state for `{}`", std::any::type_name::<Self>());
+        tracing::trace!("constructing filter signature for `{}`", std::any::type_name::<Self>());
         Changed {
-            bits: T::to_bitset(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.registry),
             _marker: PhantomData
         }
     }
 
-    fn apply_static_filter(&self, archetype: &BitSet) -> bool {
-        archetype.is_subset(&self.bits)
+    fn apply_static_filter(&self, sig: &Signature) -> bool {
+        sig.contains(&self.signature)
     }
 }

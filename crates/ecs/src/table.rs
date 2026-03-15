@@ -1,8 +1,10 @@
 use std::{alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
+use rustc_hash::FxHashMap;
+
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{archetype::ArchetypeComponents, bitset::BitSet, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut, EntityIter}, util, world::World};
+use crate::{signature::Signature, component::{ComponentId, ComponentRegistry}, entity::{Entity, EntityId}, spawn::SpawnBundle, table_iterator::{ColumnIter, ColumnIterMut, EntityIter}, util, world::World};
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -29,6 +31,7 @@ unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
 #[derive(Debug)]
 pub struct Column {
     #[cfg(debug_assertions)]
+    /// A debug-only flag that indicates whether the column is currently being read from or written to.
     flag: RwFlag,
     /// The type ID of the item contained in this Column.
     ty: TypeId,
@@ -354,14 +357,14 @@ impl Column {
         self.len -= 1;
     }
 
-    /// The amount of elements currently contained in the Column.
+    /// The amount of elements currently contained in the column.
     pub fn len(&self) -> usize {
         #[cfg(debug_assertions)]
         let _guard = self.flag.read();
         self.len
     }
 
-    /// The capacity of the Column.
+    /// The capacity of the column.
     pub fn capacity(&self) -> usize {
         #[cfg(debug_assertions)]
         let _guard = self.flag.read();
@@ -404,30 +407,51 @@ impl Drop for Column {
     }
 }
 
+/// A table is the main storage container for entity components. It is made for a specific archetype only
+/// and consists of a list of columns for each component.
+/// 
+/// Consider the archetype `(Health, Transform)` then its corresponding table contains
+/// two columns: one for `Health` and another for `Transform`.
+/// 
+/// # Safety
+/// 
+/// Tables are always to read from during a tick since entities will only be summoned in between ticks.
 #[derive(Debug)]
 pub struct Table {
     #[cfg(debug_assertions)]
+    /// A flag used to indicate whether this table is currently being read or written to.
+    /// This is used in debug mode to ensure that the scheduler abides by the aliasing rules.
     pub(crate) flag: RwFlag,
 
-    pub(crate) archetype: BitSet,    
+    /// The signature of this table. This is by queries to quickly scan for their components
+    /// through the entire component database.
+    pub(crate) signature: Signature,
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
     // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
     pub(crate) entities: Vec<EntityId>,
-    pub(crate) lookup: HashMap<TypeId, usize>,
+    /// A lookup table that maps component type IDs to columns.
+    pub(crate) lookup: FxHashMap<TypeId, usize>,
+    /// All columns that this table contains. Most users will know exactly which column they want.
+    /// Therefore, this is a vector, avoiding the cost of hashing. In case the column index is unknown,
+    /// the `lookup` table can be used to find it.
     pub(crate) columns: Vec<Column>
 }
 
 impl Table {
+    /// Creates a new table for the given collection of components and inserts those components into the
+    /// table.
     #[inline]
-    pub fn new<G: SpawnBundle>(bitset: BitSet) -> Table {
+    pub fn new<G: SpawnBundle>(bitset: Signature) -> Table {
         G::new_table(bitset)
     }
 
-    pub fn archetype(&self) -> &BitSet {
-        &self.archetype
+    /// Returns the archetype of this table.
+    pub fn archetype(&self) -> &Signature {
+        &self.signature
     }
 
+    /// Inserts a set of components into this table.
     pub fn insert<G: SpawnBundle>(&mut self, entity: EntityId, components: G) {
         #[cfg(debug_assertions)]
         let _guard = self.flag.write();
@@ -437,43 +461,32 @@ impl Table {
         components.insert_into(&mut self.columns);
     }
 
+    /// Returns a list of all columns in this table.
     pub fn columns(&self) -> &[Column] {
         &self.columns
     }
 
+    /// Returns the specified column from this table.
     pub fn column(&self, index: usize) -> &Column {
         &self.columns[index]
     }
 
-    pub fn iter<T: 'static>(&self, col: usize) -> ColumnIter<'_, T> {
-        let col = &self.columns[col];
-        col.iter::<T>()
-    }
-
-    pub fn iter_mut<T: 'static>(&self, col: usize) -> ColumnIterMut<'_, T> {
-        let col = &self.columns[col];
-        col.iter_mut::<T>()
-    }
-
+    /// Creates an iterator over all the entities in this table.
     pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
         EntityIter {
             world,
-            iter: self.entities.iter()
+            iter: self.entities.iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: self.flag.read()
         }
     }
 
-    /// # Safety
-    /// 
-    /// This function is only safe to call if there exist no muColumn references of this `Archetype`.
-    /// Calls to this function must be externally synchronised. Not abiding by these conditions
-    /// induces immediate UB.
-    pub unsafe fn len(&self) -> usize {
-        // let len = unsafe {
-        //     &*(self.entities.get() as *const Vec<EntityId>)
-        // }.len();
+    /// Returns the amount of entities stored in this table.
+    pub fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.flag.read();
 
         self.entities.len()
     }
-
-
 }

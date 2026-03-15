@@ -29,9 +29,9 @@ macro_rules! impl_bundle {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let boxed = [<$gen:lower>].into_system(schedule.world);
-                        
                         let sid = SystemId::of::<$gen, [<$gen Fun>]>();
+                        let boxed = [<$gen:lower>].into_system(schedule.world, sid);
+                        
                         schedule.graph.add_node(GraphNode {
                             sid, access: boxed.access().into()
                         });

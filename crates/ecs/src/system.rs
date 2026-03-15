@@ -11,18 +11,18 @@ use crate::graph::AccessDesc;
 pub trait System: Sync {
     /// Attempts to determine the name of this system.
     fn name(&self) -> String;
+    /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
+    /// Runs the system.
     fn call(&self, world: &World);
 }
 
 pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
-    fn into_container(self, world: &mut World, id: usize) -> FnContainer<P, Self> {
+    fn into_container(self, world: &mut World, id: SystemId) -> SystemContainer<P, Self> {
         let access = P::access(world);
         let state = P::init(world);
 
-        FnContainer {
-            #[cfg(debug_assertions)]
-            counter: AtomicUsize::new(0),
+        SystemContainer {
             id,
             system: self,
             access,
@@ -33,29 +33,30 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
     fn call(&self, world: &World, state: &mut P::State);
 }
 
-pub struct FnContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
-    #[cfg(debug_assertions)]
-    pub counter: AtomicUsize,
-    pub id: usize,
-    pub system: F,
+/// Wraps the system and all of its metadata.
+/// 
+/// This is where the the states and metadata are stored.
+pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
+    id: SystemId,
+    system: F,
     #[cfg(feature = "generics")]
-    pub access: GenericArray<AccessDesc, P::AccessCount>,
+    access: GenericArray<AccessDesc, P::AccessCount>,
     #[cfg(not(feature = "generics"))]
-    pub access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
-    pub state: UnsafeCell<P::State>,
+    access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
+    state: UnsafeCell<P::State>,
 }
 
-unsafe impl<P, F> Send for FnContainer<P, F> 
+unsafe impl<P, F> Send for SystemContainer<P, F> 
 where
     P: ParamBundle,
     F: ParametrizedSystem<P> {}
 
-unsafe impl<P, F> Sync for FnContainer<P, F> 
+unsafe impl<P, F> Sync for SystemContainer<P, F> 
 where
     P: ParamBundle,
     F: ParametrizedSystem<P> {}
 
-impl<P, F> System for FnContainer<P, F> 
+impl<P, F> System for SystemContainer<P, F> 
 where
     P: Param,
     F: ParametrizedSystem<P>,
@@ -72,24 +73,15 @@ where
     }
 
     fn call(&self, world: &World) {
-        #[cfg(debug_assertions)]
-        {
-            let counter = self.counter.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(counter, 0, "Attempt to access system state twice");
-        }
-
         // SAFETY:
         // This is safe because every system has a unique state. At the same time a system
         // can be used on only one thread at a time.
         let state = unsafe { &mut *self.state.get() };
         self.system.call(world, state);
-
-        #[cfg(debug_assertions)]
-        self.counter.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
-impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for FnContainer<(P1, P2), F>
+impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for SystemContainer<(P1, P2), F>
 where
     (P1, P2): ParamBundle
 {
@@ -105,20 +97,11 @@ where
     }
     
     fn call(&self, world: &World) {
-        #[cfg(debug_assertions)]
-        {
-            let counter = self.counter.fetch_add(1, Ordering::SeqCst);
-            assert_eq!(counter, 0, "Attempt to access system state twice");
-        }
-
         // SAFETY:
         // This is safe because every system has a unique state. At the same time a system
         // can be used on only one thread at a time.
         let state = unsafe { &mut *self.state.get() };
         self.system.call(world, state);
-
-        #[cfg(debug_assertions)]
-        self.counter.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -149,7 +132,7 @@ where
     note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
-    fn into_system(self, world: &mut World) -> Box<dyn System>;
+    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System>;
 }
 
 #[diagnostic::do_not_recommend]
@@ -159,8 +142,8 @@ where
     F: Fn(P) + 'static,
     F: ParametrizedSystem<P>
 {
-    fn into_system(self, world: &mut World) -> Box<dyn System> {
-        Box::new(self.into_container(world, 0))
+    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
+        Box::new(self.into_container(world, id))
     }
 }
 
@@ -173,8 +156,8 @@ where
     F: Fn(P1, P2) + 'static,
     F: ParametrizedSystem<(P1, P2)>
 {
-    fn into_system(self, world: &mut World) -> Box<dyn System> {
-        Box::new(self.into_container(world, 0))
+    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
+        Box::new(self.into_container(world, id))
     }
 }
 

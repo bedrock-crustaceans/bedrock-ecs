@@ -1,6 +1,8 @@
 use std::{alloc::Layout, any::TypeId, collections::HashMap};
 
-use crate::{archetype::{ArchetypeComponents, Archetypes}, bitset::BitSet, component::{Component, ComponentId, ComponentRegistry}, entity::EntityId, table::{Column, Table}};
+use crate::{archetype::{Archetypes}, signature::Signature, component::{Component, ComponentId, ComponentRegistry}, entity::EntityId, table::{Column, Table}};
+
+use rustc_hash::{FxHashMap, FxBuildHasher};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
@@ -13,20 +15,20 @@ macro_rules! impl_bundle {
         #[diagnostic::do_not_recommend]
         unsafe impl<$($gen: Component),*> SpawnBundle for ($($gen),*) {
             #[allow(unused)]
-            fn components(reg: &mut ComponentRegistry) -> BitSet {
-                let mut bitset = BitSet::new();
+            fn signature(reg: &mut ComponentRegistry) -> Signature {
+                let mut sig = Signature::new();
                 $(
                     let id = *reg.get_or_assign::<$gen>();
-                    bitset.set(id);
+                    sig.set(id);
                 )*
-                bitset
+                sig
             }
 
             #[cfg_attr(
                 feature = "tracing",
                 tracing::instrument(name = "SpawnBundle::new_table", fields(bundle = std::any::type_name::<Self>()) skip_all)  
             )]
-            fn new_table(bitset: BitSet) -> Table {
+            fn new_table(sig: Signature) -> Table {
                 const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
                 #[allow(unused)]
@@ -34,9 +36,9 @@ macro_rules! impl_bundle {
                     #[cfg(debug_assertions)]
                     flag: RwFlag::new(),
 
-                    archetype: bitset,
+                    signature: sig,
                     entities: Vec::new(),
-                    lookup: HashMap::with_capacity(COUNT),
+                    lookup: FxHashMap::with_capacity_and_hasher(COUNT, FxBuildHasher::default()),
                     columns: vec![
                         $(
                             Column::new::<$gen>()
@@ -81,9 +83,9 @@ macro_rules! impl_bundle {
 
 pub unsafe trait SpawnBundle: 'static {
     /// Returns a list of components in this group.
-    fn components(reg: &mut ComponentRegistry) -> BitSet;
+    fn signature(reg: &mut ComponentRegistry) -> Signature;
     /// Creates a new table map to store in the archetype.
-    fn new_table(bitset: BitSet) -> Table;
+    fn new_table(bitset: Signature) -> Table;
     /// Inserts into an existing archetype.
     fn insert_into(self, storage: &mut Vec<Column>);
 }

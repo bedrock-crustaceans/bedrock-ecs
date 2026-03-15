@@ -13,7 +13,6 @@ pub enum AccessType {
     Entity,
     World,
     Component(ComponentId),
-    Resource(TypeId)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -24,7 +23,10 @@ pub struct AccessDesc {
 
 impl AccessDesc {
     pub fn has_conflict(&self, other: &AccessDesc) -> bool {
-        self.ty == other.ty && (self.exclusive || other.exclusive)
+        // `World` conflicts with every other resource.
+        let conflict_ty = self.ty == other.ty || self.ty == AccessType::World;
+        println!("is_conflict_ty: {conflict_ty}, {:?} {:?}", self.ty, other.ty);
+        conflict_ty && (self.exclusive || other.exclusive)
     }
 }
 
@@ -58,25 +60,70 @@ impl ScheduleGraph {
     }
 
     fn build_dependencies(&mut self) {
-        let mut resource_access: HashMap<AccessType, Vec<usize>> = HashMap::new();
+        let mut last_writer: HashMap<AccessType, usize> = HashMap::new();
+        let mut readers: HashMap<AccessType, Vec<usize>> = HashMap::new();
+
         for (i, node) in self.nodes.iter().enumerate() {
             for access in &node.access {
-                resource_access.entry(access.ty).or_default().push(i);
-            }
-        }
+                if access.exclusive {
+                    println!("adding writer: {access:?}");
 
-        for nodes in resource_access.values() {
-            for i in 0..nodes.len() {
-                for j in (i + 1)..nodes.len() {
-                    let node1 = nodes[i];
-                    let node2 = nodes[j];
-
-                    if self.has_conflict(&self.nodes[node1], &self.nodes[node2]) {
-                        self.add_edge(node1, node2);
+                    if let Some(writer) = last_writer.get(&access.ty) {
+                        self.adjacency[*writer].push(i);
+                        self.in_degrees[i] += 1;
                     }
+
+                    if let Some(nodes) = readers.get(&access.ty) {
+                        for read in nodes {
+                            self.adjacency[*read].push(i);
+                            self.in_degrees[i] += 1;
+                        }
+                    } else if let Some(nodes) = readers.get(&AccessType::World) {
+                        for read in nodes {
+                            self.adjacency[*read].push(i);
+                            self.in_degrees[i] += 1;
+                        }
+                    }
+
+                    last_writer.insert(access.ty, i);
+                } else {
+                    if access.ty == AccessType::World {
+                        // Check if there is any writer
+                        last_writer.values().for_each(|writer| {
+                            self.adjacency[*writer].push(i);
+                            self.in_degrees[i] += 1;
+                        });
+                    } else if let Some(writer) = last_writer.get(&access.ty) {
+                        self.adjacency[*writer].push(i);
+                        self.in_degrees[i] += 1;
+                    }
+
+                    readers.entry(access.ty).or_default().push(i);
                 }
             }
         }
+
+        // let mut resource_access: HashMap<AccessType, Vec<usize>> = HashMap::new();
+        // for (i, node) in self.nodes.iter().enumerate() {
+        //     for access in &node.access {
+        //         resource_access.entry(access.ty).or_default().push(i);
+        //     }
+        // }
+
+        // for nodes in resource_access.values() {
+        //     for i in 0..nodes.len() {
+        //         for j in i..nodes.len() {
+        //             println!("{i} {j}");
+
+        //             let node1 = nodes[i];
+        //             let node2 = nodes[j];
+
+        //             if self.has_conflict(&self.nodes[node1], &self.nodes[node2]) {
+        //                 self.add_edge(node1, node2);
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     fn has_conflict(&self, a: &GraphNode, b: &GraphNode) -> bool {

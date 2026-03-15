@@ -1,6 +1,6 @@
 use std::{alloc::{Layout}};
 
-/// Computes the sum of a list of integers.
+/// Creates an array of type system integers.
 #[cfg(feature = "generics")]
 #[macro_export]
 macro_rules! create_tarray {
@@ -12,6 +12,7 @@ macro_rules! create_tarray {
     }
 }
 
+/// Repeats `layout` to create an array of size `n`.
 pub fn repeat_layout(layout: Layout, n: usize) -> Layout {
     let size = layout.size();
     let align = layout.align();
@@ -31,6 +32,12 @@ pub mod debug {
     const WRITE: u8 = 2;
 
     pub struct RwGuard<'a, const WRITE: bool>(&'a RwFlag);
+
+    impl<'a> Clone for RwGuard<'a, false> {
+        fn clone(&self) -> RwGuard<'a, false> {
+            self.0.read()
+        }
+    }
 
     impl<'a, const WRITE: bool> Drop for RwGuard<'a, WRITE> {
         fn drop(&mut self) {

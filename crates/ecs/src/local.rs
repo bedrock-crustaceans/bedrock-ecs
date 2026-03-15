@@ -5,7 +5,9 @@ use generic_array::typenum::U0;
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
 
-use crate::{param::{self, Param}, sealed::Sealed, world::World};
+#[cfg(not(feature = "generics"))]
+use crate::param;
+use crate::{param::Param, sealed::Sealed, world::World};
 use crate::graph::AccessDesc;
 
 pub struct LocalState<T: Default + Send + 'static>(T);

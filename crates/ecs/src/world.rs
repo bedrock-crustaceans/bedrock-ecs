@@ -1,4 +1,14 @@
-use crate::{archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, spawn::SpawnBundle};
+use generic_array::GenericArray;
+#[cfg(feature = "generics")]
+use generic_array::typenum::U1;
+#[cfg(not(feature = "generics"))]
+use smallvec::{smallvec, SmallVec};
+
+#[cfg(not(feature = "generics"))]
+use crate::param;
+#[cfg(debug_assertions)]
+use crate::util::debug::RwFlag;
+use crate::{Component, ComponentBundle, EntityId, Param, archetype::Archetypes, component::ComponentRegistry, entity::{Entities, EntityMut}, graph::{AccessDesc, AccessType}, spawn::SpawnBundle};
 use crate::graph::Schedule;
 use crate::schedule::ScheduleBuilder;
 
@@ -6,9 +16,13 @@ use crate::schedule::ScheduleBuilder;
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
+
+    #[cfg(debug_assertions)]
+    pub(crate) flag: RwFlag
 }
 
 impl World {
+    #[inline]
     pub fn new() -> World {
         World::default()
     }
@@ -17,14 +31,33 @@ impl World {
         let id = self.entities.alloc();
         self.archetypes.insert(id, bundle);
 
+        #[cfg(debug_assertions)]
+        self.flag.write_guardless();
+
         EntityMut {
             id,
-            world: self
+            world: self,
         }
     }
 
+    #[inline]
+    pub fn has_components<T: ComponentBundle>(&self, entity: EntityId) -> bool {
+        self.archetypes.has_components::<T>(entity)    
+    }
+
+    #[inline]
+    pub fn entity_count(&self) -> usize {
+        self.entities.count()
+    }
+
+    #[inline]
     pub fn entities(&self) -> &Entities {
         &self.entities
+    }
+
+    #[inline]
+    pub fn entities_mut(&mut self) -> &mut Entities {
+        &mut self.entities
     }
     
     pub fn run(&mut self, schedule: &Schedule) {
@@ -47,6 +80,37 @@ impl World {
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
         ScheduleBuilder::new(self)
     }
+}
+
+unsafe impl Param for &World {
+    #[cfg(feature = "generics")]
+    type AccessCount = U1;
+    
+    type State = ();
+    
+    type Output<'w> = &'w World;
+    
+    #[cfg(feature = "generics")]
+    fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
+        GenericArray::from((AccessDesc {
+            ty: AccessType::World,
+            exclusive: false
+        },))
+    }
+
+    #[cfg(not(feature = "generics"))]
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+        smallvec![AccessDesc {
+            ty: AccessType::World,
+            exclusive: false
+        }]
+    }
+    
+    fn fetch<'w, S: crate::sealed::Sealed>(world: &'w World, _state: &'w mut Self::State) -> Self::Output<'w> {
+        world
+    }
+    
+    fn init(_world: &mut World) {}
 }
 
 unsafe impl Send for World {}

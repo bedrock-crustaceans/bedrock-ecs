@@ -1,8 +1,10 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 #[cfg(feature = "generics")]
-use crate::query::CachedTable;
-use crate::{entity::{Entity, EntityId}, query::ParamIterator, world::World};
+use crate::query::TableCache;
+#[cfg(debug_assertions)]
+use crate::util::debug::RwGuard;
+use crate::{entity::{Entity, EntityId}, query::EmptyableIterator, world::World};
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
@@ -47,7 +49,7 @@ impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
 
 impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
 
-impl<'a, T> ParamIterator<'a, &'a T> for ColumnIter<'a, T> {
+impl<'a, T> EmptyableIterator<'a, &'a T> for ColumnIter<'a, T> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T> {
         ColumnIter {
             curr: None,
@@ -101,7 +103,7 @@ impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
 
 impl<'a, T> FusedIterator for ColumnIterMut<'a, T> {}
 
-impl<'a, T> ParamIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
+impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
     fn empty(_world: &'a World) -> ColumnIterMut<'a, T> {
         ColumnIterMut {
             curr: None,
@@ -113,7 +115,10 @@ impl<'a, T> ParamIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
 
 pub struct EntityIter<'w> {
     pub(crate) world: &'w World,
-    pub(crate) iter: std::slice::Iter<'w, EntityId>
+    pub(crate) iter: std::slice::Iter<'w, EntityId>,
+
+    #[cfg(debug_assertions)]
+    pub(crate) _guard: RwGuard<'w, false>
 }
 
 impl<'w> Iterator for EntityIter<'w> {
@@ -121,9 +126,13 @@ impl<'w> Iterator for EntityIter<'w> {
 
     fn next(&mut self) -> Option<Entity<'w>> {
         let id = self.iter.next()?;
+
+        #[cfg(debug_assertions)]
+        self.world.flag.read_guardless();
+
         Some(Entity {
             id: *id,
-            world: self.world
+            world: self.world,
         })
     }
 }
@@ -137,11 +146,14 @@ impl<'t> ExactSizeIterator for EntityIter<'t> {
 
 impl<'t> FusedIterator for EntityIter<'t> {}
 
-impl<'w> ParamIterator<'w, Entity<'w>> for EntityIter<'w> {
+impl<'w> EmptyableIterator<'w, Entity<'w>> for EntityIter<'w> {
     fn empty(world: &'w World) -> EntityIter<'w> {
         EntityIter {
             world,
-            iter: [].iter()
+            iter: [].iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: world.flag.read()
         }
     }
 }

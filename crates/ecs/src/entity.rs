@@ -1,11 +1,19 @@
-use std::{fmt, marker::PhantomData};
+use std::{fmt, marker::PhantomData, ops::Deref};
 
 use bitvec::vec::BitVec;
 
-use crate::{component::Component, world::World};
+#[cfg(debug_assertions)]
+use crate::util::debug::RwGuard;
+use crate::{ComponentBundle, component::Component, world::World};
 
 #[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);
+
+impl EntityId {
+    pub fn dangling() -> EntityId {
+        EntityId(usize::MAX)
+    }
+}
 
 impl fmt::Display for EntityId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -16,42 +24,42 @@ impl fmt::Display for EntityId {
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct GenerationId(pub(crate) usize);
 
-#[derive(Clone)]
-pub struct EntityMeta {
-    id: EntityId,
-    generation: GenerationId
+pub struct EntityMut<'w> {
+    pub(crate) world: &'w mut World,
+    pub(crate) id: EntityId,
+}
+
+#[cfg(debug_assertions)]
+impl<'w> Drop for EntityMut<'w> {
+    fn drop(&mut self) {
+        self.world.flag.unlock_guardless();
+    }
 }
 
 #[derive(Clone)]
 pub struct Entity<'w> {
     pub(crate) world: &'w World,
-    pub(crate) id: EntityId
+    pub(crate) id: EntityId,
 }
 
 impl<'w> Entity<'w> {
+    /// Returns the ID of this entity.
     pub fn id(&self) -> EntityId {
         self.id
     }
 
-    pub fn has<T: Component>(&self) -> bool {
-        todo!()
-        // self.world.components.has_component::<T>(self.id)
+    /// Checks whether this entity has all the given components.
+    /// 
+    /// This has relatively large overhead per entity compared to queries.
+    pub fn has<T: ComponentBundle>(&self) -> bool {
+        self.world.has_components::<T>(self.id)
     }
 }
 
-pub struct EntityMut<'w> {
-    pub(crate) world: &'w mut World,
-    pub(crate) id: EntityId
-}
-
-impl<'w> EntityMut<'w> {
-    pub fn id(&self) -> EntityId {
-        self.id
-    }
-
-    pub fn has<T: Component>(&self) -> bool {
-        todo!()
-        // self.world.components.has_component::<T>(self.id)
+#[cfg(debug_assertions)]
+impl<'w> Drop for Entity<'w> {
+    fn drop(&mut self) {
+        self.world.flag.unlock_guardless();
     }
 }
 
@@ -66,11 +74,17 @@ impl Entities {
         Entities::default()
     }
 
+    pub fn reserve(&mut self, n: usize) {
+        self.indices.reserve(n);
+    }
+
     pub fn count(&self) -> usize {
         self.indices.count_ones()
     }
 
     pub fn alloc(&mut self) -> EntityId {
+        // TODO: Should probably keep a list of empty spots instead of trying to find them.
+        // This is incredibly slow.
         let gap = self
             .indices
             .iter()
