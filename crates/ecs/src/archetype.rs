@@ -2,17 +2,13 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::filter::FilterBundle;
-#[cfg(debug_assertions)]
-use crate::util::debug::RwFlag;
 use crate::{
-    Component,
     component::{ComponentBundle, ComponentRegistry},
     entity::EntityId,
     query::{QueryBundle, TableCache},
     signature::Signature,
     spawn::SpawnBundle,
     table::Table,
-    util::{self},
 };
 
 /// Contains all archetype tables.

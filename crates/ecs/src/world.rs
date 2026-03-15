@@ -4,22 +4,21 @@ use generic_array::typenum::U1;
 #[cfg(not(feature = "generics"))]
 use smallvec::{SmallVec, smallvec};
 
-use crate::{graph::Schedule, resource::ResourceBundle};
 #[cfg(not(feature = "generics"))]
 use crate::param;
+
+use crate::archetype::Archetypes;
+use crate::component::ComponentBundle;
+use crate::entity::{Entities, EntityId, EntityMut};
+use crate::graph::{AccessDesc, AccessType, Schedule};
+use crate::param::Param;
+use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::schedule::ScheduleBuilder;
+use crate::spawn::SpawnBundle;
+use crate::system::SystemMeta;
+
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-use crate::{
-    Component, ComponentBundle, EntityId, Param,
-    archetype::Archetypes,
-    component::ComponentRegistry,
-    entity::{Entities, EntityMut},
-    graph::{AccessDesc, AccessType},
-    resource::Resources,
-    spawn::SpawnBundle,
-    system::SystemMeta,
-};
 
 #[derive(Default)]
 pub struct World {
@@ -49,6 +48,21 @@ impl World {
 
     pub fn add_resources<R: ResourceBundle>(&mut self, resources: R) {
         resources.insert_into(&mut self.resources);
+    }
+
+    #[inline]
+    pub fn get_resource<R: Resource>(&self) -> Option<&R> {
+        self.resources.get::<R>()
+    }
+
+    #[inline]
+    pub fn get_resource_mut<R: Resource>(&mut self) -> Option<&mut R> {
+        self.resources.get_mut::<R>()
+    }
+
+    #[inline]
+    pub fn contains_resource<R: ResourceBundle>(&self) -> bool {
+        self.resources.contains::<R>()
     }
 
     #[inline]

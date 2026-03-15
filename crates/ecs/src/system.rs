@@ -1,13 +1,10 @@
 use generic_array::GenericArray;
-use smallvec::SmallVec;
 use std::any::TypeId;
 #[cfg(debug_assertions)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{cell::UnsafeCell, marker::PhantomData};
+use std::cell::UnsafeCell;
 
 use crate::graph::AccessDesc;
 use crate::{
-    param,
     param::{Param, ParamBundle},
     sealed::Sealer,
     world::World,
@@ -17,6 +14,18 @@ use crate::{
 pub struct SystemMeta {
     pub(crate) id: SystemId,
     pub(crate) name: &'static str,
+}
+
+impl SystemMeta {
+    #[inline]
+    pub fn id(&self) -> SystemId {
+        self.id
+    }
+
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
 }
 
 pub trait System: Sync {

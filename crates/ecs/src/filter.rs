@@ -1,6 +1,5 @@
 use crate::archetype::Archetypes;
-use crate::component::Component;
-use crate::component::{ComponentBundle, ComponentRegistry};
+use crate::component::ComponentBundle;
 use crate::signature::Signature;
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;

@@ -1,50 +1,34 @@
 use ecs::{
-    Component, Entity, Query, Res, ResMut, Resource, ScheduleBuilder, ScheduleLabel, Without, World
+    entity::Entity,
+    filter::Without,
+    prelude::{ResMut, ScheduleBuilder},
+    query::Query,
+    world::World,
 };
+use ecs_derive::{Component, Resource, ScheduleLabel};
 use tracing::Level;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Position {
     x: f32,
     y: f32,
 }
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Velocity {
     x: f32,
     y: f32,
 }
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Health(f32);
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Faction(u8);
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Mass(f32);
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Component)]
 struct Static; // Marker component
 
-impl Component for Position {}
-impl Component for Velocity {}
-impl Component for Health {}
-impl Component for Faction {}
-impl Component for Mass {}
-impl Component for Static {}
-
-#[derive(Debug)]
+#[derive(Debug, Resource)]
 struct GlobalTimer(u32);
-
-impl Resource for GlobalTimer {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self
-    }
-}
 
 fn simple_system(query: Query<(Entity, &Health), Without<Mass>>) {
     for (entity, health) in &query {
@@ -65,23 +49,14 @@ fn resource_system(res: ResMut<GlobalTimer>) {
     println!("Time is {time:?}");
 }
 
+#[derive(ScheduleLabel)]
 struct Label1;
 
-impl ScheduleLabel for Label1 {
-    const NAME: &'static str = "Label1";
-}
-
+#[derive(ScheduleLabel)]
 struct Label2;
 
-impl ScheduleLabel for Label2 {
-    const NAME: &'static str = "Label2";
-}
-
+#[derive(ScheduleLabel)]
 struct Label3;
-
-impl ScheduleLabel for Label3 {
-    const NAME: &'static str = "Label3";
-}
 
 #[test]
 fn stress_test() {
@@ -123,7 +98,8 @@ fn stress_test() {
     tracing::info!("World has {} entities", world.entities().count());
 
     tracing::info!("Generating schedule...");
-    let schedule = ScheduleBuilder::new(&mut world)
+    let schedule = world
+        .build_schedule()
         .add(Label1, (simple_system, second_system, resource_system))
         .schedule();
 

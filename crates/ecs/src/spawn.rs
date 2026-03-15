@@ -1,9 +1,7 @@
-use std::{alloc::Layout, any::TypeId, collections::HashMap};
+use std::any::TypeId;
 
 use crate::{
-    archetype::Archetypes,
-    component::{Component, ComponentId, ComponentRegistry},
-    entity::EntityId,
+    component::{Component, ComponentRegistry},
     signature::Signature,
     table::{Column, Table},
 };
@@ -12,8 +10,6 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
-
-use std::cell::UnsafeCell;
 
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {

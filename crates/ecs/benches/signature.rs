@@ -1,12 +1,6 @@
-use std::arch::x86_64::{
-    __m128i, __m256i, _mm_load_si128, _mm256_and_si256, _mm256_andnot_si256, _mm256_load_si256,
-    _mm256_loadu_ps, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_testz_si256,
-};
-
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 const WORD_COUNT: usize = 4;
-const SIMD_LANES: usize = 4;
 
 /// A set of bits, similar to `Vec<bool>` but more efficient with memory.
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]

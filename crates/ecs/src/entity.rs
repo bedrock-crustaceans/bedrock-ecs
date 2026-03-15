@@ -1,10 +1,8 @@
-use std::{fmt, marker::PhantomData, ops::Deref};
+use std::fmt;
 
 use bitvec::vec::BitVec;
 
-#[cfg(debug_assertions)]
-use crate::util::debug::RwGuard;
-use crate::{ComponentBundle, component::Component, world::World};
+use crate::{component::ComponentBundle, world::World};
 
 #[derive(Debug, Copy, Default, Clone, PartialEq, Eq, Hash)]
 pub struct EntityId(pub(crate) usize);

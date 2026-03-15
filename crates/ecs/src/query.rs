@@ -1,13 +1,10 @@
 use generic_array::{ArrayLength, GenericArray};
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 use std::ops::Add;
-use std::{
-    any::TypeId, collections::HashMap, iter::FusedIterator, marker::PhantomData, ptr::NonNull,
-};
+use std::{any::TypeId, iter::FusedIterator, marker::PhantomData};
 
 use rustc_hash::FxHashMap;
 
-use crate::entity::GenerationId;
 use crate::graph::{AccessDesc, AccessType};
 use crate::system::SystemMeta;
 use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter};
@@ -16,7 +13,7 @@ use crate::{
     component::{Component, ComponentId, ComponentRegistry},
     entity::Entity,
     filter::FilterBundle,
-    param::{self, Param},
+    param::Param,
     sealed::Sealed,
     signature::Signature,
     world::World,

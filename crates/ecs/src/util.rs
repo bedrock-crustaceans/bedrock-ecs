@@ -30,8 +30,6 @@ pub mod debug {
     use std::sync::atomic::{AtomicU8, Ordering};
 
     const UNLOCKED: u8 = 0;
-    const READ: u8 = 1;
-    const WRITE: u8 = 2;
 
     pub struct RwGuard<'a, const WRITE: bool>(&'a RwFlag);
 

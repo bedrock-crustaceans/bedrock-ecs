@@ -1,7 +1,5 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
-#[cfg(feature = "generics")]
-use crate::query::TableCache;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwGuard;
 use crate::{

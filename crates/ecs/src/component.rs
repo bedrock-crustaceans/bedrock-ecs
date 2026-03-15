@@ -1,8 +1,8 @@
-use std::{any::TypeId, collections::HashMap, fmt, ops::Deref};
+use std::{any::TypeId, fmt, ops::Deref};
 
 use rustc_hash::FxHashMap;
 
-use crate::Signature;
+use crate::signature::Signature;
 
 /// A component ID.
 ///

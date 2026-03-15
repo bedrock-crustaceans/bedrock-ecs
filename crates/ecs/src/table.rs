@@ -1,15 +1,11 @@
-use std::{
-    alloc::Layout, any::TypeId, cell::UnsafeCell, collections::HashMap, iter::FusedIterator,
-    marker::PhantomData, ptr::NonNull,
-};
+use std::{alloc::Layout, any::TypeId, marker::PhantomData, ptr::NonNull};
 
 use rustc_hash::FxHashMap;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
 use crate::{
-    component::{ComponentId, ComponentRegistry},
-    entity::{Entity, EntityId},
+    entity::EntityId,
     signature::Signature,
     spawn::SpawnBundle,
     table_iterator::{ColumnIter, ColumnIterMut, EntityIter},

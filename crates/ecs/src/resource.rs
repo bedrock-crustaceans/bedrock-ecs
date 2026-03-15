@@ -1,27 +1,24 @@
 use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
-    ops::{Add, Deref, DerefMut},
+    ops::{Deref, DerefMut},
 };
 
 #[cfg(feature = "generics")]
 use generic_array::GenericArray;
-use generic_array::{ArrayLength, typenum::U1};
+use generic_array::typenum::U1;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    Signature,
     graph::{AccessDesc, AccessType},
+    param::Param,
     sealed::Sealed,
     system::SystemMeta,
+    world::World,
 };
 
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
-
-use crate::Param;
-#[cfg(feature = "generics")]
-use crate::World;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ResourceId(pub(crate) TypeId);
@@ -38,8 +35,12 @@ pub trait Resource: Send + Sync + 'static {
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
+/// A collection of [`Resource`]s.
 pub trait ResourceBundle {
+    /// Inserts all [`Resource`]s into the given [`Resources`].
     fn insert_into(self, resources: &mut Resources);
+    /// Whether the given [`Resources`] contains all [`Resource`]s in this bundle.
+    fn contains_all(resources: &Resources) -> bool;
 }
 
 macro_rules! impl_bundle {
@@ -54,6 +55,12 @@ macro_rules! impl_bundle {
                 $(
                     resources.insert($gen);
                 )*
+            }
+
+            fn contains_all(resources: &Resources) -> bool {
+                $(
+                    resources.storage.contains_key(&ResourceId::of::<$gen>())
+                )&&*
             }
         }
     }
@@ -81,7 +88,7 @@ impl<'s, R: Resource> Deref for Res<'s, R> {
 
 pub struct ResState {
     system: &'static str,
-    resource: &'static str
+    resource: &'static str,
 }
 
 unsafe impl<R: Resource> Param for Res<'_, R> {
@@ -95,23 +102,19 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
     #[cfg(feature = "generics")]
     #[inline]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
-        GenericArray::from((
-            AccessDesc {
-                ty: AccessType::Resource(ResourceId::of::<R>()),
-                exclusive: false
-            },
-        ))
+        GenericArray::from((AccessDesc {
+            ty: AccessType::Resource(ResourceId::of::<R>()),
+            exclusive: false,
+        },))
     }
 
     #[cfg(not(feature = "generics"))]
     #[inline]
     fn access(_world: &mut World) -> SmallVec<[AccessDesc; 4]> {
-        smallvec![
-            AccessDesc {
-                ty: AccessType::Resource(ResourceId::of::<R>()),
-                exclusive: false
-            }
-        ]
+        smallvec![AccessDesc {
+            ty: AccessType::Resource(ResourceId::of::<R>()),
+            exclusive: false
+        }]
     }
 
     fn init(world: &mut World, meta: &SystemMeta) -> ResState {
@@ -122,8 +125,8 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
         if world.resources.contains::<R>() {
             return ResState {
                 resource: res_name,
-                system: meta.name
-            }
+                system: meta.name,
+            };
         }
 
         // Check whether the resource exists and warn otherwise
@@ -135,7 +138,7 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
 
         ResState {
             resource: res_name,
-            system: meta.name
+            system: meta.name,
         }
     }
 
@@ -144,7 +147,8 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
         let Some(res) = world.resources.get::<R>() else {
             tracing::error!(
                 "System `{}` attempted to access `Res<{}>` which does not exist",
-                state.system, state.resource 
+                state.system,
+                state.resource
             );
 
             panic!("cannot access non-existent resource");
@@ -181,23 +185,19 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
     #[cfg(feature = "generics")]
     #[inline]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
-        GenericArray::from((
-            AccessDesc {
-                ty: AccessType::Resource(ResourceId::of::<R>()),
-                exclusive: false
-            },
-        ))
+        GenericArray::from((AccessDesc {
+            ty: AccessType::Resource(ResourceId::of::<R>()),
+            exclusive: false,
+        },))
     }
 
     #[cfg(not(feature = "generics"))]
     #[inline]
     fn access(_world: &mut World) -> SmallVec<[AccessDesc; 4]> {
-        smallvec![
-            AccessDesc {
-                ty: AccessType::Resource(ResourceId::of::<R>()),
-                exclusive: false
-            }
-        ]
+        smallvec![AccessDesc {
+            ty: AccessType::Resource(ResourceId::of::<R>()),
+            exclusive: false
+        }]
     }
 
     fn init(world: &mut World, meta: &SystemMeta) -> ResState {
@@ -208,8 +208,8 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
         if world.resources.contains::<R>() {
             return ResState {
                 resource: res_name,
-                system: meta.name
-            }
+                system: meta.name,
+            };
         }
 
         // Check whether the resource exists and warn otherwise
@@ -221,7 +221,7 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
 
         ResState {
             resource: res_name,
-            system: meta.name
+            system: meta.name,
         }
     }
 
@@ -230,7 +230,8 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
         let Some(res) = (unsafe { world.resources.get_mut_unchecked::<R>() }) else {
             tracing::error!(
                 "System `{}` attempted to access `ResMut<{}>` which does not exist",
-                state.system, state.resource 
+                state.system,
+                state.resource
             );
 
             panic!("cannot access non-existent resource");
@@ -265,8 +266,8 @@ impl Resources {
 
     /// Does the container have these resources?
     #[inline]
-    pub fn contains<R: Resource>(&self) -> bool {
-        self.storage.contains_key(&ResourceId::of::<R>())
+    pub fn contains<R: ResourceBundle>(&self) -> bool {
+        R::contains_all(self)
     }
 
     pub fn get<R: Resource>(&self) -> Option<&R> {

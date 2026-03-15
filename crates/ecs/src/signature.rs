@@ -1,13 +1,11 @@
 use smallvec::SmallVec;
 
-const WORD_COUNT: usize = 4;
-const SIMD_LANES: usize = 4;
+const INLINE_COUNT: usize = 4;
 
 /// A set of bits, similar to `Vec<bool>` but more efficient with memory.
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct Signature {
-    // bits: SmallVec<[u64; INLINE_COUNT]>
-    bits: [u64; WORD_COUNT],
+    words: SmallVec<[u64; INLINE_COUNT]>,
 }
 
 impl Signature {
@@ -16,47 +14,62 @@ impl Signature {
         Signature::default()
     }
 
+    /// Creates a new signature with enough capacity to hold `cap` bits.
+    pub fn with_capacity(cap: usize) -> Signature {
+        Signature {
+            words: SmallVec::with_capacity(cap.div_ceil(64)),
+        }
+    }
+
     /// Whether this bitset is empty.
     ///
     /// Empty can mean that it either has no words or all bits are set to 0.
     pub fn is_empty(&self) -> bool {
-        self.bits.iter().all(|w| *w == 0)
+        self.words.iter().all(|w| *w == 0)
     }
 
-    /// Sets a bit to 1.
+    /// Sets a bit to 1. If this bit is outside of the range of the signature, it will be resized.
     pub fn set(&mut self, index: usize) {
         let word = index / 64;
+        if word >= self.words.len() {
+            self.words.resize(word + 1, 0);
+        }
         let bit = index % 64;
-        self.bits[word] |= 1 << bit;
+        self.words[word] |= 1 << bit;
     }
 
-    /// Sets a bit to 0.
+    /// Sets a bit to 0. If this index is out of the current range of the signature, no operation will be performed.
+    /// Any non-existent bits will automatically be set to 0 on creation.
     pub fn unset(&mut self, index: usize) {
         let word = index / 64;
+        if word >= self.words.len() {
+            // If this 
+            return
+        }
         let bit = index % 64;
-        self.bits[word] &= !(1 << bit);
+        self.words[word] &= !(1 << bit);
     }
 
-    /// Counts the amount of bits set to 1 in this bitset.
+    /// Counts the amount of components in this signature.
     pub fn count_ones(&self) -> u32 {
-        self.bits.iter().map(|w| w.count_ones()).sum()
+        self.words.iter().map(|w| w.count_ones()).sum()
     }
 
     // Whether `other` is a subset of `self`. This is faster than intersecting and then comparing
     // because this method short-circuits.
     pub fn contains(&self, other: &Self) -> bool {
-        self.bits
+        self.words
             .iter()
-            .zip(other.bits.iter())
+            .zip(other.words.iter())
             .all(|(a, b)| a & b == *b)
     }
 
     /// Whether `self` and `other` are disjoint.
     /// I.e. if `self` contains component A then `other` does not and vice versa.
     pub fn is_disjoint(&self, other: &Self) -> bool {
-        self.bits
+        self.words
             .iter()
-            .zip(other.bits.iter())
+            .zip(other.words.iter())
             .all(|(a, b)| a & b == 0)
     }
 }

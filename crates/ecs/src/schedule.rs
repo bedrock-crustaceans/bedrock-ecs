@@ -77,7 +77,7 @@ impl<'w> ScheduleBuilder<'w> {
         }
     }
 
-    pub fn add<L, G, P>(mut self, label: L, systems: G) -> ScheduleBuilder<'w>
+    pub fn add<L, G, P>(mut self, _label: L, systems: G) -> ScheduleBuilder<'w>
     where
         L: ScheduleLabel,
         G: SystemBundle<P>,

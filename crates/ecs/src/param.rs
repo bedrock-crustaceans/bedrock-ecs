@@ -1,9 +1,8 @@
 use crate::graph::AccessDesc;
 use crate::system::SystemMeta;
-use crate::{param, sealed::Sealed, world::World};
+use crate::{sealed::Sealed, world::World};
 use generic_array::typenum::{FoldAdd, U0, Unsigned};
 use generic_array::{ArrayLength, GenericArray};
-use smallvec::SmallVec;
 use std::mem::MaybeUninit;
 use std::ops::Add;
 
@@ -91,7 +90,7 @@ unsafe impl ParamBundle for () {
         SmallVec::new()
     }
 
-    fn init(_world: &mut World, meta: &SystemMeta) {}
+    fn init(_world: &mut World, _meta: &SystemMeta) {}
 }
 
 #[cfg(feature = "generics")]
