@@ -218,7 +218,7 @@ macro_rules! impl_bundle {
                     }
                 }
 
-                #[allow(unused)]
+                #[allow(unused, non_snake_case)]
                 fn current_len(&self) -> usize {
                     let ($($gen),*) = &self.iters;
                     iter_len!($($gen),*)
@@ -393,8 +393,8 @@ macro_rules! impl_bundle {
             impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
-                #[allow(non_snake_case)]
                 fn next(&mut self) -> Option<Self::Item> {
+                    #[allow(non_snake_case)]
                     let ($($gen),*) = &mut self.iters;
 
                     Some(($(
@@ -539,7 +539,7 @@ pub unsafe trait ParamRef: Send {
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<'t>(world: &'t World, table: usize, col: usize) -> Self::Iter<'t>;
+    fn iter(world: &World, table: usize, col: usize) -> Self::Iter<'_>;
 }
 
 unsafe impl ParamRef for Entity<'_> {
@@ -564,7 +564,7 @@ unsafe impl ParamRef for Entity<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter(world: &World, table: usize, _col: usize) -> EntityIter {
+    fn iter(world: &World, table: usize, _col: usize) -> EntityIter<'_> {
         let table = world.archetypes.get_by_index(table);
         table.iter_entities(world)
     }

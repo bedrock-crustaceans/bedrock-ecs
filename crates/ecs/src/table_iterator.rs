@@ -3,7 +3,7 @@ use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 #[cfg(debug_assertions)]
 use crate::util::debug::RwGuard;
 use crate::{
-    entity::{Entity, EntityId},
+    entity::{Entity, EntityHandle},
     query::EmptyableIterator,
     world::World,
 };
@@ -108,7 +108,7 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
 
 pub struct EntityIter<'w> {
     pub(crate) world: &'w World,
-    pub(crate) iter: std::slice::Iter<'w, EntityId>,
+    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
 
     #[cfg(debug_assertions)]
     pub(crate) _guard: RwGuard<'w, false>,
@@ -124,7 +124,7 @@ impl<'w> Iterator for EntityIter<'w> {
         self.world.flag.read_guardless();
 
         Some(Entity {
-            id: *id,
+            handle: *id,
             world: self.world,
         })
     }

@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
 use crate::{
-    entity::EntityId,
+    entity::EntityHandle,
     signature::Signature,
     spawn::SpawnBundle,
     table_iterator::{ColumnIter, ColumnIterMut, EntityIter},
@@ -451,7 +451,7 @@ pub struct Table {
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
     // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
-    pub(crate) entities: Vec<EntityId>,
+    pub(crate) entities: Vec<EntityHandle>,
     /// A lookup table that maps component type IDs to columns.
     pub(crate) lookup: FxHashMap<TypeId, usize>,
     /// All columns that this table contains. Most users will know exactly which column they want.
@@ -474,7 +474,7 @@ impl Table {
     }
 
     /// Inserts a set of components into this table.
-    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityId, components: G) {
+    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) {
         #[cfg(debug_assertions)]
         let _guard = self.flag.write();
 

@@ -9,7 +9,7 @@ use crate::param;
 
 use crate::archetype::Archetypes;
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, EntityId, EntityMut};
+use crate::entity::{Entities, Entity, EntityHandle, EntityMut};
 use crate::graph::{AccessDesc, AccessType, Schedule};
 use crate::param::Param;
 use crate::resource::{Resource, ResourceBundle, Resources};
@@ -36,15 +36,61 @@ impl World {
         World::default()
     }
 
+    // Entities
+    // ======================================================================================
+
     pub fn spawn<B: SpawnBundle>(&mut self, bundle: B) -> EntityMut<'_> {
-        let id = self.entities.alloc();
+        let id = self.entities.spawn();
         self.archetypes.insert(id, bundle);
 
         #[cfg(debug_assertions)]
         self.flag.write_guardless();
 
-        EntityMut { id, world: self }
+        EntityMut {
+            handle: id,
+            world: self,
+        }
     }
+
+    #[inline]
+    pub(crate) fn despawn(&mut self, handle: EntityHandle) {
+        self.entities.despawn(handle)
+    }
+
+    #[inline]
+    pub(crate) fn has_components<T: ComponentBundle>(&self, entity: EntityHandle) -> bool {
+        self.archetypes.has_components::<T>(entity)
+    }
+
+    pub fn get_entity(&self, handle: EntityHandle) -> Option<Entity<'_>> {
+        if self.entities.is_alive(handle) {
+            return Some(Entity {
+                handle,
+                world: self,
+            });
+        }
+
+        None
+    }
+
+    pub fn get_entity_mut(&mut self, handle: EntityHandle) -> Option<EntityMut<'_>> {
+        if self.entities.is_alive(handle) {
+            return Some(EntityMut {
+                handle,
+                world: self,
+            });
+        }
+
+        None
+    }
+
+    #[inline]
+    pub fn alive_count(&self) -> usize {
+        self.entities.alive_count()
+    }
+
+    // Resources
+    // ======================================================================================
 
     pub fn add_resources<R: ResourceBundle>(&mut self, resources: R) {
         resources.insert_into(&mut self.resources);
@@ -63,26 +109,6 @@ impl World {
     #[inline]
     pub fn contains_resource<R: ResourceBundle>(&self) -> bool {
         self.resources.contains::<R>()
-    }
-
-    #[inline]
-    pub fn has_components<T: ComponentBundle>(&self, entity: EntityId) -> bool {
-        self.archetypes.has_components::<T>(entity)
-    }
-
-    #[inline]
-    pub fn entity_count(&self) -> usize {
-        self.entities.count()
-    }
-
-    #[inline]
-    pub fn entities(&self) -> &Entities {
-        &self.entities
-    }
-
-    #[inline]
-    pub fn entities_mut(&mut self) -> &mut Entities {
-        &mut self.entities
     }
 
     pub fn run(&mut self, schedule: &Schedule) {

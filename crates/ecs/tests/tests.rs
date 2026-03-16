@@ -1,5 +1,5 @@
 use ecs::{
-    entity::Entity,
+    entity::{Entity, EntityHandle},
     filter::Without,
     prelude::{ResMut, ScheduleBuilder},
     query::Query,
@@ -32,7 +32,11 @@ struct GlobalTimer(u32);
 
 fn simple_system(query: Query<(Entity, &Health), Without<Mass>>) {
     for (entity, health) in &query {
-        tracing::info!("Massless entity {} has {:?} health", entity.id(), health.0);
+        tracing::info!(
+            "Massless entity {} has {:?} health",
+            entity.handle().unique_id(),
+            health.0
+        );
 
         assert!(!entity.has::<Mass>());
     }
@@ -61,11 +65,6 @@ struct Label3;
 #[test]
 fn stress_test() {
     tracing_subscriber::fmt()
-        // .without_time()
-        // .with_target(false)
-        // .with_thread_names(true)
-        // .with_file(true)
-        // .with_line_number(true)
         .with_max_level(Level::TRACE)
         .compact()
         .init();
@@ -74,14 +73,18 @@ fn stress_test() {
 
     // Spawn 10,000 entities to ensure the loop actually takes time
     tracing::info!("Summoning entities");
+
+    let mut entity_id = EntityHandle::dangling();
     for i in 0..2u32 {
-        world.spawn((
-            // Position { x: i as f32, y: 0.0 },
-            Velocity { x: 1.0, y: 1.0 },
-            // Faction((i % 2) as u8),
-            Mass(i as f32),
-            Health(i as f32),
-        ));
+        entity_id = world
+            .spawn((
+                // Position { x: i as f32, y: 0.0 },
+                Velocity { x: 1.0, y: 1.0 },
+                // Faction((i % 2) as u8),
+                Mass(i as f32),
+                Health(i as f32),
+            ))
+            .handle();
     }
 
     for i in 0..2u32 {
@@ -93,9 +96,9 @@ fn stress_test() {
     }
 
     world.add_resources(GlobalTimer(5));
-    world.spawn(Health(69.0));
 
-    tracing::info!("World has {} entities", world.entities().count());
+    world.get_entity_mut(entity_id).unwrap().despawn();
+    world.spawn(Health(69.0));
 
     tracing::info!("Generating schedule...");
     let schedule = world

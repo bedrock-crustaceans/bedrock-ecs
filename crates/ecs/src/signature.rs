@@ -43,8 +43,8 @@ impl Signature {
     pub fn unset(&mut self, index: usize) {
         let word = index / 64;
         if word >= self.words.len() {
-            // If this 
-            return
+            // If this
+            return;
         }
         let bit = index % 64;
         self.words[word] &= !(1 << bit);

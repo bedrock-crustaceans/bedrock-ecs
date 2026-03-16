@@ -14,7 +14,6 @@ pub mod query;
 pub mod resource;
 pub mod schedule;
 pub mod signature;
-pub mod sparse;
 pub mod spawn;
 pub mod system;
 pub mod table;
@@ -25,7 +24,7 @@ pub mod world;
 pub mod prelude {
     pub use crate::archetype::Archetypes;
     pub use crate::component::{Component, ComponentBundle};
-    pub use crate::entity::{Entity, EntityId};
+    pub use crate::entity::{Entity, EntityHandle};
     pub use crate::filter::{Added, Changed, Filter, FilterBundle, Removed, With, Without};
     pub use crate::local::Local;
     pub use crate::param::{Param, ParamBundle};

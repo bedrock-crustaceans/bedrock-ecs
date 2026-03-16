@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 use crate::filter::FilterBundle;
 use crate::{
     component::{ComponentBundle, ComponentRegistry},
-    entity::EntityId,
+    entity::EntityHandle,
     query::{QueryBundle, TableCache},
     signature::Signature,
     spawn::SpawnBundle,
@@ -124,7 +124,7 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
-    pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityId, bundle: B) {
+    pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityHandle, bundle: B) {
         self.generation += 1;
 
         let sig = B::signature(&mut self.registry);
@@ -153,7 +153,7 @@ impl Archetypes {
     }
 
     /// Checks whether the given entity is found in any of the tables containing the archetype `A`.
-    pub fn has_components<A: ComponentBundle>(&self, entity: EntityId) -> bool {
+    pub fn has_components<A: ComponentBundle>(&self, entity: EntityHandle) -> bool {
         let Some(bitset) = A::get_signature(&self.registry) else {
             // If the component has not been registered, then it cannot have been spawned.
             // Hence there are no entities with this component.
