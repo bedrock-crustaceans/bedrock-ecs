@@ -4,6 +4,7 @@
 #![warn(clippy::pedantic)]
 
 pub mod archetype;
+pub mod command;
 pub mod component;
 pub mod entity;
 pub mod filter;
@@ -24,7 +25,7 @@ pub mod world;
 pub mod prelude {
     pub use crate::archetype::Archetypes;
     pub use crate::component::{Component, ComponentBundle};
-    pub use crate::entity::{Entity, EntityHandle};
+    pub use crate::entity::{EntityRef, EntityHandle};
     pub use crate::filter::{Added, Changed, Filter, FilterBundle, Removed, With, Without};
     pub use crate::local::Local;
     pub use crate::param::{Param, ParamBundle};

@@ -7,17 +7,18 @@ use rustc_hash::FxHashMap;
 
 use crate::graph::{AccessDesc, AccessType};
 use crate::system::SystemMeta;
-use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter};
+use crate::table_iterator::{ColumnIter, ColumnIterMut, EntityIter, EntityRefIter};
 use crate::{
     archetype::Archetypes,
     component::{Component, ComponentId, ComponentRegistry},
-    entity::Entity,
+    entity::EntityRef,
     filter::FilterBundle,
     param::Param,
     sealed::Sealed,
     signature::Signature,
     world::World,
 };
+use crate::entity::Entity;
 
 /// A collection of types that can be queried.
 ///
@@ -106,7 +107,7 @@ pub trait HoppingIterator<'t, Q: QueryBundle>: Sized {
     // ///
     // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
     // /// computing the length isn't a simple operation. The query needs to look through all of the
-    // /// future tables and compute their lengths. Therefore this method has a performance cost.
+    // /// future tables and compute their lengths. Therefore, this method has a performance cost.
     // fn estimate_len(&self) -> usize;
 
     /// Returns the length of the iterator of the *current* table.
@@ -129,7 +130,7 @@ pub trait HoppingIterator<'t>: Sized {
     // ///
     // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
     // /// computing the length isn't a simple operation. The query needs to look through all of the
-    // /// future tables and compute their lengths. Therefore this method has a performance cost.
+    // /// future tables and compute their lengths. Therefore, this method has a performance cost.
     // fn estimate_len(&self) -> usize;
 
     /// Returns the length of the iterator of the *current* table.
@@ -275,7 +276,7 @@ macro_rules! impl_bundle {
                     let mut sig = Signature::new();
 
                     $(
-                        if !$gen::IS_ENTITY {
+                        if $gen::TY == QueryType::Component {
                             let id = $gen::component_id(reg);
                             sig.set(*id);
                         }
@@ -303,10 +304,9 @@ macro_rules! impl_bundle {
                 fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount> {
                     GenericArray::from(
                         ($(
-                            (if $gen::IS_ENTITY {
-                                usize::MAX
-                            } else {
-                                $gen::cache_column(lookup)
+                            (match $gen::TY {
+                                QueryType::Component => $gen::cache_column(lookup),
+                                QueryType::Entity | QueryType::EntityRef => usize::MAX
                             }),
                         )*)
                     )
@@ -503,7 +503,7 @@ pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterat
 /// cache to read the wrong columns, which means data is interpreted with the incorrect type.
 ///
 /// [`Component`]: crate::component::Component
-/// [`Entity`]: crate::entity::Entity
+/// [`Entity`]: crate::entity::EntityRef
 pub unsafe trait ParamRef: Send {
     /// The type you would get if you were to remove the reference attached to `Self`.
     type Unref: 'static;
@@ -516,7 +516,7 @@ pub unsafe trait ParamRef: Send {
     type Iter<'t>: EmptyableIterator<'t, Self::Output<'t>>;
 
     /// Whether this parameter is an entity.
-    const IS_ENTITY: bool;
+    const TY: QueryType;
 
     /// Returns the resource that this parameter accessess.
     fn access(reg: &mut ComponentRegistry) -> AccessDesc;
@@ -542,16 +542,52 @@ pub unsafe trait ParamRef: Send {
     fn iter(world: &World, table: usize, col: usize) -> Self::Iter<'_>;
 }
 
-unsafe impl ParamRef for Entity<'_> {
-    type Unref = Entity<'static>;
-    type Output<'w> = Entity<'w>;
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum QueryType {
+    Component,
+    Entity,
+    EntityRef
+}
+
+unsafe impl ParamRef for Entity {
+    type Unref = Entity;
+    type Output<'w> = Entity;
     type Iter<'t> = EntityIter<'t>;
 
-    const IS_ENTITY: bool = true;
+    const TY: QueryType = QueryType::Entity;
+
+    #[inline]
+    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::None,
+            exclusive: false
+        }
+    }
+
+    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+        unimplemented!("cannot call `component_id` on `Entity`")
+    }
+
+    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> usize {
+        unimplemented!("cannot call `cache_column` on `Entity`")
+    }
+
+    fn iter(world: &World, table: usize, col: usize) -> EntityIter<'_> {
+        let table = world.archetypes.get_by_index(table);
+        table.iter_entities(world)
+    }
+}
+
+unsafe impl ParamRef for EntityRef<'_> {
+    type Unref = EntityRef<'static>;
+    type Output<'w> = EntityRef<'w>;
+    type Iter<'t> = EntityRefIter<'t>;
+
+    const TY: QueryType = QueryType::EntityRef;
 
     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
-            ty: AccessType::Entity,
+            ty: AccessType::World,
             exclusive: false,
         }
     }
@@ -564,9 +600,9 @@ unsafe impl ParamRef for Entity<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter(world: &World, table: usize, _col: usize) -> EntityIter<'_> {
+    fn iter(world: &World, table: usize, _col: usize) -> EntityRefIter<'_> {
         let table = world.archetypes.get_by_index(table);
-        table.iter_entities(world)
+        table.iter_entity_refs(world)
     }
 }
 
@@ -575,7 +611,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Output<'w> = &'w T;
     type Iter<'t> = ColumnIter<'t, T>;
 
-    const IS_ENTITY: bool = false;
+    const TY: QueryType = QueryType::Component;
 
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
@@ -610,7 +646,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Output<'w> = &'w mut T;
     type Iter<'t> = ColumnIterMut<'t, T>;
 
-    const IS_ENTITY: bool = false;
+    const TY: QueryType = QueryType::Component;
 
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
@@ -648,7 +684,7 @@ pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
 impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     /// Creates a new query.
     ///
-    /// A new query is created every time a system is ran while the
+    /// A new query is created every time a system runs, while the
     /// [`QueryCache`] is persistent across runs by storing it in the system state.
     pub(crate) fn new(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
         // Update the plan cache
@@ -732,7 +768,7 @@ pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     /// be rebuilt.
     generation: u64,
     /// The archetype bitset of this query. This is used to quickly discard tables that do not match the query.
-    archetype: Signature,
+    signature: Signature,
     _marker: PhantomData<(Q, F)>,
 }
 
@@ -754,7 +790,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         QueryMeta {
             filter_state,
             generation: archetypes.generation(),
-            archetype,
+            signature: archetype,
             cache: cached,
             _marker: PhantomData,
         }
@@ -769,7 +805,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
     pub(crate) fn update(&mut self, archetypes: &Archetypes) {
         if self.generation != archetypes.generation() {
             self.cache.clear();
-            archetypes.cache_tables::<Q, F>(&self.archetype, &self.filter_state, &mut self.cache);
+            archetypes.cache_tables::<Q, F>(&self.signature, &self.filter_state, &mut self.cache);
 
             tracing::trace!(
                 "refreshing archetype table cache ({} -> {}), {} tables cached",
@@ -812,7 +848,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
     /// The archetype of this query in bitset form.
     #[inline]
     pub fn archetype(&self) -> &Signature {
-        &self.archetype
+        &self.signature
     }
 
     /// The contents of the table cache. These are the tables and columns that the query will

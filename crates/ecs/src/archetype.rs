@@ -3,7 +3,7 @@ use std::ptr::NonNull;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::entity::EntityMeta;
+use crate::entity::Entity;
 use crate::filter::FilterBundle;
 
 use crate::{
@@ -128,7 +128,7 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
-    pub fn insert<B: SpawnBundle + 'static>(&mut self, handle: EntityHandle, bundle: B) -> EntityMeta {
+    pub fn insert<B: SpawnBundle + 'static>(&mut self, handle: EntityHandle, bundle: B) -> Entity {
         let sig = B::signature(&mut self.component_registry);
 
         // Check whether archetype already exists, otherwise create it
@@ -148,7 +148,7 @@ impl Archetypes {
 
         let row = table.insert(handle, bundle);
 
-        EntityMeta {
+        Entity {
             handle, row,
             table: Some(unsafe {
                 // Safety: This is safe because `table` is a reference which is guaranteed to be nonnull.

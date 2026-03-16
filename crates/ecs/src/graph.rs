@@ -7,6 +7,7 @@ use crate::system::{System, SystemId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AccessType {
+    None,
     Entity,
     World,
     Component(ComponentId),

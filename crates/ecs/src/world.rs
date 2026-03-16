@@ -8,8 +8,9 @@ use smallvec::{SmallVec, smallvec};
 use crate::param;
 
 use crate::archetype::Archetypes;
+use crate::command::CommandScheduler;
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, Entity, EntityHandle, EntityMut};
+use crate::entity::{Entities, EntityRef, EntityHandle, EntityMut};
 use crate::graph::{AccessDesc, AccessType, Schedule};
 use crate::param::Param;
 use crate::resource::{Resource, ResourceBundle, Resources};
@@ -20,8 +21,9 @@ use crate::system::SystemMeta;
 #[derive(Default)]
 pub struct World {
     pub(crate) archetypes: Archetypes,
-    pub entities: Entities,
+    pub(crate) entities: Entities,
     pub(crate) resources: Resources,
+    pub(crate) commands: CommandScheduler
 }
 
 impl World {
@@ -32,7 +34,7 @@ impl World {
 
     // Entities
     // ======================================================================================
-    pub fn spawn<B: SpawnBundle>(&mut self, bundle: B) -> EntityMut<'_> {
+    pub fn spawn(&mut self, bundle: impl SpawnBundle) -> EntityMut<'_> {
         let id = self.entities.allocate();
         let meta = self.archetypes.insert(id, bundle);
         self.entities.spawn(meta);
@@ -57,9 +59,9 @@ impl World {
         self.archetypes.has_components::<T>(entity)
     }
 
-    pub fn get_entity(&self, handle: EntityHandle) -> Option<Entity<'_>> {
+    pub fn get_entity(&self, handle: EntityHandle) -> Option<EntityRef<'_>> {
         if self.entities.is_alive(handle) {
-            return Some(Entity {
+            return Some(EntityRef {
                 handle,
                 world: self,
             });
@@ -89,7 +91,7 @@ impl World {
     // ======================================================================================
 
     #[inline]
-    pub fn add_resources<R: ResourceBundle>(&mut self, resources: R) {
+    pub fn add_resources(&mut self, resources: impl ResourceBundle) {
         resources.insert_into(&mut self.resources);
     }
 

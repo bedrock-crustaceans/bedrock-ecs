@@ -1,5 +1,5 @@
 use ecs::{
-    entity::{Entity, EntityHandle},
+    entity::{EntityRef, EntityHandle},
     filter::Without,
     prelude::{ResMut, ScheduleBuilder},
     query::Query,
@@ -7,6 +7,9 @@ use ecs::{
 };
 use ecs_derive::{Component, Resource, ScheduleLabel};
 use tracing::Level;
+use ecs::command::Commands;
+use ecs::entity::Entity;
+use ecs::filter::With;
 
 #[derive(Debug, Copy, Clone, Component)]
 struct Position {
@@ -30,11 +33,11 @@ struct Static; // Marker component
 #[derive(Debug, Resource)]
 struct GlobalTimer(u32);
 
-fn simple_system(query: Query<(Entity, &Health), Without<Mass>>) {
+fn simple_system(query: Query<(EntityRef, &Health), Without<Mass>>) {
     for (entity, health) in &query {
         tracing::info!(
-            "Massless entity {} has {:?} health",
-            entity.handle().unique_id(),
+            "Massless entity {:?} has {:?} health",
+            entity.handle(),
             health.0
         );
 
@@ -51,6 +54,15 @@ fn second_system(query: Query<(&Health, &Mass)>) {
 fn resource_system(res: ResMut<GlobalTimer>) {
     let time = res.0;
     println!("Time is {time:?}");
+}
+
+fn command_system(query: Query<(Entity, EntityRef), With<Mass>>, mut commands: Commands) {
+    // commands.spawn(Health(1.0));
+
+    for (entity, entity_ref) in &query {
+        println!("entity: {entity:?}");
+        println!("entity_ref: {:?}", entity_ref.handle());
+    }
 }
 
 #[derive(ScheduleLabel)]
@@ -87,8 +99,6 @@ fn stress_test() {
             .handle();
     }
 
-    println!("{:?}", world.entities);
-
     for i in 0..2u32 {
         world.spawn((
             // Faction((i % 2) as u8),
@@ -99,20 +109,14 @@ fn stress_test() {
 
     world.add_resources(GlobalTimer(5));
 
-    println!("{:?}", world.entities);
-
     world.get_entity_mut(entity_id).unwrap().despawn();
 
-    println!("{:?}", world.entities);
-
     world.spawn(Health(69.0));
-
-    println!("{:?}", world.entities);
 
     tracing::info!("Generating schedule...");
     let schedule = world
         .build_schedule()
-        .add(Label1, (simple_system, second_system, resource_system))
+        .add(Label1, (simple_system, second_system, resource_system, command_system))
         .schedule();
 
     world.run(&schedule);

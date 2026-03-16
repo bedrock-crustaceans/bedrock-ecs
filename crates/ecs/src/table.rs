@@ -8,10 +8,11 @@ use crate::{
     entity::{EntityHandle},
     signature::Signature,
     spawn::SpawnBundle,
-    table_iterator::{ColumnIter, ColumnIterMut, EntityIter},
+    table_iterator::{ColumnIter, ColumnIterMut, EntityRefIter},
     util,
     world::World,
 };
+use crate::table_iterator::EntityIter;
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -36,7 +37,7 @@ unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
 
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableRow(usize);
+pub struct TableRow(pub(crate) usize);
 
 /// Stores a collection of a single component type.
 #[derive(Debug)]
@@ -493,10 +494,18 @@ impl Table {
     }
 
     /// Creates an iterator over all the entities in this table.
-    pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
-        EntityIter {
+    pub fn iter_entity_refs<'w>(&'w self, world: &'w World) -> EntityRefIter<'w> {
+        EntityRefIter {
             world,
             iter: self.entities.iter(),
+        }
+    }
+
+    pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
+        EntityIter {
+            row_index: 0,
+            table: NonNull::new(self as *const Table as *mut Table),
+            iter: self.entities.iter()
         }
     }
 

@@ -1,10 +1,12 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
 use crate::{
-    entity::{Entity, EntityHandle},
+    entity::{EntityRef, EntityHandle},
     query::EmptyableIterator,
     world::World,
 };
+use crate::entity::Entity;
+use crate::table::{Table, TableRow};
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
@@ -105,19 +107,24 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
 }
 
 pub struct EntityIter<'w> {
-    pub(crate) world: &'w World,
-    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
+    pub(crate) table: Option<NonNull<Table>>,
+    pub(crate) row_index: usize,
+    pub(crate) iter: std::slice::Iter<'w, EntityHandle>
 }
 
 impl<'w> Iterator for EntityIter<'w> {
-    type Item = Entity<'w>;
+    type Item = Entity;
 
-    fn next(&mut self) -> Option<Entity<'w>> {
-        let id = self.iter.next()?;
+    fn next(&mut self) -> Option<Entity> {
+        let handle = *self.iter.next()?;
+        let row_index = self.row_index;
+        
+        self.row_index += 1;
 
         Some(Entity {
-            handle: *id,
-            world: self.world,
+            table: self.table,
+            row: TableRow(row_index),
+            handle
         })
     }
 }
@@ -131,9 +138,46 @@ impl<'t> ExactSizeIterator for EntityIter<'t> {
 
 impl<'t> FusedIterator for EntityIter<'t> {}
 
-impl<'w> EmptyableIterator<'w, Entity<'w>> for EntityIter<'w> {
-    fn empty(world: &'w World) -> EntityIter<'w> {
+impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
+    fn empty(_world: &'w World) -> EntityIter<'w> {
         EntityIter {
+            table: None,
+            row_index: 0,
+            iter: [].iter()
+        }
+    }
+}
+
+pub struct EntityRefIter<'w> {
+    pub(crate) world: &'w World,
+    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
+}
+
+impl<'w> Iterator for EntityRefIter<'w> {
+    type Item = EntityRef<'w>;
+
+    fn next(&mut self) -> Option<EntityRef<'w>> {
+        let id = self.iter.next()?;
+
+        Some(EntityRef {
+            handle: *id,
+            world: self.world
+        })
+    }
+}
+
+impl<'t> ExactSizeIterator for EntityRefIter<'t> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<'t> FusedIterator for EntityRefIter<'t> {}
+
+impl<'w> EmptyableIterator<'w, EntityRef<'w>> for EntityRefIter<'w> {
+    fn empty(world: &'w World) -> EntityRefIter<'w> {
+        EntityRefIter {
             world,
             iter: [].iter()
         }
