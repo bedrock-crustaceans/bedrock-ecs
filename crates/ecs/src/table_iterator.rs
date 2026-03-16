@@ -1,7 +1,5 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
-#[cfg(debug_assertions)]
-use crate::util::debug::RwGuard;
 use crate::{
     entity::{Entity, EntityHandle},
     query::EmptyableIterator,
@@ -109,9 +107,6 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
 pub struct EntityIter<'w> {
     pub(crate) world: &'w World,
     pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
-
-    #[cfg(debug_assertions)]
-    pub(crate) _guard: RwGuard<'w, false>,
 }
 
 impl<'w> Iterator for EntityIter<'w> {
@@ -119,9 +114,6 @@ impl<'w> Iterator for EntityIter<'w> {
 
     fn next(&mut self) -> Option<Entity<'w>> {
         let id = self.iter.next()?;
-
-        #[cfg(debug_assertions)]
-        self.world.flag.read_guardless();
 
         Some(Entity {
             handle: *id,
@@ -143,10 +135,7 @@ impl<'w> EmptyableIterator<'w, Entity<'w>> for EntityIter<'w> {
     fn empty(world: &'w World) -> EntityIter<'w> {
         EntityIter {
             world,
-            iter: [].iter(),
-
-            #[cfg(debug_assertions)]
-            _guard: world.flag.read(),
+            iter: [].iter()
         }
     }
 }

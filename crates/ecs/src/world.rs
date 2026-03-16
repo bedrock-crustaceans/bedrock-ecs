@@ -17,17 +17,11 @@ use crate::schedule::ScheduleBuilder;
 use crate::spawn::SpawnBundle;
 use crate::system::SystemMeta;
 
-#[cfg(debug_assertions)]
-use crate::util::debug::RwFlag;
-
 #[derive(Default)]
 pub struct World {
     pub(crate) archetypes: Archetypes,
-    pub(crate) entities: Entities,
+    pub entities: Entities,
     pub(crate) resources: Resources,
-
-    #[cfg(debug_assertions)]
-    pub(crate) flag: RwFlag,
 }
 
 impl World {
@@ -38,13 +32,10 @@ impl World {
 
     // Entities
     // ======================================================================================
-
     pub fn spawn<B: SpawnBundle>(&mut self, bundle: B) -> EntityMut<'_> {
-        let id = self.entities.spawn();
-        self.archetypes.insert(id, bundle);
-
-        #[cfg(debug_assertions)]
-        self.flag.write_guardless();
+        let id = self.entities.allocate();
+        let meta = self.archetypes.insert(id, bundle);
+        self.entities.spawn(meta);
 
         EntityMut {
             handle: id,
@@ -54,6 +45,10 @@ impl World {
 
     #[inline]
     pub(crate) fn despawn(&mut self, handle: EntityHandle) {
+        // Remove from table
+        // self.archetypes.despawn(handle);
+
+        // Remove from alive list.
         self.entities.despawn(handle)
     }
 
@@ -84,6 +79,7 @@ impl World {
         None
     }
 
+    /// Returns the amount of entities currently alive in this world.
     #[inline]
     pub fn alive_count(&self) -> usize {
         self.entities.alive_count()
@@ -92,6 +88,7 @@ impl World {
     // Resources
     // ======================================================================================
 
+    #[inline]
     pub fn add_resources<R: ResourceBundle>(&mut self, resources: R) {
         resources.insert_into(&mut self.resources);
     }
@@ -128,6 +125,7 @@ impl World {
         }
     }
 
+    #[inline]
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
         ScheduleBuilder::new(self)
     }

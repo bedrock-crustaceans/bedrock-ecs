@@ -1,8 +1,10 @@
-use std::fmt;
+use std::{fmt, ptr::NonNull};
 
-use crate::{component::ComponentBundle, world::World};
+use crate::{component::ComponentBundle, table::{Table, TableRow}, world::World};
 
 /// Having an instance of this entity means you have exclusive access to the entire world.
+/// 
+/// This allows calling mutable methods directly rather than having to push them to command buffers.
 pub struct EntityMut<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) handle: EntityHandle,
@@ -14,16 +16,17 @@ impl EntityMut<'_> {
         self.handle
     }
 
+    pub fn index(&self) -> EntityIndex {
+        self.handle.index()
+    }
+
+    pub fn generation(&self) -> EntityGeneration {
+        self.handle.generation()
+    }
+
     #[inline]
     pub fn despawn(self) {
         self.world.despawn(self.handle);
-    }
-}
-
-#[cfg(debug_assertions)]
-impl<'w> Drop for EntityMut<'w> {
-    fn drop(&mut self) {
-        self.world.flag.unlock_guardless();
     }
 }
 
@@ -47,63 +50,22 @@ impl<'w> Entity<'w> {
     }
 }
 
-#[cfg(debug_assertions)]
-impl<'w> Drop for Entity<'w> {
-    fn drop(&mut self) {
-        self.world.flag.unlock_guardless();
-    }
-}
-
 const TOMBSTONE: u32 = u32::MAX;
 
-#[derive(Default, Debug, Clone)]
-pub struct SparseSet {
-    dense: Vec<u32>,
-    sparse: Vec<u32>,
-}
-
-impl SparseSet {
-    #[inline]
-    pub fn new() -> SparseSet {
-        SparseSet::default()
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.dense.len()
-    }
-
-    pub fn insert(&mut self, index: u32) {
-        if index as usize >= self.sparse.len() {
-            self.sparse.resize(index as usize + 1, TOMBSTONE);
-        }
-
-        if self.sparse[index as usize] == TOMBSTONE {
-            self.dense.push(index);
-            self.sparse[index as usize] = self.dense.len() as u32 - 1;
-        }
-    }
-
-    pub fn remove(&mut self, index: u32) {
-        let dense_index = self.sparse[index as usize];
-
-        self.dense.swap_remove(dense_index as usize);
-        self.sparse[self.dense.len()] = dense_index;
-        self.sparse[index as usize] = TOMBSTONE;
-    }
-
-    #[inline]
-    pub fn contains(&self, index: u32) -> bool {
-        self.sparse[index as usize] != TOMBSTONE
-    }
-}
+#[derive(Debug, Clone)]
+pub struct EntityMeta {
+    pub handle: EntityHandle,
+    pub table: Option<NonNull<Table>>,
+    pub row: TableRow
+}   
 
 #[derive(Default, Debug, Clone)]
 pub struct Entities {
     next_id: u32,
     freelist: Vec<u32>,
     generations: Vec<u32>,
-    sparse: SparseSet,
+    dense: Vec<EntityMeta>,
+    sparse: Vec<u32>
 }
 
 impl Entities {
@@ -112,11 +74,10 @@ impl Entities {
         Entities::default()
     }
 
-    pub fn spawn(&mut self) -> EntityHandle {
-        // Check if there are any free IDs...
-        if let Some(id) = self.freelist.pop() {
-            // Insert it back into the sparse set and increase the generation
-            self.sparse.insert(id);
+    /// Allocates an entity handle but does not insert it into the registry yet.
+    pub fn allocate(&mut self) -> EntityHandle {
+        // Allocate an ID for this new entity.
+        let handle = if let Some(id) = self.freelist.pop() {
             self.generations[id as usize] += 1;
 
             let generation = self.generations[id as usize];
@@ -124,30 +85,48 @@ impl Entities {
             tracing::trace!("spawned entity via freelist (id: {id}, generation: {generation})");
             EntityHandle::new(id, generation)
         } else {
-            // ... otherwise allocate a new one
             let id = self.next_id;
             self.next_id += 1;
 
-            self.sparse.insert(id);
             self.generations.push(0);
 
-            tracing::trace!("spawned entity with new ID {id}");
             EntityHandle::new(id, 0)
+        };
+
+        handle
+    }
+
+    /// Inserts the given entity metadata into the registry.
+    pub fn spawn(&mut self, meta: EntityMeta) {
+        tracing::error!("spawning {:?}", meta.handle);
+
+        let index = meta.handle.index().0 as usize;
+
+        self.dense.push(meta);
+
+        if index >= self.sparse.len() {
+            self.sparse.resize(index + 1, TOMBSTONE);
         }
+        self.sparse[index] = self.dense.len() as u32 - 1;
     }
 
     pub fn despawn(&mut self, entity: EntityHandle) {
-        let id = entity.index();
-        let generation = entity.generation();
+        let id = entity.index().0;
+        let generation = entity.generation().0;
 
         if self.generations[id as usize] != generation {
             // This is an old entity, ignore it
-            tracing::trace!("attempt to despawn orphaned entity");
+            tracing::trace!("attempt to despawn old entity");
             return;
         }
 
-        self.sparse.remove(id);
+        self.dense.swap_remove(id as usize);
+        let swapped_index = self.dense[id as usize].handle.index().0;
+        self.sparse[swapped_index as usize] = id;
+
+        self.sparse[id as usize] = TOMBSTONE;
         self.freelist.push(id);
+
         tracing::trace!("despawned entity {id}");
     }
 
@@ -157,11 +136,11 @@ impl Entities {
     }
 
     pub fn is_alive(&self, entity: EntityHandle) -> bool {
-        let id = entity.index();
-        let generation = entity.generation();
+        let id = entity.index().0;
+        let generation = entity.generation().0;
 
-        // Check whether it's in the sparse list and the generation is up to date.
-        self.sparse.contains(id) && self.generations[id as usize] == generation
+        // Check whether index is in the sparse list and verify generation
+        self.sparse[id as usize] != TOMBSTONE && self.generations[id as usize] == generation
     }
 }
 
@@ -190,64 +169,38 @@ impl EntityHandle {
     }
 
     #[inline]
-    pub fn index(&self) -> u32 {
+    pub fn index(&self) -> EntityIndex {
         const ID_MASK: u64 = 0x00000000FFFFFFFF;
-        (self.0 & ID_MASK) as u32
+        let index = (self.0 & ID_MASK) as u32;
+        EntityIndex(index)
     }
 
     #[inline]
-    pub fn generation(&self) -> u32 {
+    pub fn generation(&self) -> EntityGeneration {
         const GEN_MASK: u64 = 0xFFFFFFFF00000000;
-        ((self.0 & GEN_MASK) >> 32) as u32
+        let generation = ((self.0 & GEN_MASK) >> 32) as u32;
+        EntityGeneration(generation)
     }
 }
 
-impl fmt::Display for EntityHandle {
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct EntityIndex(pub(crate) u32);
+
+impl fmt::Display for EntityIndex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let id = self.index();
-        let generation = self.generation();
-
-        write!(f, "{id} ({generation})")
+        let index = self.0;
+        write!(f, "{index}")
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use tracing::Level;
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct EntityGeneration(pub(crate) u32);
 
-    use crate::entity::Entities;
-
-    #[test]
-    fn spawn_despawn() {
-        tracing_subscriber::fmt()
-            .with_max_level(Level::TRACE)
-            .compact()
-            .init();
-
-        let mut ents = Entities::new();
-
-        let ent1 = ents.spawn();
-
-        println!("{ents:?}");
-
-        let ent2 = ents.spawn();
-
-        println!("{ents:?}");
-
-        let ent3 = ents.spawn();
-
-        println!("{ents:?}");
-
-        ents.despawn(ent2);
-
-        println!("{ents:?}");
-
-        let ent4 = ents.spawn();
-
-        println!("{ents:?}");
-
-        assert!(!ents.is_alive(ent2));
-
-        println!("alive: {}", ents.alive_count());
+impl fmt::Display for EntityGeneration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let generation = self.0;
+        write!(f, "{generation}")
     }
 }

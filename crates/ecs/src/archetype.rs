@@ -1,7 +1,11 @@
+use std::ptr::NonNull;
+
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
+use crate::entity::EntityMeta;
 use crate::filter::FilterBundle;
+
 use crate::{
     component::{ComponentBundle, ComponentRegistry},
     entity::EntityHandle,
@@ -24,7 +28,7 @@ pub struct Archetypes {
     /// The component registry. This registry maps `TypeIds` to smaller unique identifiers.
     /// These smaller identifiers allow the ECS to use bitsets to represent the components that a
     /// table or query contains.
-    pub(crate) registry: ComponentRegistry,
+    pub(crate) component_registry: ComponentRegistry,
     /// All archetype tables. These are in a vector to allow for quick access when the location is
     /// already known. Queries cache these indices and access the vector directly
     /// instead of going through the lookup map. The `lookup` table can be used to
@@ -124,16 +128,16 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
-    pub fn insert<B: SpawnBundle + 'static>(&mut self, id: EntityHandle, bundle: B) {
-        self.generation += 1;
-
-        let sig = B::signature(&mut self.registry);
+    pub fn insert<B: SpawnBundle + 'static>(&mut self, handle: EntityHandle, bundle: B) -> EntityMeta {
+        let sig = B::signature(&mut self.component_registry);
 
         // Check whether archetype already exists, otherwise create it
         let lookup = self.lookup.get(&sig);
         let table = if let Some(index) = lookup {
             &mut self.tables[*index]
         } else {
+            self.generation += 1;
+
             self.lookup_array.push(sig.clone());
             self.lookup.insert(sig.clone(), self.tables.len());
             let table = Table::new::<B>(sig);
@@ -142,7 +146,15 @@ impl Archetypes {
             self.tables.last_mut().unwrap()
         };
 
-        table.insert(id, bundle);
+        let row = table.insert(handle, bundle);
+
+        EntityMeta {
+            handle, row,
+            table: Some(unsafe {
+                // Safety: This is safe because `table` is a reference which is guaranteed to be nonnull.
+                NonNull::new_unchecked(table as *mut Table)
+            })
+        }
     }
 
     /// Returns the amount of archetypes currently contained in this container.
@@ -154,7 +166,7 @@ impl Archetypes {
 
     /// Checks whether the given entity is found in any of the tables containing the archetype `A`.
     pub fn has_components<A: ComponentBundle>(&self, entity: EntityHandle) -> bool {
-        let Some(bitset) = A::get_signature(&self.registry) else {
+        let Some(bitset) = A::get_signature(&self.component_registry) else {
             // If the component has not been registered, then it cannot have been spawned.
             // Hence there are no entities with this component.
             return false;
@@ -192,7 +204,7 @@ impl Archetypes {
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_archetype<T: ComponentBundle>(&self) -> Option<&Table> {
-        let bitset = T::get_signature(&self.registry)?;
+        let bitset = T::get_signature(&self.component_registry)?;
         self.get_by_bitset(&bitset)
     }
 

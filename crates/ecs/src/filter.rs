@@ -98,7 +98,7 @@ impl<T: ComponentBundle> Filter for With<T> {
             std::any::type_name::<Self>()
         );
         With {
-            signature: T::get_or_assign_signature(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
             _marker: PhantomData,
         }
     }
@@ -125,7 +125,7 @@ impl<T: ComponentBundle> Filter for Without<T> {
             std::any::type_name::<Self>()
         );
         Without {
-            signature: T::get_or_assign_signature(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
             _marker: PhantomData,
         }
     }
@@ -148,7 +148,7 @@ impl<T: ComponentBundle> Filter for Added<T> {
             std::any::type_name::<Self>()
         );
         Added {
-            signature: T::get_or_assign_signature(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
             _marker: PhantomData,
         }
     }
@@ -171,7 +171,7 @@ impl<T: ComponentBundle> Filter for Removed<T> {
             std::any::type_name::<Self>()
         );
         Removed {
-            signature: T::get_or_assign_signature(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
             _marker: PhantomData,
         }
     }
@@ -194,7 +194,7 @@ impl<T: ComponentBundle> Filter for Changed<T> {
             std::any::type_name::<Self>()
         );
         Changed {
-            signature: T::get_or_assign_signature(&mut archetypes.registry),
+            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
             _marker: PhantomData,
         }
     }

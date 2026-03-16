@@ -8,9 +8,6 @@ use crate::{
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
-#[cfg(debug_assertions)]
-use crate::util::debug::RwFlag;
-
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {
         #[allow(unused_parens)]
@@ -35,9 +32,6 @@ macro_rules! impl_bundle {
 
                 #[allow(unused)]
                 let mut table = Table {
-                    #[cfg(debug_assertions)]
-                    flag: RwFlag::new(),
-
                     signature: sig,
                     entities: Vec::new(),
                     lookup: FxHashMap::with_capacity_and_hasher(COUNT, FxBuildHasher::default()),

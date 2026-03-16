@@ -13,8 +13,6 @@ name = "signature"
 harness = false
 
 [dependencies]
-bitvec = "1.0.1"
-
 ecs_derive = { path = "../ecs_derive" }
 smallvec = "1.13.2"
 paste = "1.0.15"

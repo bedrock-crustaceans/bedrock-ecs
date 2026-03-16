@@ -679,7 +679,7 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
 
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
-        Q::access(&mut world.archetypes.registry)
+        Q::access(&mut world.archetypes.component_registry)
     }
 
     #[cfg(not(feature = "generics"))]
@@ -743,7 +743,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         tracing::instrument(name = "QueryCache::new", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
     pub(crate) fn new(archetypes: &mut Archetypes) -> QueryMeta<Q, F> {
-        let archetype = Q::signature(&mut archetypes.registry);
+        let archetype = Q::signature(&mut archetypes.component_registry);
         let filter_state = F::init(archetypes);
 
         let mut cached = SmallVec::new();

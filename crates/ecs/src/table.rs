@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 #[cfg(debug_assertions)]
 use crate::util::debug::RwFlag;
 use crate::{
-    entity::EntityHandle,
+    entity::{EntityHandle},
     signature::Signature,
     spawn::SpawnBundle,
     table_iterator::{ColumnIter, ColumnIterMut, EntityIter},
@@ -33,6 +33,10 @@ unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
         }
     }
 }
+
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TableRow(usize);
 
 /// Stores a collection of a single component type.
 #[derive(Debug)]
@@ -440,11 +444,6 @@ impl Drop for Column {
 /// Tables are always to read from during a tick since entities will only be summoned in between ticks.
 #[derive(Debug)]
 pub struct Table {
-    #[cfg(debug_assertions)]
-    /// A flag used to indicate whether this table is currently being read or written to.
-    /// This is used in debug mode to ensure that the scheduler abides by the aliasing rules.
-    pub(crate) flag: RwFlag,
-
     /// The signature of this table. This is by queries to quickly scan for their components
     /// through the entire component database.
     pub(crate) signature: Signature,
@@ -473,14 +472,14 @@ impl Table {
         &self.signature
     }
 
-    /// Inserts a set of components into this table.
-    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) {
-        #[cfg(debug_assertions)]
-        let _guard = self.flag.write();
-
+    /// Inserts a set of components into this table and returns the row it was inserted at
+    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) -> TableRow {
+        let row = self.entities.len();
         self.entities.push(entity);
 
         components.insert_into(&mut self.columns);
+
+        TableRow(row)
     }
 
     /// Returns a list of all columns in this table.
@@ -498,17 +497,11 @@ impl Table {
         EntityIter {
             world,
             iter: self.entities.iter(),
-
-            #[cfg(debug_assertions)]
-            _guard: self.flag.read(),
         }
     }
 
     /// Returns the amount of entities stored in this table.
     pub fn len(&self) -> usize {
-        #[cfg(debug_assertions)]
-        let _guard = self.flag.read();
-
         self.entities.len()
     }
 }

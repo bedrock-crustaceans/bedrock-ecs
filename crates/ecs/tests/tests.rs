@@ -87,6 +87,8 @@ fn stress_test() {
             .handle();
     }
 
+    println!("{:?}", world.entities);
+
     for i in 0..2u32 {
         world.spawn((
             // Faction((i % 2) as u8),
@@ -97,8 +99,15 @@ fn stress_test() {
 
     world.add_resources(GlobalTimer(5));
 
+    println!("{:?}", world.entities);
+
     world.get_entity_mut(entity_id).unwrap().despawn();
+
+    println!("{:?}", world.entities);
+
     world.spawn(Health(69.0));
+
+    println!("{:?}", world.entities);
 
     tracing::info!("Generating schedule...");
     let schedule = world
