@@ -5,10 +5,13 @@ use std::ops::{Deref, DerefMut};
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
 
-use crate::graph::AccessDesc;
 #[cfg(not(feature = "generics"))]
 use crate::param;
-use crate::{param::Param, sealed::Sealed, system::SystemMeta, world::World};
+use crate::scheduler::AccessDesc;
+
+use crate::sealed::Sealed;
+use crate::system::{Param, SystemMeta};
+use crate::world::World;
 
 pub struct LocalState<T: Default + Send + 'static>(T);
 

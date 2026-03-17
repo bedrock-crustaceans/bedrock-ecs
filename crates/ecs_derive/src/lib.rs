@@ -48,7 +48,7 @@ pub fn derive_schedule_label(input: TokenStream) -> TokenStream {
     let sched_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::schedule::ScheduleLabel for #sched_ident {
+        impl ::ecs::scheduler::ScheduleLabel for #sched_ident {
             const NAME: &'static str = stringify!(#sched_ident);
         }
     };

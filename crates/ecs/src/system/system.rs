@@ -1,14 +1,12 @@
-use generic_array::GenericArray;
 use std::any::TypeId;
-#[cfg(debug_assertions)]
 use std::cell::UnsafeCell;
 
-use crate::graph::AccessDesc;
-use crate::{
-    param::{Param, ParamBundle},
-    sealed::Sealer,
-    world::World,
-};
+use generic_array::GenericArray;
+
+use crate::scheduler::AccessDesc;
+use crate::sealed::Sealer;
+use crate::system::{Param, ParamBundle};
+use crate::world::World;
 
 #[derive(Debug)]
 pub struct SystemMeta {
@@ -66,11 +64,12 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
 pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     meta: SystemMeta,
     system: F,
+    state: UnsafeCell<P::State>,
+
     #[cfg(feature = "generics")]
     access: GenericArray<AccessDesc, P::AccessCount>,
     #[cfg(not(feature = "generics"))]
     access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
-    state: UnsafeCell<P::State>,
 }
 
 unsafe impl<P, F> Send for SystemContainer<P, F>

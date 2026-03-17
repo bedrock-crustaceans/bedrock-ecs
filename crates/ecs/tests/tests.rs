@@ -1,15 +1,6 @@
-use ecs::{
-    entity::{EntityRef, EntityHandle},
-    filter::Without,
-    prelude::{ResMut, ScheduleBuilder},
-    query::Query,
-    world::World,
-};
+use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Resource, ScheduleLabel};
 use tracing::Level;
-use ecs::command::Commands;
-use ecs::entity::Entity;
-use ecs::filter::With;
 
 #[derive(Debug, Copy, Clone, Component)]
 struct Velocity {
@@ -29,10 +20,26 @@ struct Static; // Marker component
 struct GlobalTimer(u32);
 
 fn simple_system(query: Query<&Bytes5>) {
+    println!("start on thread {:?}", std::thread::current().id());
+
     for bytes in &query {
-        let b0 = bytes.0;
-        println!("bytes5: {} {}", b0, bytes.1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        // println!("bytes5: {} {}", b0, bytes.1);
     }
+
+    println!("finish on thread {:?}", std::thread::current().id());
+}
+
+fn simple_system2(query: Query<&mut Static>) {
+    println!("start on thread {:?}", std::thread::current().id());
+
+    for bytes in &query {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        // let b0 = bytes.0;
+        // println!("bytes5: {} {}", b0, bytes.1);
+    }
+
+    println!("finish on thread {:?}", std::thread::current().id());
 }
 
 #[derive(ScheduleLabel)]
@@ -47,20 +54,23 @@ struct Label3;
 #[test]
 fn stress_test() {
     tracing_subscriber::fmt()
+        .with_thread_names(true)
         .with_max_level(Level::TRACE)
         .compact()
         .init();
 
     let mut world = World::new();
 
-    world.spawn(Bytes5(5.0, 22));
-    world.spawn(Bytes5(f32::MAX, u8::MAX));
+    for _ in 0..1000 {
+        world.spawn(Bytes5(5.0, 22));
+        world.spawn((Bytes5(f32::MAX, u8::MAX), Static));
+    }
 
     println!("added: {}", f32::MAX);
 
     let schedule = world
         .build_schedule()
-        .add(Label1, simple_system)
+        .add(Label1, (simple_system, simple_system2))
         .schedule();
 
     world.run(&schedule);

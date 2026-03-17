@@ -1,21 +1,15 @@
-use std::{
-    any::{Any, TypeId},
-    cell::UnsafeCell,
-    ops::{Deref, DerefMut},
-};
+use std::any::{Any, TypeId};
+use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "generics")]
 use generic_array::GenericArray;
 use generic_array::typenum::U1;
-use rustc_hash::FxHashMap;
 
-use crate::{
-    graph::{AccessDesc, AccessType},
-    param::Param,
-    sealed::Sealed,
-    system::SystemMeta,
-    world::World,
-};
+use crate::resource::ResourceRegistry;
+use crate::scheduler::{AccessDesc, AccessType};
+use crate::sealed::Sealed;
+use crate::system::{Param, SystemMeta};
+use crate::world::World;
 
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
@@ -38,16 +32,16 @@ pub trait Resource: Send + Sync + 'static {
 /// A collection of [`Resource`]s.
 pub trait ResourceBundle {
     /// Inserts all [`Resource`]s into the given [`Resources`].
-    fn insert_into(self, resources: &mut Resources);
+    fn insert_into(self, resources: &mut ResourceRegistry);
     /// Whether the given [`Resources`] contains all [`Resource`]s in this bundle.
-    fn contains_all(resources: &Resources) -> bool;
+    fn contains_all(resources: &ResourceRegistry) -> bool;
 }
 
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         #[allow(unused_parens)]
         impl<$($gen: Resource),*> ResourceBundle for ($($gen),*) {
-            fn insert_into(self, resources: &mut Resources) {
+            fn insert_into(self, resources: &mut ResourceRegistry) {
                 #[allow(non_snake_case)]
                 let ($($gen),*) = self;
 
@@ -57,7 +51,7 @@ macro_rules! impl_bundle {
                 )*
             }
 
-            fn contains_all(resources: &Resources) -> bool {
+            fn contains_all(resources: &ResourceRegistry) -> bool {
                 $(
                     resources.storage.contains_key(&ResourceId::of::<$gen>())
                 )&&*
@@ -238,69 +232,5 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
         };
 
         ResMut(res)
-    }
-}
-
-#[derive(Default)]
-pub struct Resources {
-    pub(crate) storage: FxHashMap<ResourceId, UnsafeCell<Box<dyn Resource>>>,
-}
-
-impl Resources {
-    /// Creates a new container for resources.
-    #[inline]
-    pub fn new() -> Resources {
-        Resources::default()
-    }
-
-    /// Inserts a resource into the container.
-    pub fn insert<R: Resource>(&mut self, resource: R) {
-        let id = ResourceId::of::<R>();
-        self.storage.insert(id, UnsafeCell::new(Box::new(resource)));
-    }
-
-    #[inline]
-    pub fn reserve(&mut self, additional: usize) {
-        self.storage.reserve(additional);
-    }
-
-    /// Does the container have these resources?
-    #[inline]
-    pub fn contains<R: ResourceBundle>(&self) -> bool {
-        R::contains_all(self)
-    }
-
-    pub fn get<R: Resource>(&self) -> Option<&R> {
-        let id = ResourceId::of::<R>();
-        let cell = self.storage.get(&id)?;
-
-        let res = unsafe { &*cell.get().cast_const() };
-
-        res.as_any().downcast_ref::<R>()
-    }
-
-    pub fn get_mut<R: Resource>(&mut self) -> Option<&mut R> {
-        let id = ResourceId::of::<R>();
-        self.storage
-            .get_mut(&id)?
-            .get_mut() // Take resource out of unsafe cell.
-            .as_any_mut()
-            .downcast_mut::<R>()
-    }
-
-    // Safety: This should only be called if you will have guaranteed unique access to this resource.
-    pub(crate) unsafe fn get_mut_unchecked<R: Resource>(&self) -> Option<&mut R> {
-        let id = ResourceId::of::<R>();
-        let cell = self.storage.get(&id)?;
-        let boxed = unsafe { &mut *cell.get() };
-
-        boxed.as_any_mut().downcast_mut::<R>()
-    }
-
-    pub fn remove<R: Resource>(&mut self) -> Option<Box<R>> {
-        let id = ResourceId::of::<R>();
-        let cell = self.storage.remove(&id)?;
-
-        cell.into_inner().into_any().downcast::<R>().ok()
     }
 }

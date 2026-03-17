@@ -3,17 +3,14 @@ use std::ptr::NonNull;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::entity::Entity;
-use crate::filter::FilterBundle;
-
-use crate::{
-    component::{ComponentBundle, ComponentRegistry},
-    entity::EntityHandle,
-    query::{QueryBundle, TableCache},
-    signature::Signature,
-    spawn::SpawnBundle,
-    table::Table,
-};
+use crate::archetype::Signature;
+use crate::component::{ComponentRegistry, SpawnBundle};
+use crate::entity::{Entity, EntityHandle};
+use crate::prelude::ComponentBundle;
+#[cfg(feature = "generics")]
+use crate::query::TableCache;
+use crate::query::{FilterBundle, QueryBundle};
+use crate::table::Table;
 
 /// Contains all archetype tables.
 ///
@@ -149,11 +146,12 @@ impl Archetypes {
         let row = table.insert(handle, bundle);
 
         Entity {
-            handle, row,
+            handle,
+            row,
             table: Some(unsafe {
                 // Safety: This is safe because `table` is a reference which is guaranteed to be nonnull.
                 NonNull::new_unchecked(table as *mut Table)
-            })
+            }),
         }
     }
 

@@ -1,8 +1,8 @@
 use std::any::TypeId;
 
 use crate::{
+    archetype::Signature,
     component::{Component, ComponentRegistry},
-    signature::Signature,
     table::{Column, Table},
 };
 

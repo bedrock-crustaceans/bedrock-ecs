@@ -1,21 +1,13 @@
-#[cfg(debug_assertions)]
-use std::{borrow::Borrow, cell::Cell};
-use std::{alloc::Layout, any::TypeId, marker::PhantomData, ptr::NonNull, sync::{Arc, atomic::AtomicUsize}};
+use std::alloc::Layout;
+use std::any::TypeId;
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 
-use rustc_hash::FxHashMap;
+use crate::table::{ColumnIter, ColumnIterMut};
+use crate::util::LayoutExt;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
-
-use crate::{
-    entity::EntityHandle,
-    signature::Signature,
-    spawn::SpawnBundle,
-    table_iterator::{ColumnIter, ColumnIterMut, EntityRefIter},
-    util::{self, LayoutExt},
-    world::World,
-};
-use crate::table_iterator::EntityIter;
 
 /// A function pointer to a function that can drop an array of elements.
 type DropFn = unsafe fn(ptr: *mut u8, len: usize);
@@ -83,9 +75,6 @@ impl Column {
         };
 
         let layout = Layout::new::<T>();
-
-        println!("layout size: {}", layout.size());
-
         if std::mem::size_of::<T>() == 0 {
             tracing::trace!(
                 "created new column for ZST `{}`, needs drop: {}",
@@ -118,7 +107,7 @@ impl Column {
             Column {
                 #[cfg(debug_assertions)]
                 enforcer: BorrowEnforcer::new(),
-                
+
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -157,7 +146,7 @@ impl Column {
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
-                guard: Some(guard)
+                _guard: Some(guard),
             }
         } else {
             ColumnIter {
@@ -166,7 +155,7 @@ impl Column {
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
-                guard: Some(guard)
+                _guard: Some(guard),
             }
         }
     }
@@ -188,7 +177,7 @@ impl Column {
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
-                guard: Some(guard)
+                _guard: Some(guard),
             }
         } else {
             ColumnIterMut {
@@ -197,7 +186,7 @@ impl Column {
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
-                guard: Some(guard)
+                _guard: Some(guard),
             }
         }
     }
@@ -211,7 +200,7 @@ impl Column {
             // Do nothing for ZSTs and
             // don't bother allocating for 0 size. This also ensures that we do not try to allocate
             // an empty array of zero size.
-            return
+            return;
         }
 
         let cap = self.cap + n;
@@ -328,14 +317,10 @@ impl Column {
         // above we know that `index < self.len` and the offset result is within this allocation.
         //
         // By the assertion we also know that the pointer is pointing to some type `T`.
-        let ptr = unsafe {
-            self.data.unwrap().add(offset).cast::<T>()
-        };
+        let ptr = unsafe { self.data.unwrap().add(offset).cast::<T>() };
 
         // Safety: This is a valid pointer by the check above.
-        Some(unsafe {
-            &*ptr.as_ptr().cast_const()
-        })
+        Some(unsafe { &*ptr.as_ptr().cast_const() })
     }
 
     /// Removes the item at index and moves the last item in the Column to the, now empty, slot.
@@ -448,7 +433,10 @@ impl Drop for Column {
             }
 
             if self.layout.size() != 0 {
-                let (layout, _) = self.layout.repeat_ext(self.cap).expect("invalid array layout");
+                let (layout, _) = self
+                    .layout
+                    .repeat_ext(self.cap)
+                    .expect("invalid array layout");
                 // Safety:
                 //
                 // This is safe because `ptr` has previously been allocated with `alloc` and
@@ -459,86 +447,5 @@ impl Drop for Column {
                 }
             }
         }
-    }
-}
-
-/// A table is the main storage container for entity components. It is made for a specific archetype only
-/// and consists of a list of columns for each component.
-///
-/// Consider the archetype `(Health, Transform)` then its corresponding table contains
-/// two columns: one for `Health` and another for `Transform`.
-///
-/// # Safety
-///
-/// Tables are always to read from during a tick since entities will only be summoned in between ticks.
-#[derive(Debug)]
-pub struct Table {
-    /// The signature of this table. This is by queries to quickly scan for their components
-    /// through the entire component database.
-    pub(crate) signature: Signature,
-    // The `entities` and `columnns` fields are perfectly aligned, i.e.
-    // an entity at index 5 in `entities` will have its components stored at row
-    // 5 in the `columns` field.
-    pub(crate) entities: Vec<EntityHandle>,
-    /// A lookup table that maps component type IDs to columns.
-    pub(crate) lookup: FxHashMap<TypeId, usize>,
-    /// All columns that this table contains. Most users will know exactly which column they want.
-    /// Therefore, this is a vector, avoiding the cost of hashing. In case the column index is unknown,
-    /// the `lookup` table can be used to find it.
-    pub(crate) columns: Vec<Column>,
-}
-
-impl Table {
-    /// Creates a new table for the given collection of components and inserts those components into the
-    /// table.
-    #[inline]
-    pub fn new<G: SpawnBundle>(bitset: Signature) -> Table {
-        G::new_table(bitset)
-    }
-
-    /// Returns the archetype of this table.
-    pub fn archetype(&self) -> &Signature {
-        &self.signature
-    }
-
-    /// Inserts a set of components into this table and returns the row it was inserted at
-    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) -> TableRow {
-        let row = self.entities.len();
-        self.entities.push(entity);
-
-        components.insert_into(&mut self.columns);
-
-        TableRow(row)
-    }
-
-    /// Returns a list of all columns in this table.
-    pub fn columns(&self) -> &[Column] {
-        &self.columns
-    }
-
-    /// Returns the specified column from this table.
-    pub fn column(&self, index: usize) -> &Column {
-        &self.columns[index]
-    }
-
-    /// Creates an iterator over all the entities in this table.
-    pub fn iter_entity_refs<'w>(&'w self, world: &'w World) -> EntityRefIter<'w> {
-        EntityRefIter {
-            world,
-            iter: self.entities.iter(),
-        }
-    }
-
-    pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
-        EntityIter {
-            row_index: 0,
-            table: NonNull::new(self as *const Table as *mut Table),
-            iter: self.entities.iter()
-        }
-    }
-
-    /// Returns the amount of entities stored in this table.
-    pub fn len(&self) -> usize {
-        self.entities.len()
     }
 }

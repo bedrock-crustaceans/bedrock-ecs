@@ -1,9 +1,10 @@
-use crate::archetype::Archetypes;
-use crate::component::ComponentBundle;
-use crate::signature::Signature;
+use std::marker::PhantomData;
+
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
-use std::marker::PhantomData;
+
+use crate::archetype::{Archetypes, Signature};
+use crate::component::ComponentBundle;
 
 /// Implements the filtering functionality in queries.
 pub trait Filter {

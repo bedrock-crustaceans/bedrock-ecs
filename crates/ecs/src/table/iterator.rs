@@ -1,14 +1,14 @@
-use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
+use std::iter::FusedIterator;
+use std::marker::PhantomData;
+use std::ptr::NonNull;
+
+use crate::entity::{Entity, EntityHandle, EntityRef};
+use crate::query::EmptyableIterator;
+use crate::table::{Table, TableRow};
+use crate::world::World;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
-use crate::{
-    entity::{EntityRef, EntityHandle},
-    query::EmptyableIterator,
-    world::World,
-};
-use crate::entity::Entity;
-use crate::table::{Table, TableRow};
 
 pub struct ColumnIter<'a, T> {
     /// Pointer to current component.
@@ -18,7 +18,7 @@ pub struct ColumnIter<'a, T> {
     pub(crate) _marker: PhantomData<&'a T>,
 
     #[cfg(debug_assertions)]
-    pub(crate) guard: Option<ReadGuard>
+    pub(crate) _guard: Option<ReadGuard>,
 }
 
 impl<'a, T> Iterator for ColumnIter<'a, T> {
@@ -34,7 +34,7 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
 
         self.remaining -= 1;
 
-        // Safety: This is safe because by the check at the start of the function, there are 
+        // Safety: This is safe because by the check at the start of the function, there are
         // remaining elements.
         *ptr = unsafe { ptr.add(1) };
 
@@ -63,7 +63,7 @@ impl<'a, T> EmptyableIterator<'a, &'a T> for ColumnIter<'a, T> {
             _marker: PhantomData,
 
             #[cfg(debug_assertions)]
-            guard: None
+            _guard: None,
         }
     }
 }
@@ -76,7 +76,7 @@ pub struct ColumnIterMut<'a, T> {
     pub(crate) _marker: PhantomData<&'a mut T>,
 
     #[cfg(debug_assertions)]
-    pub(crate) guard: Option<WriteGuard>
+    pub(crate) _guard: Option<WriteGuard>,
 }
 
 impl<'a, T> Iterator for ColumnIterMut<'a, T> {
@@ -118,7 +118,7 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
             _marker: PhantomData,
 
             #[cfg(debug_assertions)]
-            guard: None
+            _guard: None,
         }
     }
 }
@@ -126,7 +126,7 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
 pub struct EntityIter<'w> {
     pub(crate) table: Option<NonNull<Table>>,
     pub(crate) row_index: usize,
-    pub(crate) iter: std::slice::Iter<'w, EntityHandle>
+    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
 }
 
 impl<'w> Iterator for EntityIter<'w> {
@@ -135,13 +135,13 @@ impl<'w> Iterator for EntityIter<'w> {
     fn next(&mut self) -> Option<Entity> {
         let handle = *self.iter.next()?;
         let row_index = self.row_index;
-        
+
         self.row_index += 1;
 
         Some(Entity {
             table: self.table,
             row: TableRow(row_index),
-            handle
+            handle,
         })
     }
 }
@@ -160,7 +160,7 @@ impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
         EntityIter {
             table: None,
             row_index: 0,
-            iter: [].iter()
+            iter: [].iter(),
         }
     }
 }
@@ -178,7 +178,7 @@ impl<'w> Iterator for EntityRefIter<'w> {
 
         Some(EntityRef {
             handle: *id,
-            world: self.world
+            world: self.world,
         })
     }
 }
@@ -196,7 +196,7 @@ impl<'w> EmptyableIterator<'w, EntityRef<'w>> for EntityRefIter<'w> {
     fn empty(world: &'w World) -> EntityRefIter<'w> {
         EntityRefIter {
             world,
-            iter: [].iter()
+            iter: [].iter(),
         }
     }
 }

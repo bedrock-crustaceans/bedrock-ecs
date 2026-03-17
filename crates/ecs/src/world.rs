@@ -9,26 +9,28 @@ use crate::param;
 
 use crate::archetype::Archetypes;
 use crate::command::CommandScheduler;
-use crate::component::ComponentBundle;
-use crate::entity::{Entities, EntityRef, EntityHandle, EntityMut};
-use crate::graph::{AccessDesc, AccessType, Schedule};
-use crate::param::Param;
-use crate::resource::{Resource, ResourceBundle, Resources};
-use crate::schedule::ScheduleBuilder;
-use crate::spawn::SpawnBundle;
-use crate::system::SystemMeta;
+use crate::component::{ComponentBundle, SpawnBundle};
+use crate::entity::{Entities, EntityHandle, EntityMut, EntityRef};
+use crate::resource::{Resource, ResourceBundle, ResourceRegistry};
+use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
+use crate::system::{Param, SystemMeta};
 
 #[derive(Default)]
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
-    pub(crate) resources: Resources,
-    pub(crate) commands: CommandScheduler
+    pub(crate) resources: ResourceRegistry,
+    pub(crate) commands: CommandScheduler,
 }
 
 impl World {
     #[inline]
     pub fn new() -> World {
+        rayon::ThreadPoolBuilder::new()
+            .thread_name(|i| format!("ecs-worker-{i}"))
+            .build_global()
+            .unwrap();
+
         World::default()
     }
 
@@ -112,11 +114,24 @@ impl World {
 
     pub fn run(&mut self, schedule: &Schedule) {
         for set in &schedule.sets {
-            for id in set {
-                schedule.systems.get(id).unwrap().call(&self);
-            }
+            // for id in set {
+            //     schedule.systems.get(id).unwrap().call(&self);
+            // }
 
-            tracing::info!("Running next set");
+            rayon::scope(|s| {
+                for system in schedule.systems.values() {
+                    s.spawn(|_| {
+                        system.call(&self);
+                    })
+                }
+                // for id in set {
+                //     s.spawn(|_| {
+                //         schedule.systems.get(id).unwrap().call(&self);
+                //     });
+                // }
+            });
+
+            // tracing::info!("Running next set");
             // rayon::scope(|s| {
             //     for id in set {
             //         s.spawn(|_| {

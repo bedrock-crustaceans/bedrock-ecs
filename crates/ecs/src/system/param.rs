@@ -1,10 +1,13 @@
-use crate::graph::AccessDesc;
-use crate::system::SystemMeta;
-use crate::{sealed::Sealed, world::World};
-use generic_array::typenum::{FoldAdd, U0, Unsigned};
-use generic_array::{ArrayLength, GenericArray};
 use std::mem::MaybeUninit;
 use std::ops::Add;
+
+use generic_array::typenum::{FoldAdd, U0, Unsigned};
+use generic_array::{ArrayLength, GenericArray};
+
+use crate::scheduler::AccessDesc;
+use crate::sealed::Sealed;
+use crate::system::SystemMeta;
+use crate::world::World;
 
 #[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
@@ -82,7 +85,7 @@ unsafe impl ParamBundle for () {
         // This is safe because the array has no items and therefore does not require initialization.
         // I use this method instead of `GenericArray::default` because `AccessDesc` does not
         // implement `Default` and the other methods either include heap allocation or iterators.
-        unsafe { GenericArray::assume_init(GenericArray::uninit()) }
+        unsafe { GenericArray::assume_init(GenericArray::<AccessDesc, U0>::uninit()) }
     }
 
     #[cfg(not(feature = "generics"))]

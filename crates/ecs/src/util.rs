@@ -13,7 +13,6 @@ macro_rules! create_tarray {
 }
 
 pub trait LayoutExt {
-    
     fn repeat_packed_ext(&self, n: usize) -> Option<Layout>;
     fn repeat_ext(&self, n: usize) -> Option<(Layout, usize)>;
 }
@@ -39,14 +38,20 @@ impl LayoutExt for Layout {
 
 #[cfg(debug_assertions)]
 pub mod debug {
-    use std::{sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}}, thread::ThreadId};
+    use std::{
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+        thread::ThreadId,
+    };
 
     #[derive(Default, Debug)]
     pub struct BorrowEnforcer {
         last_call: Mutex<String>,
         shared: Arc<AtomicUsize>,
         exclusive: Arc<AtomicUsize>,
-        holder: Arc<Mutex<Option<ThreadId>>>
+        holder: Arc<Mutex<Option<ThreadId>>>,
     }
 
     impl BorrowEnforcer {
@@ -58,7 +63,8 @@ pub mod debug {
         #[track_caller]
         pub fn read(&self) -> ReadGuard {
             assert_eq!(
-                self.exclusive.load(Ordering::SeqCst), 0, 
+                self.exclusive.load(Ordering::SeqCst),
+                0,
                 "attempt to read while writer is active. last caller: {}",
                 self.last_call.lock().unwrap()
             );
@@ -66,7 +72,7 @@ pub mod debug {
             *self.last_call.lock().unwrap() = std::panic::Location::caller().to_string();
             self.shared.fetch_add(1, Ordering::SeqCst);
             ReadGuard {
-                counter: self.shared.clone()
+                counter: self.shared.clone(),
             }
         }
 
@@ -74,7 +80,8 @@ pub mod debug {
         #[track_caller]
         pub fn write(&self) -> WriteGuard {
             assert_eq!(
-                self.shared.load(Ordering::SeqCst), 0, 
+                self.shared.load(Ordering::SeqCst),
+                0,
                 "attempt to write while readers are active. last caller: {}",
                 self.last_call.lock().unwrap()
             );
@@ -84,7 +91,8 @@ pub mod debug {
             let mut lock = self.holder.lock().unwrap();
             if let Some(id) = *lock {
                 assert_eq!(
-                    id, current_id, 
+                    id,
+                    current_id,
                     "attempt to write while writer is active. last caller: {}",
                     self.last_call.lock().unwrap()
                 );
@@ -97,13 +105,13 @@ pub mod debug {
 
             WriteGuard {
                 counter: self.exclusive.clone(),
-                holder: self.holder.clone()
+                holder: self.holder.clone(),
             }
         }
     }
 
     pub struct ReadGuard {
-        counter: Arc<AtomicUsize>
+        counter: Arc<AtomicUsize>,
     }
 
     impl Clone for ReadGuard {
@@ -111,7 +119,7 @@ pub mod debug {
             self.counter.fetch_add(1, Ordering::SeqCst);
 
             ReadGuard {
-                counter: self.counter.clone()
+                counter: self.counter.clone(),
             }
         }
     }
@@ -124,7 +132,7 @@ pub mod debug {
 
     pub struct WriteGuard {
         counter: Arc<AtomicUsize>,
-        holder: Arc<Mutex<Option<ThreadId>>>
+        holder: Arc<Mutex<Option<ThreadId>>>,
     }
 
     impl Drop for WriteGuard {

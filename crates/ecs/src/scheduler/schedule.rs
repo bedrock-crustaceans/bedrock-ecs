@@ -1,9 +1,9 @@
-use rustc_hash::FxHashMap;
 use std::any::TypeId;
 
-use crate::graph::{GraphNode, Schedule, ScheduleGraph};
-use crate::param::ParamBundle;
-use crate::system::{IntoSystem, System, SystemId};
+use rustc_hash::FxHashMap;
+
+use crate::scheduler::{GraphNode, Schedule, ScheduleGraph};
+use crate::system::{IntoSystem, ParamBundle, System, SystemId};
 use crate::world::World;
 
 #[diagnostic::on_unimplemented(
