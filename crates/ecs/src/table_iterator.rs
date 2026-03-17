@@ -1,5 +1,7 @@
 use std::{iter::FusedIterator, marker::PhantomData, ptr::NonNull};
 
+#[cfg(debug_assertions)]
+use crate::util::debug::{ReadGuard, WriteGuard};
 use crate::{
     entity::{EntityRef, EntityHandle},
     query::EmptyableIterator,
@@ -14,6 +16,9 @@ pub struct ColumnIter<'a, T> {
     /// Remaining elements
     pub(crate) remaining: usize,
     pub(crate) _marker: PhantomData<&'a T>,
+
+    #[cfg(debug_assertions)]
+    pub(crate) guard: Option<ReadGuard>
 }
 
 impl<'a, T> Iterator for ColumnIter<'a, T> {
@@ -28,6 +33,9 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
         let item = unsafe { &*ptr.as_ptr().cast_const() };
 
         self.remaining -= 1;
+
+        // Safety: This is safe because by the check at the start of the function, there are 
+        // remaining elements.
         *ptr = unsafe { ptr.add(1) };
 
         Some(item)
@@ -53,6 +61,9 @@ impl<'a, T> EmptyableIterator<'a, &'a T> for ColumnIter<'a, T> {
             curr: None,
             remaining: 0,
             _marker: PhantomData,
+
+            #[cfg(debug_assertions)]
+            guard: None
         }
     }
 }
@@ -63,6 +74,9 @@ pub struct ColumnIterMut<'a, T> {
     /// Remaining elements
     pub(crate) remaining: usize,
     pub(crate) _marker: PhantomData<&'a mut T>,
+
+    #[cfg(debug_assertions)]
+    pub(crate) guard: Option<WriteGuard>
 }
 
 impl<'a, T> Iterator for ColumnIterMut<'a, T> {
@@ -102,6 +116,9 @@ impl<'a, T> EmptyableIterator<'a, &'a mut T> for ColumnIterMut<'a, T> {
             curr: None,
             remaining: 0,
             _marker: PhantomData,
+
+            #[cfg(debug_assertions)]
+            guard: None
         }
     }
 }

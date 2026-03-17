@@ -12,56 +12,26 @@ use ecs::entity::Entity;
 use ecs::filter::With;
 
 #[derive(Debug, Copy, Clone, Component)]
-struct Position {
-    x: f32,
-    y: f32,
-}
-#[derive(Debug, Copy, Clone, Component)]
 struct Velocity {
     x: f32,
     y: f32,
 }
 #[derive(Debug, Copy, Clone, Component)]
 struct Health(f32);
+
 #[derive(Debug, Copy, Clone, Component)]
-struct Faction(u8);
-#[derive(Debug, Copy, Clone, Component)]
-struct Mass(f32);
+struct Bytes5(f32, u8);
+
 #[derive(Debug, Copy, Clone, Component)]
 struct Static; // Marker component
 
 #[derive(Debug, Resource)]
 struct GlobalTimer(u32);
 
-fn simple_system(query: Query<(EntityRef, &Health), Without<Mass>>) {
-    for (entity, health) in &query {
-        tracing::info!(
-            "Massless entity {:?} has {:?} health",
-            entity.handle(),
-            health.0
-        );
-
-        assert!(!entity.has::<Mass>());
-    }
-}
-
-fn second_system(query: Query<(&Health, &Mass)>) {
-    for (health, mass) in &query {
-        tracing::info!("health is {health:?}, mass is {mass:?}");
-    }
-}
-
-fn resource_system(res: ResMut<GlobalTimer>) {
-    let time = res.0;
-    println!("Time is {time:?}");
-}
-
-fn command_system(query: Query<(Entity, EntityRef), With<Mass>>, mut commands: Commands) {
-    // commands.spawn(Health(1.0));
-
-    for (entity, entity_ref) in &query {
-        println!("entity: {entity:?}");
-        println!("entity_ref: {:?}", entity_ref.handle());
+fn simple_system(query: Query<&Bytes5>) {
+    for bytes in &query {
+        let b0 = bytes.0;
+        println!("bytes5: {} {}", b0, bytes.1);
     }
 }
 
@@ -83,40 +53,14 @@ fn stress_test() {
 
     let mut world = World::new();
 
-    // Spawn 10,000 entities to ensure the loop actually takes time
-    tracing::info!("Summoning entities");
+    world.spawn(Bytes5(5.0, 22));
+    world.spawn(Bytes5(f32::MAX, u8::MAX));
 
-    let mut entity_id = EntityHandle::dangling();
-    for i in 0..2u32 {
-        entity_id = world
-            .spawn((
-                // Position { x: i as f32, y: 0.0 },
-                Velocity { x: 1.0, y: 1.0 },
-                // Faction((i % 2) as u8),
-                Mass(i as f32),
-                Health(i as f32),
-            ))
-            .handle();
-    }
+    println!("added: {}", f32::MAX);
 
-    for i in 0..2u32 {
-        world.spawn((
-            // Faction((i % 2) as u8),
-            Mass(i as f32 + 100.0),
-            Health(i as f32 + 100.0),
-        ));
-    }
-
-    world.add_resources(GlobalTimer(5));
-
-    world.get_entity_mut(entity_id).unwrap().despawn();
-
-    world.spawn(Health(69.0));
-
-    tracing::info!("Generating schedule...");
     let schedule = world
         .build_schedule()
-        .add(Label1, (simple_system, second_system, resource_system, command_system))
+        .add(Label1, simple_system)
         .schedule();
 
     world.run(&schedule);

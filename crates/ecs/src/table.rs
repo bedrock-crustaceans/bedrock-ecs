@@ -1,15 +1,18 @@
-use std::{alloc::Layout, any::TypeId, marker::PhantomData, ptr::NonNull};
+#[cfg(debug_assertions)]
+use std::{borrow::Borrow, cell::Cell};
+use std::{alloc::Layout, any::TypeId, marker::PhantomData, ptr::NonNull, sync::{Arc, atomic::AtomicUsize}};
 
 use rustc_hash::FxHashMap;
 
 #[cfg(debug_assertions)]
-use crate::util::debug::RwFlag;
+use crate::util::debug::BorrowEnforcer;
+
 use crate::{
-    entity::{EntityHandle},
+    entity::EntityHandle,
     signature::Signature,
     spawn::SpawnBundle,
     table_iterator::{ColumnIter, ColumnIterMut, EntityRefIter},
-    util,
+    util::{self, LayoutExt},
     world::World,
 };
 use crate::table_iterator::EntityIter;
@@ -43,8 +46,8 @@ pub struct TableRow(pub(crate) usize);
 #[derive(Debug)]
 pub struct Column {
     #[cfg(debug_assertions)]
-    /// A debug-only flag that indicates whether the column is currently being read from or written to.
-    flag: RwFlag,
+    enforcer: BorrowEnforcer,
+
     /// The type ID of the item contained in this Column.
     ty: TypeId,
     /// The layout of the component type.
@@ -80,6 +83,9 @@ impl Column {
         };
 
         let layout = Layout::new::<T>();
+
+        println!("layout size: {}", layout.size());
+
         if std::mem::size_of::<T>() == 0 {
             tracing::trace!(
                 "created new column for ZST `{}`, needs drop: {}",
@@ -92,7 +98,8 @@ impl Column {
 
             Column {
                 #[cfg(debug_assertions)]
-                flag: RwFlag::new(),
+                enforcer: BorrowEnforcer::new(),
+
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -110,7 +117,8 @@ impl Column {
 
             Column {
                 #[cfg(debug_assertions)]
-                flag: RwFlag::new(),
+                enforcer: BorrowEnforcer::new(),
+                
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -125,11 +133,17 @@ impl Column {
     ///
     /// In other words, this is equivalent to `std::mem::size_of::<T>()` where
     /// `T` is the type contained in this `Column`.
-    pub fn entry_size(&self) -> usize {
-        self.layout.size()
+    pub fn padded_size(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        self.layout.pad_to_align().size()
     }
 
     pub fn iter<T: 'static>(&self) -> ColumnIter<'_, T> {
+        #[cfg(debug_assertions)]
+        let guard = self.enforcer.read();
+
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
@@ -141,17 +155,26 @@ impl Column {
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
                 _marker: PhantomData,
+
+                #[cfg(debug_assertions)]
+                guard: Some(guard)
             }
         } else {
             ColumnIter {
                 curr: None,
                 remaining: 0,
                 _marker: PhantomData,
+
+                #[cfg(debug_assertions)]
+                guard: Some(guard)
             }
         }
     }
 
     pub fn iter_mut<T: 'static>(&self) -> ColumnIterMut<'_, T> {
+        #[cfg(debug_assertions)]
+        let guard = self.enforcer.write();
+
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
@@ -163,35 +186,36 @@ impl Column {
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
                 _marker: PhantomData,
+
+                #[cfg(debug_assertions)]
+                guard: Some(guard)
             }
         } else {
             ColumnIterMut {
                 curr: None,
                 remaining: 0,
                 _marker: PhantomData,
+
+                #[cfg(debug_assertions)]
+                guard: Some(guard)
             }
         }
     }
 
-    /// Reserves capacity for `n` additional entries.
+    /// Reserves capacity for at least `n` additional entries.
     pub fn reserve(&mut self, n: usize) {
-        assert_ne!(
-            self.layout.size(),
-            0,
-            "Column::reserve should not be called for ZSTs"
-        );
-
         #[cfg(debug_assertions)]
-        let _guard = self.flag.write();
+        let _guard = self.enforcer.write();
 
-        if n == 0 {
-            // Don't bother allocating for 0 size. This also ensures that we do not try to allocate
+        if n == 0 || self.layout.size() == 0 {
+            // Do nothing for ZSTs and
+            // don't bother allocating for 0 size. This also ensures that we do not try to allocate
             // an empty array of zero size.
-            return;
+            return
         }
 
         let cap = self.cap + n;
-        let new_layout = util::repeat_layout(self.layout, cap);
+        let (new_layout, _) = self.layout.repeat_ext(cap).expect("invalid array layout");
 
         assert!(
             new_layout.size() <= isize::MAX as usize,
@@ -228,7 +252,7 @@ impl Column {
     /// to `Column::new`. This `T` is not stored in the `Column` type to prevent the runtime cost of dynamic dispatch.
     pub fn push<T: 'static>(&mut self, data: T) {
         #[cfg(debug_assertions)]
-        let mut _guard = self.flag.write();
+        let _guard = self.enforcer.write();
 
         assert_eq!(
             TypeId::of::<T>(),
@@ -237,20 +261,12 @@ impl Column {
         );
 
         if self.cap <= self.len {
-            #[cfg(debug_assertions)]
-            drop(_guard);
-
             // Reserve at least 4 slots to reduce allocations at the start.
             let new_slots = self.cap.clamp(4, usize::MAX);
             self.reserve(new_slots);
-
-            #[cfg(debug_assertions)]
-            {
-                _guard = self.flag.write();
-            }
         }
 
-        let offset = self.layout.size() * self.len;
+        let offset = self.layout.pad_to_align().size() * self.len;
         assert!(
             offset <= isize::MAX as usize,
             "Pointer offset overflow in Column::push"
@@ -285,7 +301,10 @@ impl Column {
     /// In other words, if there exists a muColumn reference to this `Column`, you cannot dereference the returned
     /// pointer. If there exists an immuColumn reference to this `Column`, you must cast the pointer to a `*const T` and
     /// only use it as an immuColumn pointer. If there exist no references, you can do either.
-    pub fn get<T: 'static>(&self, index: usize) -> Option<NonNull<T>> {
+    pub fn get<T: 'static>(&self, index: usize) -> Option<&T> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
@@ -309,7 +328,14 @@ impl Column {
         // above we know that `index < self.len` and the offset result is within this allocation.
         //
         // By the assertion we also know that the pointer is pointing to some type `T`.
-        Some(unsafe { self.data.unwrap().add(offset).cast::<T>() })
+        let ptr = unsafe {
+            self.data.unwrap().add(offset).cast::<T>()
+        };
+
+        // Safety: This is a valid pointer by the check above.
+        Some(unsafe {
+            &*ptr.as_ptr().cast_const()
+        })
     }
 
     /// Removes the item at index and moves the last item in the Column to the, now empty, slot.
@@ -319,12 +345,12 @@ impl Column {
     /// This function panics if the index is out of bounds.
     pub fn swap_remove(&mut self, idx: usize) {
         #[cfg(debug_assertions)]
-        let _guard = self.flag.write();
+        let _guard = self.enforcer.write();
 
         assert!(idx < self.len, "Column::swap_remove index out of bounds");
 
         let data_ptr = self.data.unwrap().as_ptr();
-        let dst_offset = self.entry_size() * idx;
+        let dst_offset = self.padded_size() * idx;
         assert!(
             dst_offset <= isize::MAX as usize,
             "Pointer offset overflow in Column::swap_remove dst pointer"
@@ -354,7 +380,7 @@ impl Column {
         });
 
         if idx != self.len - 1 {
-            let src_offset = self.entry_size() * (self.len() - 1);
+            let src_offset = self.padded_size() * (self.len() - 1);
             assert!(
                 src_offset <= isize::MAX as usize,
                 "Pointer offset overflow in Column::swap_remove src pointer"
@@ -387,14 +413,16 @@ impl Column {
     /// The amount of elements currently contained in the column.
     pub fn len(&self) -> usize {
         #[cfg(debug_assertions)]
-        let _guard = self.flag.read();
+        let _guard = self.enforcer.read();
+
         self.len
     }
 
     /// The capacity of the column.
     pub fn capacity(&self) -> usize {
         #[cfg(debug_assertions)]
-        let _guard = self.flag.read();
+        let _guard = self.enforcer.read();
+
         self.cap
     }
 }
@@ -402,7 +430,7 @@ impl Column {
 impl Drop for Column {
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
-        let _guard = self.flag.write();
+        let _guard = self.enforcer.write();
 
         if let Some(ptr) = self.data {
             // Drop contents if it matters
@@ -420,7 +448,7 @@ impl Drop for Column {
             }
 
             if self.layout.size() != 0 {
-                let layout = util::repeat_layout(self.layout, self.cap);
+                let (layout, _) = self.layout.repeat_ext(self.cap).expect("invalid array layout");
                 // Safety:
                 //
                 // This is safe because `ptr` has previously been allocated with `alloc` and

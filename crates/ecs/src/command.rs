@@ -6,7 +6,6 @@ use generic_array::typenum::U0;
 use thread_local::ThreadLocal;
 use crate::entity::{Entity, EntityHandle};
 use crate::graph::AccessDesc;
-use crate::param;
 use crate::param::Param;
 use crate::sealed::Sealed;
 use crate::spawn::SpawnBundle;

@@ -670,8 +670,8 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
 
     fn iter<'t>(world: &'t World, table: usize, col: usize) -> ColumnIterMut<'t, T> {
         let table = world.archetypes.get_by_index(table);
-        let col = table.column(col);
 
+        let col = table.column(col);
         col.iter_mut()
     }
 }

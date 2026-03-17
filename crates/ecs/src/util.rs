@@ -12,87 +12,127 @@ macro_rules! create_tarray {
     }
 }
 
-/// Repeats `layout` to create an array of size `n`.
-pub fn repeat_layout(layout: Layout, n: usize) -> Layout {
-    let size = layout.size();
-    let align = layout.align();
+pub trait LayoutExt {
+    
+    fn repeat_packed_ext(&self, n: usize) -> Option<Layout>;
+    fn repeat_ext(&self, n: usize) -> Option<(Layout, usize)>;
+}
 
-    let padded = (size + align - 1) & !(align - 1);
-    let total = padded
-        .checked_mul(n)
-        .expect("Array capacity has overflowed");
+impl LayoutExt for Layout {
+    fn repeat_packed_ext(&self, n: usize) -> Option<Layout> {
+        if let Some(size) = self.size().checked_mul(n) {
+            Layout::from_size_align(size, self.align()).ok()
+        } else {
+            None
+        }
+    }
 
-    Layout::from_size_align(total, align).expect("Invalid array layout")
+    fn repeat_ext(&self, n: usize) -> Option<(Layout, usize)> {
+        let padded = self.pad_to_align();
+        if let Some(repeated) = padded.repeat_packed_ext(n) {
+            Some((repeated, padded.size()))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(debug_assertions)]
 pub mod debug {
-    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::{sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}}, thread::ThreadId};
 
-    const UNLOCKED: u8 = 0;
+    #[derive(Default, Debug)]
+    pub struct BorrowEnforcer {
+        last_call: Mutex<String>,
+        shared: Arc<AtomicUsize>,
+        exclusive: Arc<AtomicUsize>,
+        holder: Arc<Mutex<Option<ThreadId>>>
+    }
 
-    pub struct RwGuard<'a, const WRITE: bool>(&'a RwFlag);
-
-    impl<'a> Clone for RwGuard<'a, false> {
-        fn clone(&self) -> RwGuard<'a, false> {
-            self.0.read()
+    impl BorrowEnforcer {
+        pub fn new() -> BorrowEnforcer {
+            Self::default()
         }
-    }
 
-    impl<'a, const WRITE: bool> Drop for RwGuard<'a, WRITE> {
-        fn drop(&mut self) {
-            self.0.unlock_guardless();
-        }
-    }
+        #[must_use]
+        #[track_caller]
+        pub fn read(&self) -> ReadGuard {
+            assert_eq!(
+                self.exclusive.load(Ordering::SeqCst), 0, 
+                "attempt to read while writer is active. last caller: {}",
+                self.last_call.lock().unwrap()
+            );
 
-    #[derive(Debug, Default)]
-    pub struct RwFlag {
-        state: AtomicU8,
-    }
-
-    impl RwFlag {
-        pub fn new() -> RwFlag {
-            RwFlag {
-                state: AtomicU8::new(UNLOCKED),
+            *self.last_call.lock().unwrap() = std::panic::Location::caller().to_string();
+            self.shared.fetch_add(1, Ordering::SeqCst);
+            ReadGuard {
+                counter: self.shared.clone()
             }
         }
 
-        pub fn state(&self) -> u8 {
-            self.state.load(Ordering::SeqCst)
+        #[must_use]
+        #[track_caller]
+        pub fn write(&self) -> WriteGuard {
+            assert_eq!(
+                self.shared.load(Ordering::SeqCst), 0, 
+                "attempt to write while readers are active. last caller: {}",
+                self.last_call.lock().unwrap()
+            );
+
+            let current_id = std::thread::current().id();
+
+            let mut lock = self.holder.lock().unwrap();
+            if let Some(id) = *lock {
+                assert_eq!(
+                    id, current_id, 
+                    "attempt to write while writer is active. last caller: {}",
+                    self.last_call.lock().unwrap()
+                );
+            }
+
+            *self.last_call.lock().unwrap() = std::panic::Location::caller().to_string();
+
+            *lock = Some(std::thread::current().id());
+            self.exclusive.fetch_add(1, Ordering::SeqCst);
+
+            WriteGuard {
+                counter: self.exclusive.clone(),
+                holder: self.holder.clone()
+            }
         }
+    }
 
-        pub fn read(&self) -> RwGuard<'_, false> {
-            let prev = self.state.fetch_max(1, Ordering::SeqCst);
-            assert_eq!(prev, UNLOCKED, "RwFlag was write, cannot read");
-            // tracing::info!("Lock guard read");
+    pub struct ReadGuard {
+        counter: Arc<AtomicUsize>
+    }
 
-            RwGuard(self)
+    impl Clone for ReadGuard {
+        fn clone(&self) -> ReadGuard {
+            self.counter.fetch_add(1, Ordering::SeqCst);
+
+            ReadGuard {
+                counter: self.counter.clone()
+            }
         }
+    }
 
-        pub fn write(&self) -> RwGuard<'_, true> {
-            let prev = self.state.fetch_add(2, Ordering::SeqCst);
-            assert_eq!(prev, UNLOCKED, "RwFlag was not unlocked, cannot write");
-            // tracing::info!("Lock guard write");
-
-            RwGuard(self)
+    impl Drop for ReadGuard {
+        fn drop(&mut self) {
+            self.counter.fetch_sub(1, Ordering::SeqCst);
         }
+    }
 
-        pub fn read_guardless(&self) {
-            let prev = self.state.fetch_max(1, Ordering::SeqCst);
-            assert_eq!(prev, UNLOCKED, "RwFlag was write, cannot read");
-            // tracing::info!("Lock guardless read");
-        }
+    pub struct WriteGuard {
+        counter: Arc<AtomicUsize>,
+        holder: Arc<Mutex<Option<ThreadId>>>
+    }
 
-        pub fn write_guardless(&self) {
-            let prev = self.state.fetch_add(2, Ordering::SeqCst);
-            assert_eq!(prev, UNLOCKED, "RwFlag was not unlocked, cannot write");
-            // tracing::info!("Lock guardless write");
-        }
+    impl Drop for WriteGuard {
+        fn drop(&mut self) {
+            self.counter.fetch_sub(1, Ordering::SeqCst);
 
-        pub fn unlock_guardless(&self) {
-            let prev = self.state.fetch_min(0, Ordering::SeqCst);
-            assert_ne!(prev, UNLOCKED, "Cannot unlock RwFlag twice");
-            // tracing::info!("Unlock");
+            let mut lock = self.holder.lock().unwrap();
+            *lock = None;
         }
     }
 }

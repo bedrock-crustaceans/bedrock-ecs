@@ -32,7 +32,7 @@ impl From<usize> for ComponentId {
 }
 
 /// A marker trait indicating that the implementor can be used as a component.
-pub trait Component: 'static {}
+pub trait Component: std::fmt::Debug + 'static {}
 
 /// A collection of components used in a filter. This trait makes it possible to use tuples
 /// of components inside of filters rather than just a single component.
