@@ -1,6 +1,6 @@
 use crate::command::{Command, Commands};
 use crate::component::SpawnBundle;
-use crate::entity::{Entity, EntityHandle};
+use crate::entity::{Entity, EntityHandle, EntityIndex};
 use crate::world::World;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,13 +10,13 @@ pub enum EntityCommandsHandle {
     /// The commands will be applied to an entity that still needs to be spawned.
     /// This happens when a system spawns an entity and then also modifies it within the same
     /// tick.
-    Deferred,
+    Deferred(EntityIndex),
 }
 
 impl EntityCommandsHandle {
     pub fn deferred(&self) -> bool {
         match self {
-            Self::Deferred => true,
+            Self::Deferred(_) => true,
             Self::Spawned(_) => false,
         }
     }
@@ -43,7 +43,7 @@ impl<'s, 'c> EntityCommands<'s, 'c> {
     pub fn entity(&self) -> Option<&Entity> {
         match &self.entity {
             EntityCommandsHandle::Spawned(entity) => Some(entity),
-            EntityCommandsHandle::Deferred => None,
+            EntityCommandsHandle::Deferred(_) => None,
         }
     }
 
@@ -73,6 +73,17 @@ impl<'s, 'c> EntityCommands<'s, 'c> {
         self.commands.0.push(DespawnCommand {
             handle: self.entity,
         });
+    }
+}
+
+pub struct InsertCommand<T: SpawnBundle> {
+    entity: EntityCommandsHandle,
+    components: T,
+}
+
+impl<T: SpawnBundle> Command for InsertCommand<T> {
+    fn apply(self, world: &mut World) {
+        todo!()
     }
 }
 

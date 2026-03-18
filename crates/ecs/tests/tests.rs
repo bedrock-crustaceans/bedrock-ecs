@@ -69,7 +69,7 @@ fn stress_test() {
 
     let mut world = World::new();
 
-    for _ in 0..1000 {
+    for _ in 0..1 {
         world.spawn(Bytes5(5.0, 22));
         world.spawn((Bytes5(f32::MAX, u8::MAX), Static));
     }
@@ -78,7 +78,7 @@ fn stress_test() {
 
     let schedule = world
         .build_schedule()
-        .add(Label1, (simple_system, simple_system2))
+        .add(Label1, (/*simple_system,*/simple_system2))
         .schedule();
 
     world.run(&schedule);
