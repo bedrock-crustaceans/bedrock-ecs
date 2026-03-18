@@ -34,6 +34,7 @@ macro_rules! impl_bundle {
                 let mut table = Table {
                     signature: sig,
                     entities: Vec::new(),
+                    entity_lookup: FxHashMap::default(),
                     lookup: FxHashMap::with_capacity_and_hasher(COUNT, FxBuildHasher::default()),
                     columns: vec![
                         $(

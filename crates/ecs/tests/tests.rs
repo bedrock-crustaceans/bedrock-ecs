@@ -1,3 +1,5 @@
+use ecs::command::Commands;
+use ecs::entity::Entity;
 use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Resource, ScheduleLabel};
 use tracing::Level;
@@ -30,13 +32,19 @@ fn simple_system(query: Query<&Bytes5>) {
     println!("finish on thread {:?}", std::thread::current().id());
 }
 
-fn simple_system2(query: Query<&mut Static>) {
+fn simple_system2(query: Query<(Entity, &mut Static)>, mut commands: Commands) {
     println!("start on thread {:?}", std::thread::current().id());
 
-    for bytes in &query {
+    for (entity, bytes) in &query {
         std::thread::sleep(std::time::Duration::from_millis(1));
         // let b0 = bytes.0;
         // println!("bytes5: {} {}", b0, bytes.1);
+
+        // let entity2 = commands.spawn_empty();
+        // tracing::trace!("is deferred: {}", entity2.deferred());
+
+        // entity2.despawn();
+        commands.entity(entity).despawn();
     }
 
     println!("finish on thread {:?}", std::thread::current().id());

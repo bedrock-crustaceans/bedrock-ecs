@@ -2,118 +2,76 @@ use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 
-use generic_array::GenericArray;
-use generic_array::typenum::U0;
-use thread_local::ThreadLocal;
-
+use crate::command::{DespawnCommand, EntityCommands, EntityCommandsHandle};
 use crate::component::SpawnBundle;
 use crate::entity::{Entity, EntityHandle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 use crate::world::World;
+use generic_array::GenericArray;
+use generic_array::typenum::U0;
+use thread_local::ThreadLocal;
 
-pub type CommandCell = Arc<ThreadLocal<UnsafeCell<CommandQueue>>>;
-
-#[derive(Default, Debug)]
-pub struct CommandScheduler {
-    queues: CommandCell,
+pub trait Command {
+    fn apply(self, world: &mut World);
 }
 
-impl CommandScheduler {
+#[derive(Default)]
+pub struct CommandBuffers {
+    pool: CommandPool,
+}
+
+impl CommandBuffers {
     #[inline]
-    pub fn new() -> CommandScheduler {
-        CommandScheduler::default()
+    pub fn get_pool(&self) -> CommandPool {
+        self.pool.clone()
     }
+}
 
-    #[inline]
-    pub fn get_queue(&self) -> CommandCell {
-        Arc::clone(&self.queues)
+#[derive(Default)]
+pub struct ThreadCommandBuffer {}
+
+impl ThreadCommandBuffer {
+    pub fn push(&mut self, command: impl Command) {
+        tracing::trace!("pushed command");
+
+        todo!()
     }
 }
 
-pub struct CommandMeta {}
-
-pub trait Command<Output = ()> {
-    fn apply(self, world: &mut World) -> Output;
+#[derive(Default, Clone)]
+pub struct CommandPool {
+    pool: Arc<ThreadLocal<UnsafeCell<ThreadCommandBuffer>>>,
 }
 
-#[derive(Debug, Default)]
-pub struct CommandQueue {
-    bytes: Vec<MaybeUninit<u8>>,
-}
-
-impl CommandQueue {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum EntityCommandsHandle {
-    /// The commands will be applied to an existing entity
-    Spawned(Entity),
-    /// The commands will be applied to an entity that still needs to be spawned.
-    /// This happens when a system spawns an entity and then also modifies it within the same
-    /// tick.
-    Deferred,
-}
-
-pub struct EntityCommands<'s, 'c> {
-    entity: EntityCommandsHandle,
-    commands: &'s mut Commands<'c>,
-}
-
-impl<'s, 'c> EntityCommands<'s, 'c> {
-    /// Returns the entity's handle if it exists.
-    ///
-    /// Entities that have been spawned during this tick will not have a handle yet.
+impl CommandPool {
     #[inline]
-    pub fn handle(&self) -> Option<EntityHandle> {
-        self.entity().map(|entity| entity.handle)
+    pub fn get_buffer(&mut self) -> &mut ThreadCommandBuffer {
+        // `get_or_default` since this thread's buffer might be uninitialized.
+        let cell = self.pool.get_or_default();
+        unsafe { &mut *cell.get() }
     }
+}
 
-    /// Returns the entity if it exists.
-    ///
-    /// Entities that have been spawned during this tick will not have a handle yet.
+#[repr(transparent)]
+pub struct Commands<'state>(pub(crate) &'state mut ThreadCommandBuffer);
+
+impl<'s> Commands<'s> {
     #[inline]
-    pub fn entity(&self) -> Option<&Entity> {
-        match &self.entity {
-            EntityCommandsHandle::Spawned(entity) => Some(entity),
-            EntityCommandsHandle::Deferred => None,
+    pub fn spawn_empty(&mut self) -> EntityCommands<'_, 's> {
+        EntityCommands {
+            entity: EntityCommandsHandle::Deferred,
+            commands: self,
         }
     }
 
-    /// Adds components to this entity.
-    ///
-    /// This is a deferred operation and will be performed after the end of this tick.
-    pub fn insert(&mut self, components: impl SpawnBundle) -> &mut Self {
-        todo!()
-    }
-
-    /// Removes the given components from this entity.
-    pub fn remove<S: SpawnBundle>(&mut self) {
-        todo!()
-    }
-}
-
-pub struct Commands<'s>(&'s mut CommandQueue);
-
-impl<'c> Commands<'c> {
-    pub fn spawn(&mut self, components: impl SpawnBundle) -> EntityCommands<'_, 'c> {
-        let mut commands = EntityCommands {
-            entity: EntityCommandsHandle::Deferred,
-            commands: self,
-        };
-
-        commands
-    }
-
-    pub fn entity<'s>(&'s mut self, entity: Entity) -> EntityCommands<'s, 'c> {
+    #[inline]
+    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_, 's> {
         EntityCommands {
             entity: EntityCommandsHandle::Spawned(entity),
             commands: self,
         }
-    }
-
-    pub fn test(&self) {
-        tracing::error!("TEST!!!!");
     }
 }
 
@@ -122,7 +80,7 @@ unsafe impl Param for Commands<'_> {
     type AccessCount = U0;
 
     type Output<'s> = Commands<'s>;
-    type State = CommandCell;
+    type State = CommandPool;
 
     #[cfg(feature = "generics")]
     #[inline]
@@ -138,13 +96,14 @@ unsafe impl Param for Commands<'_> {
     }
 
     #[inline]
-    fn init(world: &mut World, _meta: &SystemMeta) -> CommandCell {
-        world.commands.get_queue()
+    fn init(world: &mut World, _meta: &SystemMeta) -> CommandPool {
+        // Initialise the
+        world.commands.get_pool()
     }
 
     #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut CommandCell) -> Commands<'w> {
-        let cell = state.get_or_default();
-        Commands(unsafe { &mut *cell.get() })
+    fn fetch<'w, S: Sealed>(_world: &'w World, state: &'w mut CommandPool) -> Commands<'w> {
+        let buffer = state.get_buffer();
+        Commands(buffer)
     }
 }

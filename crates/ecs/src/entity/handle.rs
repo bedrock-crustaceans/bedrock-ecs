@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 // This pretty similar to Bevy's version since it seems to work better than a plain `u64` with
 // bitwise operations like we initially did. The fields are aligned in such a way that the struct
@@ -31,6 +32,12 @@ impl Ord for EntityHandle {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.to_bits().cmp(&other.to_bits())
+    }
+}
+
+impl Hash for EntityHandle {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.to_bits().hash(state);
     }
 }
 

@@ -8,9 +8,9 @@ use smallvec::{SmallVec, smallvec};
 use crate::param;
 
 use crate::archetype::Archetypes;
-use crate::command::CommandScheduler;
+use crate::command::{CommandBuffers, CommandPool};
 use crate::component::{ComponentBundle, SpawnBundle};
-use crate::entity::{Entities, EntityHandle, EntityMut, EntityRef};
+use crate::entity::{Entities, Entity, EntityHandle, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, ResourceRegistry};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
 use crate::system::{Param, SystemMeta};
@@ -20,7 +20,7 @@ pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
     pub(crate) resources: ResourceRegistry,
-    pub(crate) commands: CommandScheduler,
+    pub(crate) commands: CommandBuffers,
 }
 
 impl World {
@@ -32,6 +32,11 @@ impl World {
             .unwrap();
 
         World::default()
+    }
+
+    #[inline]
+    pub fn get_command_pool(&self) -> CommandPool {
+        self.commands.get_pool()
     }
 
     // Entities
@@ -48,12 +53,12 @@ impl World {
     }
 
     #[inline]
-    pub(crate) fn despawn(&mut self, handle: EntityHandle) {
+    pub(crate) fn despawn(&mut self, entity: Entity) {
         // Remove from table
-        // self.archetypes.despawn(handle);
+        self.archetypes.remove(&entity);
 
         // Remove from alive list.
-        self.entities.despawn(handle)
+        self.entities.despawn(entity.handle)
     }
 
     #[inline]

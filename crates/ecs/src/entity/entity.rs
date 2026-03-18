@@ -29,7 +29,7 @@ impl EntityMut<'_> {
 
     #[inline]
     pub fn despawn(self) {
-        self.world.despawn(self.handle);
+        todo!()
     }
 }
 

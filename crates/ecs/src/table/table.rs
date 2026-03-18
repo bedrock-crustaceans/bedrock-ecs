@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::SpawnBundle;
-use crate::entity::EntityHandle;
+use crate::entity::{Entity, EntityHandle};
 use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
 use crate::world::World;
 
@@ -27,6 +27,8 @@ pub struct Table {
     // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
     pub(crate) entities: Vec<EntityHandle>,
+
+    pub(crate) entity_lookup: FxHashMap<EntityHandle, TableRow>,
     /// A lookup table that maps component type IDs to columns.
     pub(crate) lookup: FxHashMap<TypeId, usize>,
     /// All columns that this table contains. Most users will know exactly which column they want.
@@ -52,10 +54,19 @@ impl Table {
     pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) -> TableRow {
         let row = self.entities.len();
         self.entities.push(entity);
+        self.entity_lookup
+            .insert(entity, TableRow(self.entities.len() - 1));
 
         components.insert_into(&mut self.columns);
 
         TableRow(row)
+    }
+
+    pub fn remove(&mut self, entity: EntityHandle) {
+        if let Some(row) = self.entity_lookup.remove(&entity) {
+            self.entities.swap_remove(row.0);
+            self.columns.iter_mut().for_each(|c| c.swap_remove(row.0));
+        }
     }
 
     /// Returns a list of all columns in this table.

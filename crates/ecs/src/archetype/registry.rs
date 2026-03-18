@@ -11,12 +11,16 @@ use crate::prelude::ComponentBundle;
 use crate::query::TableCache;
 use crate::query::{FilterBundle, QueryBundle};
 use crate::table::Table;
+use crate::util::debug::BorrowEnforcer;
 
 /// Contains all archetype tables.
 ///
 /// An archetype is a unique combination of components.
 #[derive(Default, Debug)]
 pub struct Archetypes {
+    #[cfg(debug_assertions)]
+    enforcer: BorrowEnforcer,
+
     /// The current archetype generation.
     /// This is used by the query cache to figure out when the cache should be updated.
     /// It is only increased when an archetype table is added or removed, not when an entity is added
@@ -47,6 +51,9 @@ impl Archetypes {
 
     /// Returns the current generation of the archetypes.
     pub fn generation(&self) -> u64 {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         self.generation
     }
 
@@ -82,6 +89,9 @@ impl Archetypes {
         #[cfg(feature = "generics")] cache: &mut SmallVec<[TableCache<Q::AccessCount>; 8]>,
         #[cfg(not(feature = "generics"))] cache: &mut SmallVec<[TableCache; 8]>,
     ) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         cache.clear();
 
         let iter = self
@@ -126,6 +136,9 @@ impl Archetypes {
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
     pub fn insert<B: SpawnBundle + 'static>(&mut self, handle: EntityHandle, bundle: B) -> Entity {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         let sig = B::signature(&mut self.component_registry);
 
         // Check whether archetype already exists, otherwise create it
@@ -155,15 +168,38 @@ impl Archetypes {
         }
     }
 
+    pub fn remove_by_handle(&mut self, handle: EntityHandle) {
+        // Only needs read only access to the `Archetypes` type itself.
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+    }
+
+    pub fn remove(&mut self, handle: &Entity) {
+        // Only needs read only access to the `Archetypes` type itself.
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        if let Some(mut table) = handle.table {
+            let table = unsafe { table.as_mut() };
+            table.remove(handle.handle);
+        }
+    }
+
     /// Returns the amount of archetypes currently contained in this container.
     ///
     /// It does *not* return the total amount of entities, only the unique combinations of components.
     pub fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         self.tables.len()
     }
 
     /// Checks whether the given entity is found in any of the tables containing the archetype `A`.
     pub fn has_components<A: ComponentBundle>(&self, entity: EntityHandle) -> bool {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         let Some(bitset) = A::get_signature(&self.component_registry) else {
             // If the component has not been registered, then it cannot have been spawned.
             // Hence there are no entities with this component.
@@ -187,6 +223,9 @@ impl Archetypes {
     /// [`get_by_bitset`]: Self::get_by_bitset
     #[inline]
     pub fn get_by_index(&self, index: usize) -> &Table {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         &self.tables[index]
     }
 
@@ -202,6 +241,9 @@ impl Archetypes {
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_archetype<T: ComponentBundle>(&self) -> Option<&Table> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         let bitset = T::get_signature(&self.component_registry)?;
         self.get_by_bitset(&bitset)
     }
@@ -218,6 +260,9 @@ impl Archetypes {
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_bitset(&self, bitset: &Signature) -> Option<&Table> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         let index = self.lookup.get(bitset)?;
         Some(self.get_by_index(*index))
     }
