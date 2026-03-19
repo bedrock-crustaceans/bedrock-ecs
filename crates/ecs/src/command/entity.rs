@@ -69,8 +69,7 @@ impl<'s, 'c> EntityCommands<'s, 'c> {
 
     /// Despawns the entity
     pub fn despawn(self) {
-        tracing::trace!("Despawning entity {:?}", self.entity);
-        self.commands.0.push(DespawnCommand {
+        self.commands.buffer.push(DespawnCommand {
             handle: self.entity,
         });
     }
@@ -87,8 +86,15 @@ impl<T: SpawnBundle> Command for InsertCommand<T> {
     }
 }
 
+impl<T: SpawnBundle> Drop for InsertCommand<T> {
+    fn drop(&mut self) {
+        println!("drop insert test: {:?}", self.entity);
+    }
+}
+
 pub struct SpawnCommand<T: SpawnBundle> {
-    components: T,
+    pub(crate) handle: EntityCommandsHandle,
+    pub(crate) components: T,
 }
 
 impl<T: SpawnBundle> Command for SpawnCommand<T> {

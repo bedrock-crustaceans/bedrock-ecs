@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+
 use generic_array::GenericArray;
 #[cfg(feature = "generics")]
 use generic_array::typenum::U1;
@@ -8,19 +10,19 @@ use smallvec::{SmallVec, smallvec};
 use crate::param;
 
 use crate::archetype::Archetypes;
-use crate::command::{CommandBuffers, CommandPool};
+use crate::command::CommandPool;
 use crate::component::{ComponentBundle, SpawnBundle};
 use crate::entity::{Entities, Entity, EntityHandle, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, ResourceRegistry};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
+use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 
-#[derive(Default)]
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
     pub(crate) resources: ResourceRegistry,
-    pub(crate) commands: CommandBuffers,
+    pub(crate) commands: Option<CommandPool>,
 }
 
 impl World {
@@ -31,12 +33,20 @@ impl World {
             .build_global()
             .unwrap();
 
-        World::default()
+        World {
+            archetypes: Archetypes::new(),
+            entities: Entities::new(),
+            resources: ResourceRegistry::new(),
+            commands: Some(CommandPool::new()),
+        }
     }
 
-    #[inline]
-    pub fn get_command_pool(&self) -> CommandPool {
-        self.commands.get_pool()
+    pub fn apply_commands(&mut self) {
+        // Take out of the world temporarily to allow commands to take a `&mut World`.
+        let mut commands = self.commands.take().expect("World::commands was empty");
+        unsafe { commands.apply_all(self) };
+
+        self.commands = Some(commands);
     }
 
     // Entities
@@ -153,6 +163,13 @@ impl World {
     }
 }
 
+impl Default for World {
+    #[inline]
+    fn default() -> World {
+        Self::new()
+    }
+}
+
 unsafe impl Param for &World {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
@@ -189,5 +206,41 @@ unsafe impl Param for &World {
     }
 }
 
+unsafe impl Param for &mut World {
+    #[cfg(feature = "generics")]
+    type AccessCount = U1;
+
+    type State = ();
+
+    type Output<'w> = &'w mut World;
+
+    #[cfg(feature = "generics")]
+    fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
+        GenericArray::from((AccessDesc {
+            ty: AccessType::World,
+            exclusive: true,
+        },))
+    }
+
+    #[cfg(not(feature = "generics"))]
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+        smallvec![AccessDesc {
+            ty: AccessType::World,
+            exclusive: true
+        }]
+    }
+
+    fn init(_world: &mut World, _meta: &SystemMeta) {}
+
+    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> &'w mut World {
+        todo!()
+    }
+}
+
 unsafe impl Send for World {}
 unsafe impl Sync for World {}
+
+pub struct UnsafeWorldCell {
+    #[cfg(debug_assertions)]
+    world: UnsafeCell<World>,
+}

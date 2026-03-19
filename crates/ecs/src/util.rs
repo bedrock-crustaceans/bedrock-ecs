@@ -39,6 +39,8 @@ impl LayoutExt for Layout {
 #[cfg(debug_assertions)]
 pub mod debug {
     use std::{
+        cell::UnsafeCell,
+        ops::Deref,
         sync::{
             Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
