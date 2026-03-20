@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use generic_array::{ArrayLength, GenericArray};
 use smallvec::SmallVec;
 

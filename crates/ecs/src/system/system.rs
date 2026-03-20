@@ -26,6 +26,7 @@ impl SystemMeta {
     }
 }
 
+// `System` must implement `Sync` such that rayon can run them on other threads.
 pub trait System: Sync {
     /// Attempts to determine the name of this system.
     fn name(&self) -> &'static str;
@@ -35,7 +36,7 @@ pub trait System: Sync {
     fn call(&self, world: &World);
 }
 
-pub trait ParametrizedSystem<P: ParamBundle>: Sized + Sync {
+pub trait ParametrizedSystem<P: ParamBundle>: Sized {
     fn into_container(self, world: &mut World, id: SystemId) -> SystemContainer<P, Self> {
         let mut name = std::any::type_name::<Self>();
         if !name.contains('{') {
