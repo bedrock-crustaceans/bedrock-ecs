@@ -1,6 +1,70 @@
+use std::{borrow::Borrow, cell::UnsafeCell};
+
 use smallvec::SmallVec;
 
+#[cfg(debug_assertions)]
+use crate::util::debug::BorrowEnforcer;
+
 const INLINE_COUNT: usize = 4;
+
+#[derive(Default)]
+pub struct PartitionedSignature {
+    #[cfg(debug_assertions)]
+    enforcers: Vec<BorrowEnforcer>,
+    partitions: Vec<UnsafeCell<u64>>,
+}
+
+impl PartitionedSignature {
+    pub const PARTITION_SIZE: usize = 64;
+
+    pub fn new() -> PartitionedSignature {
+        Self::default()
+    }
+
+    pub fn with_capacity(cap: usize) -> PartitionedSignature {
+        Self {
+            #[cfg(debug_assertions)]
+            enforcers: Vec::with_capacity(cap),
+            partitions: Vec::with_capacity(cap),
+        }
+    }
+
+    pub fn words_count(&self) -> usize {
+        self.partitions.len()
+    }
+
+    #[inline]
+    pub fn resize(&mut self, bits: usize) {
+        let words = bits.div_ceil(64);
+
+        #[cfg(debug_assertions)]
+        self.enforcers
+            .resize_with(self.enforcers.len() + bits, BorrowEnforcer::new);
+        self.partitions
+            .resize_with(self.partitions.len() + words, UnsafeCell::default);
+    }
+
+    /// # Safety
+    ///
+    /// This is only safe to call if no other threads access the `u64` block containing `index` at the same
+    /// time as this call.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the index is out of range.
+    pub unsafe fn set(&self, index: usize) {
+        let word = index / 64;
+        let bit = index % 64;
+
+        tracing::error!("{word} {}", self.partitions.len());
+
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcers[word].write();
+
+        let cell = &self.partitions[word];
+        unsafe { *cell.get() |= 1 << bit };
+    }
+}
 
 /// A set of bits, similar to `Vec<bool>` but more efficient with memory.
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]

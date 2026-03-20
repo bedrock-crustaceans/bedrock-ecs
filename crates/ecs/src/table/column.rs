@@ -1,9 +1,10 @@
 use std::alloc::Layout;
 use std::any::TypeId;
+use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::table::{ColumnIter, ColumnIterMut};
+use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut};
 use crate::util::LayoutExt;
 
 #[cfg(debug_assertions)]
@@ -39,7 +40,9 @@ pub struct TableRow(pub(crate) usize);
 pub struct Column {
     #[cfg(debug_assertions)]
     enforcer: BorrowEnforcer,
-
+    /// Tracks which components have changed in this Column.
+    tracker: UnsafeCell<ChangeTracker>,
+    /// Which components in this
     /// The type ID of the item contained in this Column.
     ty: TypeId,
     /// The layout of the component type.
@@ -89,6 +92,7 @@ impl Column {
                 #[cfg(debug_assertions)]
                 enforcer: BorrowEnforcer::new(),
 
+                tracker: UnsafeCell::new(ChangeTracker::new()),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -108,6 +112,7 @@ impl Column {
                 #[cfg(debug_assertions)]
                 enforcer: BorrowEnforcer::new(),
 
+                tracker: UnsafeCell::new(ChangeTracker::new()),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -116,6 +121,12 @@ impl Column {
                 drop_fn,
             }
         }
+    }
+
+    /// # Safety: This is only safe if there are no other references to this column's change tracker.
+    #[inline]
+    pub unsafe fn get_tracker_mut(&self) -> &mut ChangeTracker {
+        unsafe { &mut *self.tracker.get() }
     }
 
     /// Returns the size of an entry in bytes. This includes potential padding.
@@ -170,8 +181,12 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
+        let tracker = unsafe { self.get_tracker_mut() };
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
+                index: 0,
+                changes: Some(tracker),
+
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
                 _marker: PhantomData,
@@ -181,6 +196,9 @@ impl Column {
             }
         } else {
             ColumnIterMut {
+                index: 0,
+                changes: Some(tracker),
+
                 curr: None,
                 remaining: 0,
                 _marker: PhantomData,
@@ -202,6 +220,8 @@ impl Column {
             // an empty array of zero size.
             return;
         }
+
+        self.tracker.get_mut().resize(n);
 
         let cap = self.cap + n;
         let (new_layout, _) = self.layout.repeat_ext(cap).expect("invalid array layout");
@@ -278,6 +298,7 @@ impl Column {
         }
 
         self.len += 1;
+        self.tracker.get_mut().resize(self.len);
     }
 
     /// Obtains a pointer to the given entry in the Column.

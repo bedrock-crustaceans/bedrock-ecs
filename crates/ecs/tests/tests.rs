@@ -1,5 +1,6 @@
 use ecs::command::Commands;
 use ecs::entity::Entity;
+use ecs::query::Changed;
 use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Resource, ScheduleLabel};
 use tracing::Level;
@@ -32,10 +33,14 @@ fn simple_system(query: Query<&Bytes5>) {
     println!("finish on thread {:?}", std::thread::current().id());
 }
 
-fn simple_system2(world: &mut World, mut commands: Commands) {
+fn simple_system2(query: Query<&mut Bytes5>, mut commands: Commands) {
     commands.spawn(Static);
-    world.apply_commands();
+    for mut bytes in &query {
+        bytes.1 -= 1;
+    }
 }
+
+fn change_system(query: Query<&Bytes5, Changed<Bytes5>>) {}
 
 #[derive(ScheduleLabel)]
 struct Label1;

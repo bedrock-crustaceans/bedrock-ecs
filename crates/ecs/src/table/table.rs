@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::cell::UnsafeCell;
 use std::ptr::NonNull;
 
 use rustc_hash::FxHashMap;

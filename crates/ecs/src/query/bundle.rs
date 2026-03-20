@@ -1,6 +1,6 @@
 ///! Implements the [`QueryBundle`] and [`ParamRef`] related traits.
 use std::any::TypeId;
-use std::ops::Add;
+use std::ops::{Add, Deref, DerefMut};
 
 use generic_array::{ArrayLength, GenericArray};
 use rustc_hash::FxHashMap;
@@ -10,7 +10,7 @@ use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnIter, ColumnIterMut, EntityIter, EntityRefIter};
+use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -24,7 +24,7 @@ use crate::world::World;
 /// The `access` method must correctly return the types this query uses.
 /// Incorrect implementation will lead to reference aliasing and inevitable UB.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a valid query type", 
+    message = "`{Self}` is not a valid query type",
     label = "invalid query",
     // note = "only `Entity`, `&T` and `&mut T` where `T: Component` or tuples thereof can be used in queries",
     note = "components in a query must be wrapped in a reference, e.g. `&{Self}` or `&mut {Self}`",
@@ -216,7 +216,7 @@ unsafe impl ParamRef for EntityRef<'_> {
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Unref = T;
-    type Output<'w> = &'w T;
+    type Output<'w> = Ref<'w, T>;
     type Iter<'t> = ColumnIter<'t, T>;
 
     const TY: QueryType = QueryType::Component;
@@ -251,7 +251,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
 
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Unref = T;
-    type Output<'w> = &'w mut T;
+    type Output<'w> = Mut<'w, T>;
     type Iter<'t> = ColumnIterMut<'t, T>;
 
     const TY: QueryType = QueryType::Component;
@@ -278,7 +278,6 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
 
     fn iter<'t>(world: &'t World, table: usize, col: usize) -> ColumnIterMut<'t, T> {
         let table = world.archetypes.get_by_index(table);
-
         let col = table.column(col);
         col.iter_mut()
     }
