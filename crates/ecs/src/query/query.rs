@@ -10,8 +10,11 @@ use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
+/// A query is used to retrieve components from the components database.
 pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
+    /// The world that this query was created in.
     world: &'w World,
+    /// The query's associated cache. This cache tells the query where to find its data.
     cache: &'w mut QueryMeta<Q, F>,
 }
 
@@ -35,6 +38,10 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
         &self.cache
     }
 
+    /// Creates an iterator that iterates over all components matching this query.
+    ///
+    /// Most of the query is cached, hence the query generally does not have to perform any look ups and will immediately
+    /// retrieve items from the tables.
     #[inline]
     pub fn iter(&self) -> Q::Iter<'_, F> {
         self.cache.iter(self.world)
@@ -103,7 +110,6 @@ pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     generation: u64,
     /// The archetype bitset of this query. This is used to quickly discard tables that do not match the query.
     signature: Signature,
-    _marker: PhantomData<(Q, F)>,
 }
 
 impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
@@ -126,7 +132,6 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
             generation: archetypes.generation(),
             signature: archetype,
             cache: cached,
-            _marker: PhantomData,
         }
     }
 

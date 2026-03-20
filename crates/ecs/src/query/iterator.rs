@@ -70,7 +70,7 @@ macro_rules! iter_len {
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
-            /// An iterator over several columns at the same time
+            #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
             pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> {
                 world: &'w World,

@@ -22,9 +22,10 @@ impl ResourceRegistry {
         self.storage.insert(id, UnsafeCell::new(Box::new(resource)));
     }
 
+    /// Reserves enough capacity for `n` additional resources.
     #[inline]
-    pub fn reserve(&mut self, additional: usize) {
-        self.storage.reserve(additional);
+    pub fn reserve(&mut self, n: usize) {
+        self.storage.reserve(n);
     }
 
     /// Does the container have these resources?
@@ -33,6 +34,7 @@ impl ResourceRegistry {
         R::contains_all(self)
     }
 
+    /// Retrievs the given resource, returning `None` if it was not found.
     pub fn get<R: Resource>(&self) -> Option<&R> {
         let id = ResourceId::of::<R>();
         let cell = self.storage.get(&id)?;

@@ -29,6 +29,10 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
             return None;
         }
 
+        todo!(
+            "column iterator should isolate the parts of the filter bundle that it needs and then apply it"
+        );
+
         let ptr = self.curr.as_mut().unwrap();
         let item = unsafe { &*ptr.as_ptr().cast_const() };
 

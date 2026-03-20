@@ -112,7 +112,7 @@ pub unsafe trait QueryBundle: Sized {
 ///
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::EntityRef
-pub unsafe trait ParamRef: Send {
+pub unsafe trait ParamRef {
     /// The type you would get if you were to remove the reference attached to `Self`.
     type Unref: 'static;
 
@@ -214,13 +214,14 @@ unsafe impl ParamRef for EntityRef<'_> {
     }
 }
 
-unsafe impl<T: Component + Send + Sync> ParamRef for &T {
+unsafe impl<T: Component> ParamRef for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
     type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
+    #[inline]
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
@@ -228,6 +229,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
         }
     }
 
+    #[inline]
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
         reg.get_or_assign::<T>()
     }
@@ -249,13 +251,14 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     }
 }
 
-unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
+unsafe impl<T: Component> ParamRef for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
     type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
+    #[inline]
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
@@ -263,6 +266,84 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
         }
     }
 
+    #[inline]
+    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
+        reg.get_or_assign::<T>()
+    }
+
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
+        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
+            "table column lookup failed for component {}",
+            std::any::type_name::<T>()
+        ));
+
+        col
+    }
+
+    fn iter<'t, F: FilterBundle>(
+        world: &'t World,
+        table: usize,
+        col: usize,
+    ) -> ColumnIterMut<'t, T, F> {
+        let table = world.archetypes.get_by_index(table);
+        let col = table.column(col);
+        col.iter_mut()
+    }
+}
+
+unsafe impl<T: Component> ParamRef for Ref<'_, T> {
+    type Unref = T;
+    type Output<'t> = Ref<'t, T>;
+    type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
+
+    const TY: QueryType = QueryType::Component;
+
+    #[inline]
+    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Component(reg.get_or_assign::<T>()),
+            exclusive: false,
+        }
+    }
+
+    #[inline]
+    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
+        reg.get_or_assign::<T>()
+    }
+
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
+        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
+            "table column lookup failed for component {}",
+            std::any::type_name::<T>()
+        ));
+
+        col
+    }
+
+    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
+        let table = world.archetypes.get_by_index(table);
+        let col = table.column(col);
+
+        col.iter()
+    }
+}
+
+unsafe impl<T: Component> ParamRef for Mut<'_, T> {
+    type Unref = T;
+    type Output<'w> = Mut<'w, T>;
+    type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
+
+    const TY: QueryType = QueryType::Component;
+
+    #[inline]
+    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::Component(reg.get_or_assign::<T>()),
+            exclusive: true,
+        }
+    }
+
+    #[inline]
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
         reg.get_or_assign::<T>()
     }
