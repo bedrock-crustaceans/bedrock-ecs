@@ -3,25 +3,25 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityHandle, EntityRef};
-use crate::query::EmptyableIterator;
+use crate::query::{EmptyableIterator, FilterBundle};
 use crate::table::{ChangeTracker, Mut, Ref, Table, TableRow};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
-pub struct ColumnIter<'a, T> {
+pub struct ColumnIter<'a, T, F: FilterBundle> {
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
     pub(crate) remaining: usize,
-    pub(crate) _marker: PhantomData<&'a T>,
+    pub(crate) _marker: PhantomData<(&'a T, F)>,
 
     #[cfg(debug_assertions)]
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-impl<'a, T> Iterator for ColumnIter<'a, T> {
+impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
     type Item = Ref<'a, T>;
 
     fn next(&mut self) -> Option<Ref<'a, T>> {
@@ -47,16 +47,16 @@ impl<'a, T> Iterator for ColumnIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for ColumnIter<'a, T> {
+impl<'a, T, F: FilterBundle> ExactSizeIterator for ColumnIter<'a, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<'a, T> FusedIterator for ColumnIter<'a, T> {}
+impl<'a, T, F: FilterBundle> FusedIterator for ColumnIter<'a, T, F> {}
 
-impl<'a, T> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T> {
-    fn empty(_world: &'a World) -> ColumnIter<'a, T> {
+impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
+    fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
         ColumnIter {
             curr: None,
             remaining: 0,
@@ -68,20 +68,20 @@ impl<'a, T> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T> {
     }
 }
 
-pub struct ColumnIterMut<'a, T> {
+pub struct ColumnIterMut<'a, T, F: FilterBundle> {
     pub(crate) changes: Option<&'a ChangeTracker>,
     pub(crate) index: usize,
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
     pub(crate) remaining: usize,
-    pub(crate) _marker: PhantomData<&'a mut T>,
+    pub(crate) _marker: PhantomData<(&'a mut T, F)>,
 
     #[cfg(debug_assertions)]
     pub(crate) _guard: Option<WriteGuard>,
 }
 
-impl<'a, T> Iterator for ColumnIterMut<'a, T> {
+impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
     fn next(&mut self) -> Option<Mut<'a, T>> {
@@ -112,16 +112,16 @@ impl<'a, T> Iterator for ColumnIterMut<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for ColumnIterMut<'a, T> {
+impl<'a, T, F: FilterBundle> ExactSizeIterator for ColumnIterMut<'a, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<'a, T> FusedIterator for ColumnIterMut<'a, T> {}
+impl<'a, T, F: FilterBundle> FusedIterator for ColumnIterMut<'a, T, F> {}
 
-impl<'a, T> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T> {
-    fn empty(_world: &'a World) -> ColumnIterMut<'a, T> {
+impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
+    fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
         ColumnIterMut {
             changes: None,
             index: 0,

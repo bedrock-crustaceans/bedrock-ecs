@@ -4,6 +4,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+use crate::query::FilterBundle;
 use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut};
 use crate::util::LayoutExt;
 
@@ -140,7 +141,7 @@ impl Column {
         self.layout.pad_to_align().size()
     }
 
-    pub fn iter<T: 'static>(&self) -> ColumnIter<'_, T> {
+    pub fn iter<T: 'static, F: FilterBundle>(&self) -> ColumnIter<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
@@ -171,7 +172,7 @@ impl Column {
         }
     }
 
-    pub fn iter_mut<T: 'static>(&self) -> ColumnIterMut<'_, T> {
+    pub fn iter_mut<T: 'static, F: FilterBundle>(&self) -> ColumnIterMut<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.write();
 

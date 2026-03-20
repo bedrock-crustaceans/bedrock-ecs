@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{ParamRef, QueryBundle, QueryType, TableCache};
+use crate::query::{FilterBundle, ParamRef, QueryBundle, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
 
@@ -72,17 +72,17 @@ macro_rules! impl_bundle {
         paste::paste! {
             /// An iterator over several columns at the same time
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> {
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> {
                 world: &'w World,
                 /// The remaining cached tables that this iterator will hop to.
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
                 /// The subiterators of this iterator.
-                iters: ($($gen::Iter<'w>),*),
+                iters: ($($gen::Iter<'w, T>),*),
                 /// Ensures that the type parameters live for at least `'w`.
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> [< IteratorBundle $count >]<'w, Q, $($gen),*> {
+            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
                 /// Creates an empty iterator that always returns `None`. This exists because
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
                 ///
@@ -97,7 +97,7 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'w, Q: QueryBundle, $($gen: ParamRef + Send),*> HoppingIterator<'w, Q> for [< IteratorBundle $count >]<'w, Q, $($gen),*> {
+            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> HoppingIterator<'w, Q> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
                 fn new(world: &'w World, cache: &'w [TableCache<Q::AccessCount>]) -> Self {
                     #[cfg(debug_assertions)]
                     {
@@ -145,7 +145,7 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_parens)]
-            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, Q, $($gen),*> {
+            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
@@ -179,14 +179,14 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'t, Q: QueryBundle, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, $($gen),*> {}
+            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {}
 
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t> = [< IteratorBundle $count >]<'t, ($($gen),*), $($gen),*> where Self: 't;
+                type Iter<'t, T: FilterBundle> = [< IteratorBundle $count >]<'t, ($($gen),*), T, $($gen),*> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 

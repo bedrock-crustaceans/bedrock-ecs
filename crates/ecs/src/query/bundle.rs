@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{EmptyableIterator, HoppingIterator};
+use crate::query::{EmptyableIterator, FilterBundle, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref};
 use crate::world::World;
@@ -43,7 +43,7 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a>: HoppingIterator<'a, Self> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: FilterBundle>: HoppingIterator<'a, Self> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 
@@ -121,7 +121,7 @@ pub unsafe trait ParamRef: Send {
     type Output<'w>: 'w;
 
     /// Iterator used to iterate over columns of type `Self`.
-    type Iter<'t>: EmptyableIterator<'t, Self::Output<'t>>;
+    type Iter<'t, F: FilterBundle>: EmptyableIterator<'t, Self::Output<'t>>;
 
     /// Whether this parameter is an entity.
     const TY: QueryType;
@@ -147,7 +147,7 @@ pub unsafe trait ParamRef: Send {
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter(world: &World, table: usize, col: usize) -> Self::Iter<'_>;
+    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> Self::Iter<'_, F>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -160,7 +160,7 @@ pub enum QueryType {
 unsafe impl ParamRef for Entity {
     type Unref = Entity;
     type Output<'w> = Entity;
-    type Iter<'t> = EntityIter<'t>;
+    type Iter<'t, F: FilterBundle> = EntityIter<'t>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -180,7 +180,7 @@ unsafe impl ParamRef for Entity {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
-    fn iter(world: &World, table: usize, _col: usize) -> EntityIter<'_> {
+    fn iter<F: FilterBundle>(world: &World, table: usize, _col: usize) -> EntityIter<'_> {
         let table = world.archetypes.get_by_index(table);
         table.iter_entities(world)
     }
@@ -189,7 +189,7 @@ unsafe impl ParamRef for Entity {
 unsafe impl ParamRef for EntityRef<'_> {
     type Unref = EntityRef<'static>;
     type Output<'w> = EntityRef<'w>;
-    type Iter<'t> = EntityRefIter<'t>;
+    type Iter<'t, F: FilterBundle> = EntityRefIter<'t>;
 
     const TY: QueryType = QueryType::EntityRef;
 
@@ -208,7 +208,7 @@ unsafe impl ParamRef for EntityRef<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter(world: &World, table: usize, _col: usize) -> EntityRefIter<'_> {
+    fn iter<F: FilterBundle>(world: &World, table: usize, _col: usize) -> EntityRefIter<'_> {
         let table = world.archetypes.get_by_index(table);
         table.iter_entity_refs(world)
     }
@@ -217,7 +217,7 @@ unsafe impl ParamRef for EntityRef<'_> {
 unsafe impl<T: Component + Send + Sync> ParamRef for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
-    type Iter<'t> = ColumnIter<'t, T>;
+    type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -241,7 +241,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
         col
     }
 
-    fn iter(world: &World, table: usize, col: usize) -> ColumnIter<'_, T> {
+    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
 
@@ -252,7 +252,7 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &T {
 unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t> = ColumnIterMut<'t, T>;
+    type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -276,7 +276,11 @@ unsafe impl<T: Component + Send + Sync> ParamRef for &mut T {
         col
     }
 
-    fn iter<'t>(world: &'t World, table: usize, col: usize) -> ColumnIterMut<'t, T> {
+    fn iter<'t, F: FilterBundle>(
+        world: &'t World,
+        table: usize,
+        col: usize,
+    ) -> ColumnIterMut<'t, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
         col.iter_mut()

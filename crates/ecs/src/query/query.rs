@@ -36,7 +36,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     }
 
     #[inline]
-    pub fn iter(&self) -> Q::Iter<'_> {
+    pub fn iter(&self) -> Q::Iter<'_, F> {
         self.cache.iter(self.world)
     }
 }
@@ -154,7 +154,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
 
     /// Creates an iterator that iterates over this cache.
     #[inline]
-    pub(crate) fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w> {
+    pub(crate) fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w, F> {
         Q::Iter::new(world, &self.cache)
     }
 
@@ -211,7 +211,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
 #[diagnostic::do_not_recommend]
 impl<'q, 'w, Q: QueryBundle, F: FilterBundle> IntoIterator for &'q Query<'w, Q, F> {
     type Item = Q::Output<'q>;
-    type IntoIter = Q::Iter<'q>;
+    type IntoIter = Q::Iter<'q, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
