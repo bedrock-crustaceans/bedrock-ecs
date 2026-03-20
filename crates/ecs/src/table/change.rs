@@ -1,9 +1,26 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::{self, Debug, Display},
+    ops::{Deref, DerefMut},
+};
 
-use crate::archetype::{PartitionedSignature, Signature};
+use crate::archetype::PartitionedSignature;
 
 pub struct Ref<'w, T> {
     pub(crate) inner: &'w T,
+}
+
+impl<T: Debug> Debug for Ref<'_, T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<T: Display> Display for Ref<'_, T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.inner.fmt(f)
+    }
 }
 
 impl<T> Deref for Ref<'_, T> {
@@ -23,6 +40,20 @@ pub struct Mut<'w, T> {
     pub(crate) index: usize,
     pub(crate) tracker: &'w ChangeTracker,
     pub(crate) inner: &'w mut T,
+}
+
+impl<T: Debug> Debug for Mut<'_, T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+impl<T: Display> Display for Mut<'_, T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.inner.fmt(f)
+    }
 }
 
 impl<T> Deref for Mut<'_, T> {

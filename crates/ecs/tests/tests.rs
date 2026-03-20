@@ -40,7 +40,11 @@ fn simple_system2(query: Query<&mut Bytes5>, mut commands: Commands) {
     }
 }
 
-fn change_system(query: Query<&Bytes5, Changed<Bytes5>>) {}
+fn change_system(query: Query<&Bytes5, Changed<Bytes5>>) {
+    for bytes in &query {
+        println!("bytes {bytes:?} changed");
+    }
+}
 
 #[derive(ScheduleLabel)]
 struct Label1;
@@ -70,7 +74,7 @@ fn stress_test() {
 
     let schedule = world
         .build_schedule()
-        .add(Label1, (/*simple_system,*/simple_system2))
+        .add(Label1, (/*simple_system,*/ simple_system2, change_system))
         .schedule();
 
     world.run(&schedule);

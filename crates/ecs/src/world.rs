@@ -134,16 +134,11 @@ impl World {
             // }
 
             rayon::scope(|s| {
-                for system in schedule.systems.values() {
+                for id in set {
                     s.spawn(|_| {
-                        system.call(&self);
-                    })
+                        schedule.systems.get(id).unwrap().call(&self);
+                    });
                 }
-                // for id in set {
-                //     s.spawn(|_| {
-                //         schedule.systems.get(id).unwrap().call(&self);
-                //     });
-                // }
             });
 
             // tracing::info!("Running next set");
