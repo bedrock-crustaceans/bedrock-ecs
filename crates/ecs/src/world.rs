@@ -139,7 +139,7 @@ impl World {
             rayon::scope(|s| {
                 for id in set {
                     s.spawn(|_| {
-                        schedule.systems.get(id).unwrap().call(self);
+                        unsafe { schedule.systems.get(id).unwrap().call(self) };
                     });
                 }
             });

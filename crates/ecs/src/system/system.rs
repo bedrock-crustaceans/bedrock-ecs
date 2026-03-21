@@ -6,6 +6,8 @@ use generic_array::GenericArray;
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealer;
 use crate::system::{Param, ParamBundle};
+#[cfg(debug_assertions)]
+use crate::util::debug::BorrowEnforcer;
 use crate::world::World;
 
 #[derive(Debug)]
@@ -37,7 +39,7 @@ pub trait System: Sync {
     /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
     /// Runs the system.
-    fn call(&self, world: &World);
+    unsafe fn call(&self, world: &World);
 }
 
 pub trait ParametrizedSystem<P: ParamBundle>: Sized {
@@ -57,6 +59,9 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
             system: self,
             access,
             state: UnsafeCell::new(state),
+
+            #[cfg(debug_assertions)]
+            enforcer: BorrowEnforcer::new(),
         }
     }
 
@@ -70,6 +75,9 @@ pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     meta: SystemMeta,
     system: F,
     state: UnsafeCell<P::State>,
+
+    #[cfg(debug_assertions)]
+    enforcer: BorrowEnforcer,
 
     #[cfg(feature = "generics")]
     access: GenericArray<AccessDesc, P::AccessCount>,
@@ -91,6 +99,64 @@ where
 {
 }
 
+macro_rules! impl_system {
+    ($($gen:ident),*) => {
+        impl<$($gen),*, F> System for SystemContainer<($($gen),*), F>
+        where
+            $($gen: Param),*,
+            ($($gen),*): ParamBundle,
+            F: ParametrizedSystem<($($gen),*)>
+        {
+            #[inline]
+            fn name(&self) -> &'static str {
+                self.meta.name
+            }
+
+            fn access(&self) -> &[AccessDesc] {
+                &self.access
+            }
+
+            unsafe fn call(&self, world: &World) {
+                #[cfg(debug_assertions)]
+                let _guard = self.enforcer.write();
+
+                // SAFETY:
+                // This is safe because every system has a unique state. At the same time a system
+                // can be used on only one thread at a time.
+                let state = unsafe { &mut *self.state.get() };
+                self.system.call(world, state);
+            }
+        }
+
+        impl<$($gen),*, F: Fn($($gen::Output<'_>),*)> ParametrizedSystem<($($gen),*)> for F
+        where
+            $($gen: Param),*,
+            ($($gen),*): ParamBundle<State = ($($gen::State),*)>
+        {
+            #[allow(non_snake_case)]
+            fn call(&self, world: &World, state: &mut <($($gen),*) as ParamBundle>::State) {
+                let ($($gen),*) = state;
+                self($(
+                    $gen::fetch::<Sealer>(world, $gen)
+                ),*)
+            }
+        }
+
+        impl<$($gen),*, F> IntoSystem<($($gen),*)> for F
+        where
+            $($gen: Param),*,
+            F: ParametrizedSystem<($($gen),*)>,
+            F: Fn($($gen),*)
+        {
+            fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
+                Box::new(self.into_container(world, id))
+            }
+        }
+    }
+}
+
+impl_system!(A, B, C);
+
 impl<P, F> System for SystemContainer<P, F>
 where
     P: Param,
@@ -105,7 +171,7 @@ where
         &self.access
     }
 
-    fn call(&self, world: &World) {
+    unsafe fn call(&self, world: &World) {
         // SAFETY:
         // This is safe because every system has a unique state. At the same time a system
         // can be used on only one thread at a time.
@@ -127,7 +193,7 @@ where
         &self.access
     }
 
-    fn call(&self, world: &World) {
+    unsafe fn call(&self, world: &World) {
         // SAFETY:
         // This is safe because every system has a unique state. At the same time a system
         // can be used on only one thread at a time.
