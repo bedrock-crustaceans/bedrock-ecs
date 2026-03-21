@@ -18,7 +18,7 @@ impl Entities {
     /// Allocates an entity handle but does not insert it into the registry yet.
     pub fn allocate(&mut self) -> EntityHandle {
         // Allocate an ID for this new entity.
-        let handle = if let Some(id) = self.freelist.pop() {
+        if let Some(id) = self.freelist.pop() {
             self.generations[id as usize] += 1;
 
             let generation = self.generations[id as usize];
@@ -38,9 +38,7 @@ impl Entities {
                 EntityIndex::from_bits(id),
                 EntityGeneration::FIRST,
             )
-        };
-
-        handle
+        }
     }
 
     /// Inserts the given entity metadata into the registry.

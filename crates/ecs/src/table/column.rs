@@ -24,7 +24,7 @@ type DropFn = unsafe fn(ptr: *mut u8, len: usize);
 /// - `ptr` is a valid pointer to an array of objects of type `T`.
 /// - `len` is less than or equal to the amount of objects contained in the array starting at `ptr`.
 unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
-    let ptr = ptr as *mut T;
+    let ptr = ptr.cast::<T>();
     for i in 0..len {
         unsafe {
             std::ptr::drop_in_place(ptr.add(i));
@@ -124,12 +124,6 @@ impl Column {
         }
     }
 
-    /// # Safety: This is only safe if there are no other references to this column's change tracker.
-    #[inline]
-    pub unsafe fn get_tracker_mut(&self) -> &mut ChangeTracker {
-        unsafe { &mut *self.tracker.get() }
-    }
-
     /// Returns the size of an entry in bytes. This includes potential padding.
     ///
     /// In other words, this is equivalent to `std::mem::size_of::<T>()` where
@@ -141,6 +135,12 @@ impl Column {
         self.layout.pad_to_align().size()
     }
 
+    /// Creates an iterator over this column. Optional filters can be applied using the `F` generic.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
+    /// to `Column::new`.
     pub fn iter<T: 'static, F: FilterBundle>(&self) -> ColumnIter<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
@@ -172,6 +172,12 @@ impl Column {
         }
     }
 
+    /// Creates a mutable iterator over this column. Optional filters can be applied using the `F` generic.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
+    /// to `Column::new`.
     pub fn iter_mut<T: 'static, F: FilterBundle>(&self) -> ColumnIterMut<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.write();
@@ -182,7 +188,9 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
-        let tracker = unsafe { self.get_tracker_mut() };
+        let tracker = todo!("track readers and writers for change tracker.");
+
+        // let tracker = unsafe { self.tracker.get() };
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
                 index: 0,
@@ -211,6 +219,10 @@ impl Column {
     }
 
     /// Reserves capacity for at least `n` additional entries.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "exists for soundness reasons but realistically should never be triggered"
+    )]
     pub fn reserve(&mut self, n: usize) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
@@ -228,8 +240,8 @@ impl Column {
         let (new_layout, _) = self.layout.repeat_ext(cap).expect("invalid array layout");
 
         assert!(
-            new_layout.size() <= isize::MAX as usize,
-            "Allocation too large"
+            isize::try_from(new_layout.size()).is_ok(),
+            "allocation too large"
         );
 
         let ptr = if let Some(ptr) = self.data {
@@ -278,8 +290,8 @@ impl Column {
 
         let offset = self.layout.pad_to_align().size() * self.len;
         assert!(
-            offset <= isize::MAX as usize,
-            "Pointer offset overflow in Column::push"
+            isize::try_from(offset).is_ok(),
+            "pointer offset overflow in Column::push"
         );
 
         // Safety:
@@ -309,9 +321,13 @@ impl Column {
     /// This function is not marked unsafe because obtaining the pointer itself is a safe operation.
     /// The reference aliasing rules must be upheld manually when dereferencing this pointer however.
     ///
-    /// In other words, if there exists a muColumn reference to this `Column`, you cannot dereference the returned
-    /// pointer. If there exists an immuColumn reference to this `Column`, you must cast the pointer to a `*const T` and
-    /// only use it as an immuColumn pointer. If there exist no references, you can do either.
+    /// In other words, if there exists a mutablereference to this `Column`, you cannot dereference the returned
+    /// pointer. If there exists a shared reference to this `Column`, you must cast the pointer to a `*const T` and
+    /// only use it as a shared pointer. If there exist no references, you can do either.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `T` is not the type that is contained in this table.
     pub fn get<T: 'static>(&self, index: usize) -> Option<&T> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
@@ -328,8 +344,8 @@ impl Column {
 
         let offset = self.layout.size() * index;
         assert!(
-            offset <= isize::MAX as usize,
-            "Pointer offset overflow in Column::get"
+            isize::try_from(offset).is_ok(),
+            "pointer offset overflow in Column::get"
         );
 
         // Safety:
@@ -359,8 +375,8 @@ impl Column {
         let data_ptr = self.data.unwrap().as_ptr();
         let dst_offset = self.padded_size() * idx;
         assert!(
-            dst_offset <= isize::MAX as usize,
-            "Pointer offset overflow in Column::swap_remove dst pointer"
+            isize::try_from(dst_offset).is_ok(),
+            "pointer offset overflow in Column::swap_remove dst pointer"
         );
 
         // The item to remove and copy into
@@ -389,8 +405,8 @@ impl Column {
         if idx != self.len - 1 {
             let src_offset = self.padded_size() * (self.len() - 1);
             assert!(
-                src_offset <= isize::MAX as usize,
-                "Pointer offset overflow in Column::swap_remove src pointer"
+                isize::try_from(src_offset).is_ok(),
+                "pointer offset overflow in Column::swap_remove src pointer"
             );
 
             // The last item in the array. Will be copied to the empty slot
@@ -423,6 +439,11 @@ impl Column {
         let _guard = self.enforcer.read();
 
         self.len
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// The capacity of the column.

@@ -71,6 +71,8 @@ unsafe fn drop_fn<C: Command>(cmd_ptr: NonNull<u8>) {
 }
 
 /// An append-only list of commands for the current thread.
+#[clippy::has_significant_drop]
+#[derive(Default)]
 pub struct LocalCommandBuffer {
     // Deferred entity ID counter.
     next_deferred_id: u32,
@@ -89,6 +91,7 @@ impl LocalCommandBuffer {
         self.commands.reserve(bytes);
     }
 
+    #[must_use]
     pub fn allocate_deferred_index(&mut self) -> EntityIndex {
         let id = self.next_deferred_id;
         self.next_deferred_id += 1;
@@ -103,8 +106,6 @@ impl LocalCommandBuffer {
     pub fn push<C: Command>(&mut self, command: C) {
         let tuple_layout = Layout::new::<(CommandVTable, C)>();
         let tuple_size = tuple_layout.size();
-
-        assert_eq!(tuple_size, tuple_layout.pad_to_align().size());
 
         let meta = CommandVTable {
             stride: tuple_size,
@@ -136,6 +137,10 @@ impl LocalCommandBuffer {
         }
     }
 
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "assert for safety, but should realistically never be triggered"
+    )]
     pub fn apply_all(&mut self, world: &mut World) {
         tracing::error!("applying all commands");
 
@@ -143,7 +148,7 @@ impl LocalCommandBuffer {
 
         assert!(
             buffer_len < isize::MAX as usize,
-            "Command buffer length exceeds `isize::MAX`"
+            "command buffer length exceeds `isize::MAX`"
         );
 
         // Set length to 0 immediately to ensure that no uninit memory is read in case of a panic.
@@ -219,15 +224,6 @@ impl LocalCommandBuffer {
 
             // Skip over vtable and data to reach next command.
             offset += vtable.stride;
-        }
-    }
-}
-
-impl Default for LocalCommandBuffer {
-    fn default() -> LocalCommandBuffer {
-        Self {
-            next_deferred_id: 0,
-            commands: Vec::new(),
         }
     }
 }

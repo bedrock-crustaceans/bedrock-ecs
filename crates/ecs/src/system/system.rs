@@ -15,11 +15,15 @@ pub struct SystemMeta {
 }
 
 impl SystemMeta {
+    /// Returns the unique identifier of the system.
     #[inline]
     pub fn id(&self) -> SystemId {
         self.id
     }
 
+    /// Returns the name of the system.
+    ///
+    /// This name is determined on a best-effort basis. It may not always be entirely accurate.
     #[inline]
     pub fn name(&self) -> &'static str {
         self.name
@@ -40,7 +44,7 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
     fn into_container(self, world: &mut World, id: SystemId) -> SystemContainer<P, Self> {
         let mut name = std::any::type_name::<Self>();
         if !name.contains('{') {
-            name = name.split("::").last().unwrap_or(name)
+            name = name.split("::").last().unwrap_or(name);
         }
 
         let access = P::access(world);

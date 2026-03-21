@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::archetype::Signature;
-use crate::component::{ComponentRegistry, SpawnBundle};
+use crate::component::ComponentRegistry;
 use crate::entity::{Entity, EntityHandle};
 use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
@@ -135,11 +135,19 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::insert", skip(self, bundle))
     )]
-    pub fn insert<B: SpawnBundle + 'static>(&mut self, handle: EntityHandle, bundle: B) -> Entity {
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "this function does not panic since an item is inserted before unwrapping"
+    )]
+    pub fn insert<B: ComponentBundle + 'static>(
+        &mut self,
+        handle: EntityHandle,
+        bundle: B,
+    ) -> Entity {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
-        let sig = B::signature(&mut self.component_registry);
+        let sig = B::get_or_assign_signature(&mut self.component_registry);
 
         // Check whether archetype already exists, otherwise create it
         let lookup = self.lookup.get(&sig);
@@ -150,9 +158,11 @@ impl Archetypes {
 
             self.lookup_array.push(sig.clone());
             self.lookup.insert(sig.clone(), self.tables.len());
-            let table = Table::new::<B>(sig);
-            self.tables.push(table);
 
+            // Safety: This is safe because `sig` is derived from `B`.
+            let table = unsafe { Table::new::<B>(sig) };
+
+            self.tables.push(table);
             self.tables.last_mut().unwrap()
         };
 
@@ -163,31 +173,15 @@ impl Archetypes {
             row,
             table: Some(unsafe {
                 // Safety: This is safe because `table` is a reference which is guaranteed to be nonnull.
-                NonNull::new_unchecked(table as *mut Table)
+                NonNull::new_unchecked(std::ptr::from_mut::<Table>(table))
             }),
-        }
-    }
-
-    pub fn remove_by_handle(&mut self, handle: EntityHandle) {
-        // Only needs read only access to the `Archetypes` type itself.
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-    }
-
-    pub fn remove(&mut self, handle: &Entity) {
-        // Only needs read only access to the `Archetypes` type itself.
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
-        if let Some(mut table) = handle.table {
-            let table = unsafe { table.as_mut() };
-            table.remove(handle.handle);
         }
     }
 
     /// Returns the amount of archetypes currently contained in this container.
     ///
     /// It does *not* return the total amount of entities, only the unique combinations of components.
+    #[inline]
     pub fn len(&self) -> usize {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
@@ -195,12 +189,18 @@ impl Archetypes {
         self.tables.len()
     }
 
+    /// Whether this container contains no archetypes.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Checks whether the given entity is found in any of the tables containing the archetype `A`.
     pub fn has_components<A: ComponentBundle>(&self, entity: EntityHandle) -> bool {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        let Some(bitset) = A::get_signature(&self.component_registry) else {
+        let Some(bitset) = A::try_get_signature(&self.component_registry) else {
             // If the component has not been registered, then it cannot have been spawned.
             // Hence there are no entities with this component.
             return false;
@@ -213,14 +213,14 @@ impl Archetypes {
 
     /// Returns a table at a specific index.
     ///
-    /// Use [`get_by_archetype`] or [`get_by_bitset`] if the index is unknown.
+    /// Use [`get_by_archetype`] or [`get_by_signature`] if the index is unknown.
     ///
     /// # Panics
     ///
     /// This function panics if the index is out of bounds.
     ///
     /// [`get_by_archetype`]: Self::get_by_archetype
-    /// [`get_by_bitset`]: Self::get_by_bitset
+    /// [`get_by_signature`]: Self::get_by_signature
     #[inline]
     pub fn get_by_index(&self, index: usize) -> &Table {
         #[cfg(debug_assertions)]
@@ -235,20 +235,20 @@ impl Archetypes {
     /// It only fetches exactly matching archetypes.
     /// If a table has these components but also includes additional ones, it will return `None`.
     ///
-    /// Alternatives: [`get_by_bitset`], [`get_by_index`].
+    /// Alternatives: [`get_by_signature`], [`get_by_index`].
     ///
-    /// [`get_by_bitset`]: Self::get_by_bitset
+    /// [`get_by_signature`]: Self::get_by_signature
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_archetype<T: ComponentBundle>(&self) -> Option<&Table> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        let bitset = T::get_signature(&self.component_registry)?;
-        self.get_by_bitset(&bitset)
+        let bitset = T::try_get_signature(&self.component_registry)?;
+        self.get_by_signature(&bitset)
     }
 
-    /// Fetches a table by archetype bitset.
+    /// Fetches a table by its archetype signature.
     ///
     /// This function returns `None` if the exact archetype was not found.
     /// It only fetches exactly matching archetypes.
@@ -259,11 +259,11 @@ impl Archetypes {
     /// [`get_by_archetype`]: Self::get_by_archetype
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
-    pub fn get_by_bitset(&self, bitset: &Signature) -> Option<&Table> {
+    pub fn get_by_signature(&self, signature: &Signature) -> Option<&Table> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        let index = self.lookup.get(bitset)?;
+        let index = self.lookup.get(signature)?;
         Some(self.get_by_index(*index))
     }
 }

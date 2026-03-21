@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::UnsafeCell};
+use std::cell::UnsafeCell;
 
 use smallvec::SmallVec;
 

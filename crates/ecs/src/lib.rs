@@ -2,6 +2,7 @@
 // mod test;
 
 #![warn(clippy::pedantic)]
+#![allow(clippy::must_use_candidate)]
 
 pub mod archetype;
 pub mod command;

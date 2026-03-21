@@ -1,4 +1,5 @@
-///! Implements the query iterator functionality.
+//! Implements the query iterator functionality.
+//!
 use std::any::TypeId;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;

@@ -1,6 +1,7 @@
-///! Implements the [`QueryBundle`] and [`ParamRef`] related traits.
+//! Implements the [`QueryBundle`] and [`ParamRef`] related traits.
+
 use std::any::TypeId;
-use std::ops::{Add, Deref, DerefMut};
+use std::ops::Add;
 
 use generic_array::{ArrayLength, GenericArray};
 use rustc_hash::FxHashMap;
@@ -10,7 +11,7 @@ use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, FilterBundle, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref};
+use crate::table::{ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -94,21 +95,21 @@ pub unsafe trait QueryBundle: Sized {
 ///
 /// Implementors of this trait should uphold the following conditions:
 /// - `Unref` must be the exact type you would get if you were to remove the reference, i.e. if `Self = &T` then
-/// `Self::Unref` must be `T`.
+///   `Self::Unref` must be `T`.
 ///
 /// - `Output<'w>` must equal `Self` but with its lifetime bound to `'w`. Incorrect lifetimes will lead to use after
-/// free situations.
+///   free situations.
 ///
 /// - `Iter<'t>` must be an iterator that only returns mutable references if `Self`'s access descriptor also
-/// indicates it requires mutable access.
+///   indicates it requires mutable access.
 ///
 /// - `IS_ENTITY` must only be set to true when implementing this trait for [`Entity`].
 ///
 /// - `access` must return the correct descriptor, indicating which resources this parameter uses.
-/// Incorrect descriptors will cause undefined behaviour through mutable reference aliasing.
+///   Incorrect descriptors will cause undefined behaviour through mutable reference aliasing.
 ///
 /// - `component_id` must return the correct ID for `Self::Unref`. Incorrect component IDs will cause the query
-/// cache to read the wrong columns, which means data is interpreted with the incorrect type.
+///   cache to read the wrong columns, which means data is interpreted with the incorrect type.
 ///
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::EntityRef
@@ -235,12 +236,12 @@ unsafe impl<T: Component> ParamRef for &T {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
-            "table column lookup failed for component {}",
-            std::any::type_name::<T>()
-        ));
-
-        col
+        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
+            panic!(
+                "table column lookup failed for component {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
     fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
@@ -272,19 +273,15 @@ unsafe impl<T: Component> ParamRef for &mut T {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
-            "table column lookup failed for component {}",
-            std::any::type_name::<T>()
-        ));
-
-        col
+        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
+            panic!(
+                "table column lookup failed for component {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
-    fn iter<'t, F: FilterBundle>(
-        world: &'t World,
-        table: usize,
-        col: usize,
-    ) -> ColumnIterMut<'t, T, F> {
+    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIterMut<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
         col.iter_mut()
@@ -312,12 +309,12 @@ unsafe impl<T: Component> ParamRef for Ref<'_, T> {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
-            "table column lookup failed for component {}",
-            std::any::type_name::<T>()
-        ));
-
-        col
+        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
+            panic!(
+                "table column lookup failed for component {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
     fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
@@ -349,19 +346,15 @@ unsafe impl<T: Component> ParamRef for Mut<'_, T> {
     }
 
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        let col = *map.get(&TypeId::of::<T>()).expect(&format!(
-            "table column lookup failed for component {}",
-            std::any::type_name::<T>()
-        ));
-
-        col
+        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
+            panic!(
+                "table column lookup failed for component {}",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
-    fn iter<'t, F: FilterBundle>(
-        world: &'t World,
-        table: usize,
-        col: usize,
-    ) -> ColumnIterMut<'t, T, F> {
+    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIterMut<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
         col.iter_mut()

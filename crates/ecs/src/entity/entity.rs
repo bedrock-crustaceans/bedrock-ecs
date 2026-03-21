@@ -40,7 +40,7 @@ pub struct EntityRef<'w> {
     pub(crate) handle: EntityHandle,
 }
 
-impl<'w> EntityRef<'w> {
+impl EntityRef<'_> {
     /// Returns the handle of this entity.
     pub fn handle(&self) -> EntityHandle {
         self.handle

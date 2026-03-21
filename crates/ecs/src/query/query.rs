@@ -32,8 +32,9 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     }
 
     /// Returns the metadata associated with this query.
+    #[inline]
     pub fn meta(&self) -> &QueryMeta<Q, F> {
-        &self.cache
+        self.cache
     }
 
     /// Creates an iterator that iterates over all components matching this query.
@@ -212,7 +213,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
 }
 
 #[diagnostic::do_not_recommend]
-impl<'q, 'w, Q: QueryBundle, F: FilterBundle> IntoIterator for &'q Query<'w, Q, F> {
+impl<'q, Q: QueryBundle, F: FilterBundle> IntoIterator for &'q Query<'_, Q, F> {
     type Item = Q::Output<'q>;
     type IntoIter = Q::Iter<'q, F>;
 

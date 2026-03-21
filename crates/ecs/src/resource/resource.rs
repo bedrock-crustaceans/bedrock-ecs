@@ -72,7 +72,7 @@ impl_bundle!(5, A, B, C, D, E);
 /// attempting to use the resource.
 pub struct Res<'s, R: Resource>(&'s R);
 
-impl<'s, R: Resource> Deref for Res<'s, R> {
+impl<R: Resource> Deref for Res<'_, R> {
     type Target = R;
 
     fn deref(&self) -> &R {
@@ -154,7 +154,7 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
 
 pub struct ResMut<'s, R: Resource>(&'s mut R);
 
-impl<'s, R: Resource> Deref for ResMut<'s, R> {
+impl<R: Resource> Deref for ResMut<'_, R> {
     type Target = R;
 
     fn deref(&self) -> &R {
@@ -162,7 +162,7 @@ impl<'s, R: Resource> Deref for ResMut<'s, R> {
     }
 }
 
-impl<'s, R: Resource> DerefMut for ResMut<'s, R> {
+impl<R: Resource> DerefMut for ResMut<'_, R> {
     fn deref_mut(&mut self) -> &mut R {
         self.0
     }
@@ -221,16 +221,20 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
 
     #[inline]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut ResState) -> ResMut<'w, R> {
-        let Some(res) = (unsafe { world.resources.get_mut_unchecked::<R>() }) else {
+        let Some(ptr) = world.resources.get_ptr::<R>() else {
             tracing::error!(
                 "System `{}` attempted to access `ResMut<{}>` which does not exist",
                 state.system,
                 state.resource
             );
 
-            panic!("cannot access non-existent resource");
+            panic!(
+                "cannot access non-existent resource, ensure you've called `World::insert_resources`"
+            );
         };
 
-        ResMut(res)
+        // Safety: This is safe because `ptr` points to a value of type `R` that is properly aligned.
+        // It is also `NonNull` and the scheduler ensures that this is the only system with access to this resource.
+        ResMut(unsafe { &mut *ptr.as_ptr() })
     }
 }

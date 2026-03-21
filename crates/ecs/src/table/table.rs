@@ -1,12 +1,11 @@
 use std::any::TypeId;
-use std::cell::UnsafeCell;
 use std::ptr::NonNull;
 
 use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
-use crate::component::SpawnBundle;
-use crate::entity::{Entity, EntityHandle};
+use crate::component::ComponentBundle;
+use crate::entity::EntityHandle;
 use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
 use crate::world::World;
 
@@ -41,9 +40,13 @@ pub struct Table {
 impl Table {
     /// Creates a new table for the given collection of components and inserts those components into the
     /// table.
+    ///
+    /// # Safety
+    ///
+    /// `signature` must be the actual signature of the component bundle in generic `B`.
     #[inline]
-    pub fn new<G: SpawnBundle>(bitset: Signature) -> Table {
-        G::new_table(bitset)
+    pub unsafe fn new<B: ComponentBundle>(signature: Signature) -> Table {
+        unsafe { B::into_table(signature) }
     }
 
     /// Returns the archetype of this table.
@@ -52,7 +55,7 @@ impl Table {
     }
 
     /// Inserts a set of components into this table and returns the row it was inserted at
-    pub fn insert<G: SpawnBundle>(&mut self, entity: EntityHandle, components: G) -> TableRow {
+    pub fn insert(&mut self, entity: EntityHandle, components: impl ComponentBundle) -> TableRow {
         let row = self.entities.len();
         self.entities.push(entity);
         self.entity_lookup
@@ -88,16 +91,22 @@ impl Table {
         }
     }
 
-    pub fn iter_entities<'w>(&'w self, world: &'w World) -> EntityIter<'w> {
+    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
         EntityIter {
             row_index: 0,
-            table: NonNull::new(self as *const Table as *mut Table),
+            table: NonNull::new(std::ptr::from_ref(self).cast_mut()),
             iter: self.entities.iter(),
         }
     }
 
     /// Returns the amount of entities stored in this table.
+    #[inline]
     pub fn len(&self) -> usize {
         self.entities.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

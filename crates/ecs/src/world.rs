@@ -11,7 +11,7 @@ use crate::param;
 
 use crate::archetype::Archetypes;
 use crate::command::CommandPool;
-use crate::component::{ComponentBundle, SpawnBundle};
+use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityHandle, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, ResourceRegistry};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
@@ -27,12 +27,8 @@ pub struct World {
 
 impl World {
     #[inline]
+    #[must_use]
     pub fn new() -> World {
-        rayon::ThreadPoolBuilder::new()
-            .thread_name(|i| format!("ecs-worker-{i}"))
-            .build_global()
-            .unwrap();
-
         World {
             archetypes: Archetypes::new(),
             entities: Entities::new(),
@@ -43,6 +39,7 @@ impl World {
 
     pub fn apply_commands(&mut self) {
         // Take out of the world temporarily to allow commands to take a `&mut World`.
+        #[expect(clippy::missing_panics_doc, reason = "can never be triggered by user")]
         let mut commands = self.commands.take().expect("World::commands was empty");
         unsafe { commands.apply_all(self) };
 
@@ -51,7 +48,7 @@ impl World {
 
     // Entities
     // ======================================================================================
-    pub fn spawn(&mut self, bundle: impl SpawnBundle) -> EntityMut<'_> {
+    pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityMut<'_> {
         let id = self.entities.allocate();
         let meta = self.archetypes.insert(id, bundle);
         self.entities.spawn(meta);
@@ -65,10 +62,11 @@ impl World {
     #[inline]
     pub(crate) fn despawn(&mut self, entity: Entity) {
         // Remove from table
-        self.archetypes.remove(&entity);
+        // self.archetypes.remove(&entity);
+        todo!();
 
         // Remove from alive list.
-        self.entities.despawn(entity.handle)
+        self.entities.despawn(entity.handle);
     }
 
     #[inline]
@@ -127,6 +125,7 @@ impl World {
         self.resources.contains::<R>()
     }
 
+    #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
     pub fn run(&mut self, schedule: &Schedule) {
         for set in &schedule.sets {
             // for id in set {
@@ -136,7 +135,7 @@ impl World {
             rayon::scope(|s| {
                 for id in set {
                     s.spawn(|_| {
-                        schedule.systems.get(id).unwrap().call(&self);
+                        schedule.systems.get(id).unwrap().call(self);
                     });
                 }
             });
@@ -227,7 +226,7 @@ unsafe impl Param for &mut World {
 
     fn init(_world: &mut World, _meta: &SystemMeta) {}
 
-    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> &'w mut World {
+    fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut ()) -> &'w mut World {
         todo!()
     }
 }

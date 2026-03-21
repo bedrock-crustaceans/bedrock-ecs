@@ -19,7 +19,7 @@ pub struct LocalState<T: Default + Send + 'static>(T);
 /// ticks but is only used by one system.
 pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
-unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
+unsafe impl<T: Default + Send> Param for Local<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
     type State = LocalState<T>;
@@ -56,7 +56,7 @@ unsafe impl<'s, T: Default + Send> Param for Local<'s, T> {
     }
 }
 
-impl<'s, T: Default + Send> Deref for Local<'s, T> {
+impl<T: Default + Send> Deref for Local<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -64,7 +64,7 @@ impl<'s, T: Default + Send> Deref for Local<'s, T> {
     }
 }
 
-impl<'s, T: Default + Send> DerefMut for Local<'s, T> {
+impl<T: Default + Send> DerefMut for Local<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.0
     }

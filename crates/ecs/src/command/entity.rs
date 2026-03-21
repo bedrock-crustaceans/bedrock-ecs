@@ -1,6 +1,6 @@
 use crate::command::{Command, Commands};
-use crate::component::SpawnBundle;
 use crate::entity::{Entity, EntityHandle, EntityIndex};
+use crate::prelude::ComponentBundle;
 use crate::world::World;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub struct EntityCommands<'parent, 'state> {
     pub(crate) commands: &'parent mut Commands<'state>,
 }
 
-impl<'s, 'c> EntityCommands<'s, 'c> {
+impl EntityCommands<'_, '_> {
     /// Returns the entity's handle if it exists.
     ///
     /// Entities that have been spawned during this tick will not have a handle yet.
@@ -58,12 +58,12 @@ impl<'s, 'c> EntityCommands<'s, 'c> {
     /// Adds components to this entity.
     ///
     /// This is a deferred operation and will be performed after the end of this tick.
-    pub fn insert(&mut self, components: impl SpawnBundle) -> &mut Self {
+    pub fn insert(&mut self, _components: impl ComponentBundle) -> &mut Self {
         todo!()
     }
 
     /// Removes the given components from this entity.
-    pub fn remove<S: SpawnBundle>(&mut self) {
+    pub fn remove<S: ComponentBundle>(&mut self) {
         todo!()
     }
 
@@ -75,29 +75,29 @@ impl<'s, 'c> EntityCommands<'s, 'c> {
     }
 }
 
-pub struct InsertCommand<T: SpawnBundle> {
+pub struct InsertCommand<T: ComponentBundle> {
     entity: EntityCommandsHandle,
     components: T,
 }
 
-impl<T: SpawnBundle> Command for InsertCommand<T> {
+impl<T: ComponentBundle> Command for InsertCommand<T> {
     fn apply(self, world: &mut World) {
         todo!()
     }
 }
 
-impl<T: SpawnBundle> Drop for InsertCommand<T> {
+impl<T: ComponentBundle> Drop for InsertCommand<T> {
     fn drop(&mut self) {
         println!("drop insert test: {:?}", self.entity);
     }
 }
 
-pub struct SpawnCommand<T: SpawnBundle> {
+pub struct SpawnCommand<T: ComponentBundle> {
     pub(crate) handle: EntityCommandsHandle,
     pub(crate) components: T,
 }
 
-impl<T: SpawnBundle> Command for SpawnCommand<T> {
+impl<T: ComponentBundle> Command for SpawnCommand<T> {
     #[inline]
     fn apply(self, world: &mut World) {
         world.spawn(self.components);
@@ -111,7 +111,7 @@ pub struct DespawnCommand {
 
 impl Command for DespawnCommand {
     #[inline]
-    fn apply(self, world: &mut World) {
+    fn apply(self, _world: &mut World) {
         todo!()
         // world.entities.despawn(self.handle)
     }

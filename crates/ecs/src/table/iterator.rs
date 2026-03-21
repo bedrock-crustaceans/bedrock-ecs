@@ -51,13 +51,13 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
     }
 }
 
-impl<'a, T, F: FilterBundle> ExactSizeIterator for ColumnIter<'a, T, F> {
+impl<T, F: FilterBundle> ExactSizeIterator for ColumnIter<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<'a, T, F: FilterBundle> FusedIterator for ColumnIter<'a, T, F> {}
+impl<T, F: FilterBundle> FusedIterator for ColumnIter<'_, T, F> {}
 
 impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
@@ -116,13 +116,13 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
     }
 }
 
-impl<'a, T, F: FilterBundle> ExactSizeIterator for ColumnIterMut<'a, T, F> {
+impl<T, F: FilterBundle> ExactSizeIterator for ColumnIterMut<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<'a, T, F: FilterBundle> FusedIterator for ColumnIterMut<'a, T, F> {}
+impl<T, F: FilterBundle> FusedIterator for ColumnIterMut<'_, T, F> {}
 
 impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
@@ -146,7 +146,7 @@ pub struct EntityIter<'w> {
     pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
 }
 
-impl<'w> Iterator for EntityIter<'w> {
+impl Iterator for EntityIter<'_> {
     type Item = Entity;
 
     fn next(&mut self) -> Option<Entity> {
@@ -161,16 +161,21 @@ impl<'w> Iterator for EntityIter<'w> {
             handle,
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
 
-impl<'t> ExactSizeIterator for EntityIter<'t> {
+impl ExactSizeIterator for EntityIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<'t> FusedIterator for EntityIter<'t> {}
+impl FusedIterator for EntityIter<'_> {}
 
 impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
     fn empty(_world: &'w World) -> EntityIter<'w> {
@@ -198,16 +203,21 @@ impl<'w> Iterator for EntityRefIter<'w> {
             world: self.world,
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
 
-impl<'t> ExactSizeIterator for EntityRefIter<'t> {
+impl ExactSizeIterator for EntityRefIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl<'t> FusedIterator for EntityRefIter<'t> {}
+impl FusedIterator for EntityRefIter<'_> {}
 
 impl<'w> EmptyableIterator<'w, EntityRef<'w>> for EntityRefIter<'w> {
     fn empty(world: &'w World) -> EntityRefIter<'w> {

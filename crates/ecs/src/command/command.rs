@@ -1,12 +1,9 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use crate::command::{EntityCommands, EntityCommandsHandle, LocalCommandBuffer, SpawnCommand};
-use crate::component::SpawnBundle;
 use crate::entity::Entity;
+use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
@@ -46,18 +43,20 @@ impl CommandPool {
     /// This function is only safe to call if there are no other references to the current thread's local command buffer.
     pub unsafe fn get_buffer(&self) -> Commands<'_> {
         #[cfg(debug_assertions)]
-        let _pool_guard = self.enforcer.read();
+        let pool_guard = self.enforcer.read();
 
         let cell = self.buffers.get_or_default();
 
         #[cfg(debug_assertions)]
-        let _local_guard = cell.enforcer.write();
+        let local_guard = cell.enforcer.write();
 
         Commands {
             buffer: unsafe { &mut *cell.buffer.get() },
             _marker: PhantomData,
-            _pool_guard,
-            _local_guard,
+            #[cfg(debug_assertions)]
+            _pool_guard: pool_guard,
+            #[cfg(debug_assertions)]
+            _local_guard: local_guard,
         }
     }
 
@@ -107,7 +106,7 @@ impl<'s> Commands<'s> {
         }
     }
 
-    pub fn spawn(&mut self, bundle: impl SpawnBundle) -> EntityCommands<'_, 's> {
+    pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityCommands<'_, 's> {
         let index = self.buffer.allocate_deferred_index();
         self.buffer.push(SpawnCommand {
             handle: EntityCommandsHandle::Deferred(index),

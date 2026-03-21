@@ -46,12 +46,12 @@ pub unsafe trait Param {
 /// # Safety
 ///
 /// - `AccessCount` must return the exact amount of resources accessed by all parameters combined.
-/// For example, if the bundle consists of two parameters that each access one resource, then `AccessCount` must
-/// equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
+///   For example, if the bundle consists of two parameters that each access one resource, then `AccessCount` must
+///   equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
 ///
 /// - `access` must correctly return each of the components that the parameters use, including
-/// correct mutability information. Incorrect access descriptors will give wrong information to the scheduler
-/// and cause mutable reference aliasing.
+///   correct mutability information. Incorrect access descriptors will give wrong information to the scheduler
+///   and cause mutable reference aliasing.
 pub unsafe trait ParamBundle {
     /// The amount of resources that this parameter collection requires.
     /// This is used to compute, at compile time, how large the system metadata must be.
@@ -120,7 +120,7 @@ macro_rules! impl_bundle {
                     let mut array = MaybeUninit::<GenericArray<AccessDesc, Self::AccessCount>>::uninit();
 
                     let mut offset = 0;
-                    let dest_ptr = array.as_mut_ptr() as *mut AccessDesc;
+                    let dest_ptr = array.as_mut_ptr().cast::<AccessDesc>();
                     $(
                         let part = $gen::access(world);
                         unsafe {

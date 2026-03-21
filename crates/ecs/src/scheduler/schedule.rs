@@ -77,6 +77,7 @@ impl<'w> ScheduleBuilder<'w> {
         }
     }
 
+    #[must_use = "dropping the builder without calling `ScheduleBuilder::schedule` will do nothing"]
     pub fn add<L, G, P>(mut self, _label: L, systems: G) -> ScheduleBuilder<'w>
     where
         L: ScheduleLabel,

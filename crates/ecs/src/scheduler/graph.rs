@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -91,10 +93,10 @@ impl ScheduleGraph {
                 } else {
                     if access.ty == AccessType::World {
                         // Check if there is any writer
-                        last_writer.values().for_each(|writer| {
+                        for writer in last_writer.values() {
                             self.adjacency[*writer].push(i);
                             self.in_degrees[i] += 1;
-                        });
+                        }
                     } else if let Some(writer) = last_writer.get(&access.ty) {
                         self.adjacency[*writer].push(i);
                         self.in_degrees[i] += 1;
@@ -153,7 +155,7 @@ impl ScheduleGraph {
                 let system = systems.get(&self.nodes[*j].sid).unwrap();
                 let j_name = system.name();
 
-                out.push_str(&format!("{i_name} -> {j_name};"));
+                let _ = write!(out, "{i_name} -> {j_name};");
             }
         }
 

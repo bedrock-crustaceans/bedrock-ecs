@@ -28,19 +28,13 @@ impl LayoutExt for Layout {
 
     fn repeat_ext(&self, n: usize) -> Option<(Layout, usize)> {
         let padded = self.pad_to_align();
-        if let Some(repeated) = padded.repeat_packed_ext(n) {
-            Some((repeated, padded.size()))
-        } else {
-            None
-        }
+        padded.repeat_packed_ext(n).map(|r| (r, padded.size()))
     }
 }
 
 #[cfg(debug_assertions)]
 pub mod debug {
     use std::{
-        cell::UnsafeCell,
-        ops::Deref,
         sync::{
             Arc, Mutex,
             atomic::{AtomicUsize, Ordering},
@@ -61,7 +55,12 @@ pub mod debug {
             Self::default()
         }
 
-        #[must_use]
+        /// Adds a reader to the enforcer.
+        ///
+        /// # Panics
+        ///
+        /// This function panics if a writer already exists.
+        #[must_use = "the read guard must be held across the point where the data is used"]
         #[track_caller]
         pub fn read(&self) -> ReadGuard {
             assert_eq!(
@@ -78,7 +77,12 @@ pub mod debug {
             }
         }
 
-        #[must_use]
+        /// Adds a writer to the enforcer.
+        ///
+        /// # Panics
+        ///
+        /// This function panics if a reader or writer already exists.
+        #[must_use = "the write guard must be held across the point where the data is used"]
         #[track_caller]
         pub fn write(&self) -> WriteGuard {
             assert_eq!(
