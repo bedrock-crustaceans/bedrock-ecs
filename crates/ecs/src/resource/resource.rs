@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use generic_array::GenericArray;
 use generic_array::typenum::U1;
 
-use crate::resource::ResourceRegistry;
+use crate::resource::Resources;
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
@@ -32,16 +32,16 @@ pub trait Resource: Send + Sync + 'static {
 /// A collection of [`Resource`]s.
 pub trait ResourceBundle {
     /// Inserts all [`Resource`]s into the given [`Resources`].
-    fn insert_into(self, resources: &mut ResourceRegistry);
+    fn insert_into(self, resources: &mut Resources);
     /// Whether the given [`Resources`] contains all [`Resource`]s in this bundle.
-    fn contains_all(resources: &ResourceRegistry) -> bool;
+    fn contains_all(resources: &Resources) -> bool;
 }
 
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         #[allow(unused_parens)]
         impl<$($gen: Resource),*> ResourceBundle for ($($gen),*) {
-            fn insert_into(self, resources: &mut ResourceRegistry) {
+            fn insert_into(self, resources: &mut Resources) {
                 #[allow(non_snake_case)]
                 let ($($gen),*) = self;
 
@@ -51,7 +51,7 @@ macro_rules! impl_bundle {
                 )*
             }
 
-            fn contains_all(resources: &ResourceRegistry) -> bool {
+            fn contains_all(resources: &Resources) -> bool {
                 $(
                     resources.storage.contains_key(&ResourceId::of::<$gen>())
                 )&&*

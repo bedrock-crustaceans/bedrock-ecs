@@ -8,6 +8,7 @@ pub mod archetype;
 pub mod command;
 pub mod component;
 pub mod entity;
+pub mod event;
 pub mod local;
 pub mod query;
 pub mod resource;

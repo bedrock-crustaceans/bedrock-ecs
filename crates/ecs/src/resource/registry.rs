@@ -29,15 +29,15 @@ unsafe impl<R: Resource> UnsafeResourceCell for UnsafeCell<R> {
 }
 
 #[derive(Default)]
-pub struct ResourceRegistry {
+pub struct Resources {
     pub(crate) storage: FxHashMap<ResourceId, Box<dyn UnsafeResourceCell>>,
 }
 
-impl ResourceRegistry {
+impl Resources {
     /// Creates a new container for resources.
     #[inline]
-    pub fn new() -> ResourceRegistry {
-        ResourceRegistry::default()
+    pub fn new() -> Resources {
+        Resources::default()
     }
 
     /// Inserts a resource into the container.

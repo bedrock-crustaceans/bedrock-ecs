@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use generic_array::GenericArray;
 #[cfg(feature = "generics")]
@@ -13,7 +13,7 @@ use crate::archetype::Archetypes;
 use crate::command::CommandPool;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityHandle, EntityMut, EntityRef};
-use crate::resource::{Resource, ResourceBundle, ResourceRegistry};
+use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
@@ -21,8 +21,10 @@ use crate::system::{Param, SystemMeta};
 pub struct World {
     pub(crate) archetypes: Archetypes,
     pub(crate) entities: Entities,
-    pub(crate) resources: ResourceRegistry,
+    pub(crate) resources: Resources,
     pub(crate) commands: Option<CommandPool>,
+
+    pub(crate) current_tick: AtomicU64,
 }
 
 impl World {
@@ -32,8 +34,10 @@ impl World {
         World {
             archetypes: Archetypes::new(),
             entities: Entities::new(),
-            resources: ResourceRegistry::new(),
+            resources: Resources::new(),
             commands: Some(CommandPool::new()),
+
+            current_tick: AtomicU64::new(0),
         }
     }
 
@@ -140,6 +144,8 @@ impl World {
                 }
             });
 
+            self.current_tick.fetch_add(1, Ordering::SeqCst);
+
             // tracing::info!("Running next set");
             // rayon::scope(|s| {
             //     for id in set {
@@ -233,8 +239,3 @@ unsafe impl Param for &mut World {
 
 unsafe impl Send for World {}
 unsafe impl Sync for World {}
-
-pub struct UnsafeWorldCell {
-    #[cfg(debug_assertions)]
-    world: UnsafeCell<World>,
-}
