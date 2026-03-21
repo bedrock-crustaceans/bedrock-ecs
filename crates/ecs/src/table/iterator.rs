@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityHandle, EntityRef};
 use crate::query::{EmptyableIterator, FilterBundle};
-use crate::table::{ChangeTracker, Mut, Ref, Table, TableRow};
+use crate::table::{ChangeTracker, ChangeTrackerIter, Mut, Ref, Table, TableRow};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
@@ -12,7 +12,7 @@ use crate::util::debug::{ReadGuard, WriteGuard};
 
 pub struct ColumnIter<'a, T, F: FilterBundle> {
     pub(crate) current_tick: u32,
-    pub(crate) tracker: &'a ChangeTracker,
+    pub(crate) tracker: ChangeTrackerIter<'a>,
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
@@ -27,12 +27,12 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
     type Item = Ref<'a, T>;
 
     fn next(&mut self) -> Option<Ref<'a, T>> {
-        if self.remaining == 0 && self.curr.is_none() {
+        if self.remaining == 0 || self.curr.is_none() {
             return None;
         }
 
         // Check whether this item satisfies the filter
-        if !F::apply_dynamic_filters(&self.tracker, self.current_tick) {
+        if !F::apply_dynamic_filters(self.tracker.next()?, self.current_tick) {
             return None;
         }
 
@@ -65,6 +65,8 @@ impl<T, F: FilterBundle> FusedIterator for ColumnIter<'_, T, F> {}
 impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
         ColumnIter {
+            current_tick: 0,
+            tracker: ChangeTrackerIter::empty(),
             curr: None,
             remaining: 0,
             _marker: PhantomData,

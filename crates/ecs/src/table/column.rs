@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::query::FilterBundle;
-use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut};
+use crate::table::{ChangeTracker, ChangeTrackerIter, ColumnIter, ColumnIterMut};
 use crate::util::LayoutExt;
 
 #[cfg(debug_assertions)]
@@ -153,6 +153,8 @@ impl Column {
 
         if let Some(start_ptr) = self.data {
             ColumnIter {
+                current_tick,
+                tracker: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
                 _marker: PhantomData,
@@ -162,6 +164,8 @@ impl Column {
             }
         } else {
             ColumnIter {
+                current_tick,
+                tracker: ChangeTrackerIter::empty(),
                 curr: None,
                 remaining: 0,
                 _marker: PhantomData,

@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::component::ComponentBundle;
-use crate::table::ChangeTracker;
+use crate::table::{ChangeTracker, Changes};
 
 /// Implements the filtering functionality in queries.
 pub trait Filter {
@@ -28,7 +28,7 @@ pub trait Filter {
     /// This does not require any runtime info.
     fn apply_static_filter(&self, archetype: &Signature) -> bool;
 
-    fn apply_dynamic_filter(tracker: &ChangeTracker, current_tick: u32) -> bool;
+    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool;
 }
 
 /// A collection of filters.
@@ -46,7 +46,7 @@ pub trait FilterBundle: Sized {
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_static_filters(&self, archetype: &Signature) -> bool;
 
-    fn apply_dynamic_filters(_tracker: &ChangeTracker, current_tick: u32) -> bool;
+    fn apply_dynamic_filters(changes: Changes, current_tick: u32) -> bool;
 }
 
 impl FilterBundle for () {
@@ -62,7 +62,7 @@ impl FilterBundle for () {
     }
 
     #[inline]
-    fn apply_dynamic_filters(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
+    fn apply_dynamic_filters(_changes: Changes, _current_tick: u32) -> bool {
         true
     }
 }
@@ -87,8 +87,8 @@ macro_rules! impl_bundle {
                 }
 
                 #[inline]
-                fn apply_dynamic_filters(tracker: &ChangeTracker, current_tick: u32) -> bool {
-                    $($gen::apply_dynamic_filter(tracker, current_tick))&&+
+                fn apply_dynamic_filters(changes: Changes, current_tick: u32) -> bool {
+                    $($gen::apply_dynamic_filter(changes, current_tick))&&+
                 }
             }
         }
@@ -129,7 +129,7 @@ impl<T: ComponentBundle> Filter for With<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
+    fn apply_dynamic_filter(_changes: Changes, _current_tick: u32) -> bool {
         true
     }
 }
@@ -161,7 +161,7 @@ impl<T: ComponentBundle> Filter for Without<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
+    fn apply_dynamic_filter(_changes: Changes, _current_tick: u32) -> bool {
         true
     }
 }
@@ -190,8 +190,8 @@ impl<T: ComponentBundle> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(tracker: &ChangeTracker, id: usize, last_ran: u32) -> bool {
-        unsafe { *tracker.added[id].get() } >= last_ran
+    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
+        changes.changed >= current_tick
     }
 }
 
@@ -219,5 +219,7 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(tracker: &ChangeTracker, current_tick: u32) -> bool {}
+    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
+        changes.changed >= current_tick
+    }
 }

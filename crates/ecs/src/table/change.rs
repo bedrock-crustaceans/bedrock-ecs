@@ -69,9 +69,16 @@ impl<T> Deref for Mut<'_, T> {
 impl<T> DerefMut for Mut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { self.tracker.set_changed(self.index) };
+        todo!("register change");
+        // unsafe { self.tracker.set_changed(self.index) };
         self.inner
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Changes {
+    pub added: u32,
+    pub changed: u32,
 }
 
 #[derive(Default)]
@@ -87,5 +94,47 @@ impl ChangeTracker {
             added: Vec::new(),
             changed: Vec::new(),
         }
+    }
+
+    pub fn resize(&mut self, n: usize) {
+        self.added.resize_with(n, UnsafeCell::default);
+        self.changed.resize_with(n, UnsafeCell::default);
+    }
+}
+
+pub struct ChangeTrackerIter<'a> {
+    index: usize,
+    tracker: Option<&'a ChangeTracker>,
+}
+
+impl<'a> ChangeTrackerIter<'a> {
+    pub fn empty() -> ChangeTrackerIter<'a> {
+        Self {
+            index: 0,
+            tracker: None,
+        }
+    }
+
+    pub fn new(tracker: &'a ChangeTracker) -> ChangeTrackerIter<'a> {
+        Self {
+            index: 0,
+            tracker: Some(tracker),
+        }
+    }
+}
+
+impl Iterator for ChangeTrackerIter<'_> {
+    type Item = Changes;
+
+    fn next(&mut self) -> Option<Changes> {
+        let tracker = self.tracker?;
+        let index = self.index;
+
+        self.index += 1;
+
+        let added = unsafe { *tracker.added.get(index)?.get().cast_const() };
+        let changed = unsafe { *tracker.changed.get_unchecked(index).get().cast_const() };
+
+        Some(Changes { added, changed })
     }
 }
