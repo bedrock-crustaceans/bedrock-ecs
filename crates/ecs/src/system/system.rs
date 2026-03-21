@@ -101,11 +101,11 @@ where
 
 macro_rules! impl_system {
     ($($gen:ident),*) => {
-        impl<$($gen),*, F> System for SystemContainer<($($gen),*), F>
+        impl<$($gen),*, Sys> System for SystemContainer<($($gen),*), Sys>
         where
             $($gen: Param),*,
             ($($gen),*): ParamBundle,
-            F: ParametrizedSystem<($($gen),*)>
+            Sys: ParametrizedSystem<($($gen),*)>
         {
             #[inline]
             fn name(&self) -> &'static str {
@@ -128,7 +128,7 @@ macro_rules! impl_system {
             }
         }
 
-        impl<$($gen),*, F: Fn($($gen::Output<'_>),*)> ParametrizedSystem<($($gen),*)> for F
+        impl<$($gen),*, Sys: Fn($($gen::Output<'_>),*)> ParametrizedSystem<($($gen),*)> for Sys
         where
             $($gen: Param),*,
             ($($gen),*): ParamBundle<State = ($($gen::State),*)>
@@ -142,11 +142,12 @@ macro_rules! impl_system {
             }
         }
 
-        impl<$($gen),*, F> IntoSystem<($($gen),*)> for F
+        impl<$($gen),*, Sys> IntoSystem<($($gen),*)> for Sys
         where
-            $($gen: Param),*,
-            F: ParametrizedSystem<($($gen),*)>,
-            F: Fn($($gen),*)
+            $($gen: Param + 'static),*,
+            ($($gen),*): ParamBundle,
+            Sys: ParametrizedSystem<($($gen),*)>,
+            Sys: Fn($($gen),*) + 'static
         {
             fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
                 Box::new(self.into_container(world, id))
@@ -155,34 +156,20 @@ macro_rules! impl_system {
     }
 }
 
+impl_system!(A, B);
 impl_system!(A, B, C);
+impl_system!(A, B, C, D);
+impl_system!(A, B, C, D, E);
+impl_system!(A, B, C, D, E, F);
+impl_system!(A, B, C, D, E, F, G);
+impl_system!(A, B, C, D, E, F, G, H);
+impl_system!(A, B, C, D, E, F, G, H, I);
+impl_system!(A, B, C, D, E, F, G, H, I, J);
 
 impl<P, F> System for SystemContainer<P, F>
 where
     P: Param,
     F: ParametrizedSystem<P>,
-{
-    #[inline]
-    fn name(&self) -> &'static str {
-        self.meta.name
-    }
-
-    fn access(&self) -> &[AccessDesc] {
-        &self.access
-    }
-
-    unsafe fn call(&self, world: &World) {
-        // SAFETY:
-        // This is safe because every system has a unique state. At the same time a system
-        // can be used on only one thread at a time.
-        let state = unsafe { &mut *self.state.get() };
-        self.system.call(world, state);
-    }
-}
-
-impl<P1: Param, P2: Param, F: ParametrizedSystem<(P1, P2)>> System for SystemContainer<(P1, P2), F>
-where
-    (P1, P2): ParamBundle,
 {
     #[inline]
     fn name(&self) -> &'static str {
@@ -209,19 +196,6 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     }
 }
 
-impl<F: Fn(P1::Output<'_>, P2::Output<'_>) + Sync, P1: Param, P2: Param>
-    ParametrizedSystem<(P1, P2)> for F
-where
-    (P1, P2): ParamBundle<State = (P1::State, P2::State)>,
-{
-    fn call(&self, world: &World, state: &mut <(P1, P2) as ParamBundle>::State) {
-        let p1 = P1::fetch::<Sealer>(world, &mut state.0);
-        let p2 = P2::fetch::<Sealer>(world, &mut state.1);
-
-        self(p1, p2);
-    }
-}
-
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid system",
     label = "this system has invalid parameters",
@@ -238,20 +212,6 @@ where
     P: Param + 'static,
     F: Fn(P) + 'static,
     F: ParametrizedSystem<P>,
-{
-    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
-        Box::new(self.into_container(world, id))
-    }
-}
-
-#[diagnostic::do_not_recommend]
-impl<F, P1, P2> IntoSystem<(P1, P2)> for F
-where
-    P1: Param + 'static,
-    P2: Param + 'static,
-    (P1, P2): ParamBundle,
-    F: Fn(P1, P2) + 'static,
-    F: ParametrizedSystem<(P1, P2)>,
 {
     fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
         Box::new(self.into_container(world, id))
