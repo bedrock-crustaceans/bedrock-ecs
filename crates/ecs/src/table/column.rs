@@ -141,7 +141,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter<T: 'static, F: FilterBundle>(&self) -> ColumnIter<'_, T, F> {
+    pub fn iter<T: 'static, F: FilterBundle>(&self, current_tick: u32) -> ColumnIter<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
@@ -178,7 +178,10 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter_mut<T: 'static, F: FilterBundle>(&self) -> ColumnIterMut<'_, T, F> {
+    pub fn iter_mut<T: 'static, F: FilterBundle>(
+        &self,
+        current_tick: u32,
+    ) -> ColumnIterMut<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.write();
 
@@ -188,9 +191,9 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
-        let tracker = todo!("track readers and writers for change tracker.");
+        // let tracker = todo!("track readers and writers for change tracker.");
 
-        // let tracker = unsafe { self.tracker.get() };
+        let tracker = unsafe { &mut *self.tracker.get() };
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
                 index: 0,

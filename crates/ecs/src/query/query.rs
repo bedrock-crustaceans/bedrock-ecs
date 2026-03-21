@@ -67,15 +67,12 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
 
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
         // Update the tick
-        state.last_tick = world.current_tick.load(Ordering::SeqCst);
+        state.last_queried = world.current_tick;
         Query::new(world, state)
     }
 
     fn init(world: &mut World, _meta: &SystemMeta) -> QueryMeta<Q, F> {
-        QueryMeta::new(
-            &mut world.archetypes,
-            world.current_tick.load(Ordering::SeqCst),
-        )
+        QueryMeta::new(&mut world.archetypes, world.current_tick)
     }
 }
 
@@ -105,19 +102,19 @@ pub struct TableCache {
 /// filters, if the query has any.
 pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     #[cfg(feature = "generics")]
-    cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
+    pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
-    cache: SmallVec<[TableCache; param::INLINE_SIZE]>,
+    pub(crate) cache: SmallVec<[TableCache; param::INLINE_SIZE]>,
 
-    /// The previous tick that this query was initialised.
-    last_tick: u64,
+    /// The last tick that this query was used.
+    pub(crate) last_queried: u32,
     /// The state of the filters being used by this query.
-    filter_state: F,
+    pub(crate) filter_state: F,
     /// The generation of the cache. If this does not equal the archetype generation, the cache should
     /// be rebuilt.
-    generation: u64,
+    pub(crate) generation: u64,
     /// The archetype bitset of this query. This is used to quickly discard tables that do not match the query.
-    signature: Signature,
+    pub(crate) signature: Signature,
 }
 
 impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
@@ -126,7 +123,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         feature = "tracing",
         tracing::instrument(name = "QueryCache::new", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
-    pub(crate) fn new(archetypes: &mut Archetypes, current_tick: u64) -> QueryMeta<Q, F> {
+    pub(crate) fn new(archetypes: &mut Archetypes, current_tick: u32) -> QueryMeta<Q, F> {
         let archetype = Q::signature(&mut archetypes.component_registry);
         let filter_state = F::init(archetypes);
 
@@ -136,7 +133,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         tracing::trace!("cached {} archetype tables", cached.len());
 
         QueryMeta {
-            last_tick: current_tick,
+            last_queried: current_tick,
             filter_state,
             generation: archetypes.generation(),
             signature: archetype,
@@ -169,7 +166,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
     /// Creates an iterator that iterates over this cache.
     #[inline]
     pub(crate) fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w, F> {
-        Q::Iter::new(world, &self.cache)
+        Q::Iter::new(world, self)
     }
 
     /// Returns the amount of components that this query requests.

@@ -1,4 +1,5 @@
 use std::{
+    cell::UnsafeCell,
     fmt::{self, Debug, Display},
     ops::{Deref, DerefMut},
 };
@@ -75,50 +76,16 @@ impl<T> DerefMut for Mut<'_, T> {
 
 #[derive(Default)]
 pub struct ChangeTracker {
-    added: PartitionedSignature,
-    changed: PartitionedSignature,
+    pub(crate) added: Vec<UnsafeCell<u32>>,
+    pub(crate) changed: Vec<UnsafeCell<u32>>,
 }
 
 impl ChangeTracker {
     /// Creates a new change tracker.
     pub fn new() -> ChangeTracker {
         Self {
-            added: PartitionedSignature::new(),
-            changed: PartitionedSignature::new(),
+            added: Vec::new(),
+            changed: Vec::new(),
         }
-    }
-
-    pub fn resize(&mut self, n: usize) {
-        self.added.resize(n);
-        self.changed.resize(n);
-    }
-
-    /// # Safety
-    ///
-    /// This is only safe to call if no other threads can write to the same 64-bit block containing `index`
-    /// at the same time.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if `index` is out of range.
-    #[inline]
-    pub unsafe fn set_added(&self, index: usize) {
-        // Safety: The soundness conditions are guaranteed by the caller.
-        unsafe { self.added.set(index) };
-    }
-
-    /// # Safety
-    ///
-    /// This is only safe to call if no other threads can write to the same 64-bit block containing `index`
-    /// at the same time.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if `index` is out of range.
-    #[inline]
-    pub unsafe fn set_changed(&self, index: usize) {
-        self.changed.words_count();
-        // Safety: The soundness conditions are guaranteed by the caller.
-        unsafe { self.changed.set(index) };
     }
 }

@@ -24,7 +24,7 @@ pub struct World {
     pub(crate) resources: Resources,
     pub(crate) commands: Option<CommandPool>,
 
-    pub(crate) current_tick: AtomicU64,
+    pub(crate) current_tick: u32,
 }
 
 impl World {
@@ -37,7 +37,7 @@ impl World {
             resources: Resources::new(),
             commands: Some(CommandPool::new()),
 
-            current_tick: AtomicU64::new(0),
+            current_tick: 0,
         }
     }
 
@@ -144,8 +144,6 @@ impl World {
                 }
             });
 
-            self.current_tick.fetch_add(1, Ordering::SeqCst);
-
             // tracing::info!("Running next set");
             // rayon::scope(|s| {
             //     for id in set {
@@ -155,6 +153,7 @@ impl World {
             //     }
             // });
         }
+        self.current_tick += 1;
     }
 
     #[inline]

@@ -44,7 +44,7 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a, F: FilterBundle>: HoppingIterator<'a, Self> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: FilterBundle>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 

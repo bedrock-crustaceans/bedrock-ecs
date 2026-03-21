@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{FilterBundle, ParamRef, QueryBundle, QueryType, TableCache};
+use crate::query::{FilterBundle, ParamRef, QueryBundle, QueryMeta, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
 
@@ -17,9 +17,9 @@ use crate::world::World;
 ///
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(feature = "generics")]
-pub trait HoppingIterator<'t, Q: QueryBundle>: Sized {
+pub trait HoppingIterator<'t, Q: QueryBundle, F: FilterBundle>: Sized {
     /// Creates a new iterator over the given cache.
-    fn new(world: &'t World, cache: &'t [TableCache<Q::AccessCount>]) -> Self;
+    fn new(world: &'t World, meta: &'t QueryMeta<Q, F>) -> Self;
 
     // /// Estimates the total amount of components remaining, including remaining tables.
     // /// This estimate does not apply filters and will therefore always overestimate.
@@ -98,11 +98,11 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> HoppingIterator<'w, Q> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
-                fn new(world: &'w World, cache: &'w [TableCache<Q::AccessCount>]) -> Self {
+            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> HoppingIterator<'w, Q, T> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
+                fn new(world: &'w World, meta: &'w QueryMeta<Q, T>) -> Self {
                     #[cfg(debug_assertions)]
                     {
-                        for cached in cache {
+                        for cached in &meta.cache {
                             let table = world.archetypes.get_by_index(cached.table);
                             let cols = table.columns();
                             debug_assert!(
@@ -112,7 +112,7 @@ macro_rules! impl_bundle {
                         }
                     }
 
-                    let mut cache = cache.iter();
+                    let mut cache = meta.cache.iter();
                     let Some(first_cache) = cache.next() else {
                         // There are no cached tables, just return an empty iterator.
                         return Self::empty(world)

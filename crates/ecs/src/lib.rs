@@ -23,7 +23,7 @@ pub mod prelude {
     pub use crate::component::{Component, ComponentBundle};
     pub use crate::entity::{EntityHandle, EntityRef};
     pub use crate::local::Local;
-    pub use crate::query::{Added, Changed, Filter, FilterBundle, Removed, With, Without};
+    pub use crate::query::{Added, Changed, Filter, FilterBundle, With, Without};
     pub use crate::query::{Query, QueryBundle};
     pub use crate::resource::{Res, ResMut, Resource, ResourceId};
     pub use crate::scheduler::{ScheduleBuilder, ScheduleLabel};

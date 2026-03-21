@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::component::ComponentBundle;
+use crate::table::ChangeTracker;
 
 /// Implements the filtering functionality in queries.
 pub trait Filter {
@@ -26,6 +27,8 @@ pub trait Filter {
     /// a static part. The [`Changed`] filter statically filters for tables that include its component for example.
     /// This does not require any runtime info.
     fn apply_static_filter(&self, archetype: &Signature) -> bool;
+
+    fn apply_dynamic_filter(tracker: &ChangeTracker, current_tick: u32) -> bool;
 }
 
 /// A collection of filters.
@@ -42,15 +45,24 @@ pub trait FilterBundle: Sized {
     ///
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_static_filters(&self, archetype: &Signature) -> bool;
+
+    fn apply_dynamic_filters(_tracker: &ChangeTracker, current_tick: u32) -> bool;
 }
 
 impl FilterBundle for () {
     const LEN: usize = 0;
 
+    #[inline]
     fn init(_archetypes: &mut Archetypes) -> Self {}
 
     /// The empty filter always returns true.
+    #[inline]
     fn apply_static_filters(&self, _archetype: &Signature) -> bool {
+        true
+    }
+
+    #[inline]
+    fn apply_dynamic_filters(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
         true
     }
 }
@@ -62,14 +74,21 @@ macro_rules! impl_bundle {
             impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
                 const LEN: usize = $count;
 
+                #[inline]
                 fn init(archetypes: &mut Archetypes) -> Self {
                     ($($gen::init(archetypes)),*)
                 }
 
+                #[inline]
                 fn apply_static_filters(&self, archetype: &Signature) -> bool {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = self;
                     $($gen.apply_static_filter(archetype))&&+
+                }
+
+                #[inline]
+                fn apply_dynamic_filters(tracker: &ChangeTracker, current_tick: u32) -> bool {
+                    $($gen::apply_dynamic_filter(tracker, current_tick))&&+
                 }
             }
         }
@@ -104,8 +123,14 @@ impl<T: ComponentBundle> Filter for With<T> {
         }
     }
 
+    #[inline]
     fn apply_static_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
+    }
+
+    #[inline]
+    fn apply_dynamic_filter(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
+        true
     }
 }
 
@@ -134,6 +159,11 @@ impl<T: ComponentBundle> Filter for Without<T> {
     fn apply_static_filter(&self, sig: &Signature) -> bool {
         sig.is_disjoint(&self.signature)
     }
+
+    #[inline]
+    fn apply_dynamic_filter(_tracker: &ChangeTracker, _current_tick: u32) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,31 +184,14 @@ impl<T: ComponentBundle> Filter for Added<T> {
         }
     }
 
+    #[inline]
     fn apply_static_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Removed<T: ComponentBundle> {
-    signature: Signature,
-    _marker: PhantomData<T>,
-}
-
-impl<T: ComponentBundle> Filter for Removed<T> {
-    fn init(archetypes: &mut Archetypes) -> Self {
-        tracing::trace!(
-            "constructing filter signature for `{}`",
-            std::any::type_name::<Self>()
-        );
-        Removed {
-            signature: T::get_or_assign_signature(&mut archetypes.component_registry),
-            _marker: PhantomData,
-        }
-    }
-
-    fn apply_static_filter(&self, sig: &Signature) -> bool {
-        sig.is_disjoint(&self.signature)
+    #[inline]
+    fn apply_dynamic_filter(tracker: &ChangeTracker, id: usize, last_ran: u32) -> bool {
+        unsafe { *tracker.added[id].get() } >= last_ran
     }
 }
 
@@ -200,7 +213,11 @@ impl<T: ComponentBundle> Filter for Changed<T> {
         }
     }
 
+    #[inline]
     fn apply_static_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
+
+    #[inline]
+    fn apply_dynamic_filter(tracker: &ChangeTracker, current_tick: u32) -> bool {}
 }

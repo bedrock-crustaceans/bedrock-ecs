@@ -54,7 +54,7 @@ fn simple_system2(
     });
 }
 
-fn change_system(query: Query<&Bytes5, Changed<Bytes5>>, mailbox: MessageReceiver<Msg>) {
+fn change_system(query: Query<&Bytes5>, mailbox: MessageReceiver<Msg>) {
     for msg in mailbox {
         println!("message received: {msg:?}");
     }

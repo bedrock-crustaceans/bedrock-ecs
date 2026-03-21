@@ -11,6 +11,8 @@ use crate::world::World;
 use crate::util::debug::{ReadGuard, WriteGuard};
 
 pub struct ColumnIter<'a, T, F: FilterBundle> {
+    pub(crate) current_tick: u32,
+    pub(crate) tracker: &'a ChangeTracker,
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
@@ -29,9 +31,10 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
             return None;
         }
 
-        todo!(
-            "column iterator should isolate the parts of the filter bundle that it needs and then apply it"
-        );
+        // Check whether this item satisfies the filter
+        if !F::apply_dynamic_filters(&self.tracker, self.current_tick) {
+            return None;
+        }
 
         let ptr = self.curr.as_mut().unwrap();
         let item = unsafe { &*ptr.as_ptr().cast_const() };

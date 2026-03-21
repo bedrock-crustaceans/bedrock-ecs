@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::cell::UnsafeCell;
+use std::sync::atomic::Ordering;
 
 use generic_array::GenericArray;
 
@@ -14,9 +15,15 @@ use crate::world::World;
 pub struct SystemMeta {
     pub(crate) id: SystemId,
     pub(crate) name: &'static str,
+    pub(crate) last_ran: u32,
 }
 
 impl SystemMeta {
+    #[inline]
+    pub fn last_ran(&self) -> u32 {
+        self.last_ran
+    }
+
     /// Returns the unique identifier of the system.
     #[inline]
     pub fn id(&self) -> SystemId {
@@ -50,12 +57,16 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
         }
 
         let access = P::access(world);
-        let meta = SystemMeta { id, name };
+        let meta = SystemMeta {
+            last_ran: world.current_tick,
+            id,
+            name,
+        };
 
         let state = P::init(world, &meta);
 
         SystemContainer {
-            meta,
+            meta: UnsafeCell::new(meta),
             system: self,
             access,
             state: UnsafeCell::new(state),
@@ -72,7 +83,7 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
 ///
 /// This is where the the states and metadata are stored.
 pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
-    meta: SystemMeta,
+    meta: UnsafeCell<SystemMeta>,
     system: F,
     state: UnsafeCell<P::State>,
 
@@ -109,7 +120,7 @@ macro_rules! impl_system {
         {
             #[inline]
             fn name(&self) -> &'static str {
-                self.meta.name
+                unsafe { &*self.meta.get().cast_const() }.name
             }
 
             fn access(&self) -> &[AccessDesc] {
@@ -125,6 +136,9 @@ macro_rules! impl_system {
                 // can be used on only one thread at a time.
                 let state = unsafe { &mut *self.state.get() };
                 self.system.call(world, state);
+
+                let meta = unsafe { &mut *self.meta.get() };
+                meta.last_ran = world.current_tick;
             }
         }
 
@@ -173,7 +187,7 @@ where
 {
     #[inline]
     fn name(&self) -> &'static str {
-        self.meta.name
+        unsafe { &*self.meta.get().cast_const() }.name
     }
 
     fn access(&self) -> &[AccessDesc] {
