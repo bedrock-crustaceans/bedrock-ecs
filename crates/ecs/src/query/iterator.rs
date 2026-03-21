@@ -79,6 +79,10 @@ macro_rules! impl_bundle {
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
                 /// The subiterators of this iterator.
                 iters: ($($gen::Iter<'w, T>),*),
+                /// The current tick.
+                current_tick: u32,
+                /// The previous tick that this iterator was used in.
+                last_tick: u32,
                 /// Ensures that the type parameters live for at least `'w`.
                 _marker: PhantomData<&'w ($($gen),*)>
             }
@@ -91,6 +95,8 @@ macro_rules! impl_bundle {
                 pub fn empty(world: &'w World) -> Self {
                     Self {
                         world,
+                        current_tick: 0,
+                        last_tick: 0,
                         cache: [].iter(),
                         iters: ($($gen::Iter::empty(world)),*),
                         _marker: PhantomData
@@ -106,7 +112,8 @@ macro_rules! impl_bundle {
                             let table = world.archetypes.get_by_index(cached.table);
                             let cols = table.columns();
                             debug_assert!(
-                                cols.iter().all(|c| c.len() == cols[0].len()),
+                                // Do not use the `len` method here it tries to acquire read access and we already have write access.
+                                cols.iter().all(|c| c.len == cols[0].len),
                                 "not all columns are of equal length"
                             );
                         }
@@ -118,13 +125,11 @@ macro_rules! impl_bundle {
                         return Self::empty(world)
                     };
 
-                    tracing::trace!("starting iterator at table {}", first_cache.table);
-
                     let mut counter = 0;
                     #[allow(unused)]
                     let iters = ($(
                         {
-                            let it = $gen::iter(world, first_cache.table, first_cache.cols[counter]);
+                            let it = $gen::iter(world, first_cache.table, first_cache.cols[counter], meta.last_tick, meta.current_tick);
                             counter += 1;
                             it
                         }
@@ -134,6 +139,8 @@ macro_rules! impl_bundle {
                         world,
                         cache,
                         iters,
+                        last_tick: meta.last_tick,
+                        current_tick: meta.current_tick,
                         _marker: PhantomData
                     }
                 }
@@ -156,13 +163,11 @@ macro_rules! impl_bundle {
                         // Attempt to jump to the next table in cache
                         let cache = self.cache.next()?;
 
-                        tracing::trace!("jumping to table {} in cache", cache.table);
-
                         let mut offset = 0;
                         self.iters = (
                             $(
                                 {
-                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset]);
+                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
                                     offset += 1;
                                     it
                                 }
@@ -172,11 +177,11 @@ macro_rules! impl_bundle {
 
                     // Have to reborrow to ensure that the line above can modify `self.iters`.
                     let ($($gen),*) = &mut self.iters;
-                    Some((
-                        $(
-                            unsafe { $gen.next().unwrap_unchecked() }
-                        ),*
-                    ))
+                    // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
+                    let next = ($($gen.next()),*);
+                    let ($($gen),*) = next;
+
+                    Some(($($gen?),*))
                 }
             }
 

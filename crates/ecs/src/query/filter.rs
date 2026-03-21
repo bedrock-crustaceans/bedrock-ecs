@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 #[cfg(not(feature = "generics"))]
@@ -28,7 +29,7 @@ pub trait Filter {
     /// This does not require any runtime info.
     fn apply_static_filter(&self, archetype: &Signature) -> bool;
 
-    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool;
+    fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool;
 }
 
 /// A collection of filters.
@@ -46,7 +47,7 @@ pub trait FilterBundle: Sized {
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_static_filters(&self, archetype: &Signature) -> bool;
 
-    fn apply_dynamic_filters(changes: Changes, current_tick: u32) -> bool;
+    fn apply_dynamic_filters(changes: Changes, last_tick: u32) -> bool;
 }
 
 impl FilterBundle for () {
@@ -62,7 +63,7 @@ impl FilterBundle for () {
     }
 
     #[inline]
-    fn apply_dynamic_filters(_changes: Changes, _current_tick: u32) -> bool {
+    fn apply_dynamic_filters(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
 }
@@ -87,8 +88,8 @@ macro_rules! impl_bundle {
                 }
 
                 #[inline]
-                fn apply_dynamic_filters(changes: Changes, current_tick: u32) -> bool {
-                    $($gen::apply_dynamic_filter(changes, current_tick))&&+
+                fn apply_dynamic_filters(changes: Changes, last_tick: u32) -> bool {
+                    $($gen::apply_dynamic_filter(changes, last_tick))&&+
                 }
             }
         }
@@ -129,7 +130,7 @@ impl<T: ComponentBundle> Filter for With<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(_changes: Changes, _current_tick: u32) -> bool {
+    fn apply_dynamic_filter(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
 }
@@ -161,7 +162,7 @@ impl<T: ComponentBundle> Filter for Without<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(_changes: Changes, _current_tick: u32) -> bool {
+    fn apply_dynamic_filter(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
 }
@@ -190,8 +191,8 @@ impl<T: ComponentBundle> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
-        changes.changed >= current_tick
+    fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool {
+        changes.changed >= last_tick
     }
 }
 
@@ -219,7 +220,7 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
-        changes.changed >= current_tick
+    fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool {
+        changes.changed >= last_tick
     }
 }

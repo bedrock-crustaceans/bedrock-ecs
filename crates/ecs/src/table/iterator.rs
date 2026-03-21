@@ -78,7 +78,9 @@ impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a
 }
 
 pub struct ColumnIterMut<'a, T, F: FilterBundle> {
-    pub(crate) changes: Option<&'a ChangeTracker>,
+    pub(crate) changes: ChangeTrackerIter<'a>,
+    pub(crate) last_tick: u32,
+    pub(crate) current_tick: u32,
     pub(crate) index: usize,
     /// Pointer to current component.
     pub(crate) curr: Option<NonNull<T>>,
@@ -98,6 +100,10 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
             return None;
         }
 
+        if !F::apply_dynamic_filters(self.changes.next()?, self.last_tick) {
+            return None;
+        }
+
         let ptr = self.curr.as_mut().unwrap();
         let item = unsafe { &mut *ptr.as_ptr() };
 
@@ -108,8 +114,9 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
         Some(Mut {
             tracker: self
                 .changes
-                .as_ref()
+                .tracker
                 .expect("column iterator did not have a change tracker"),
+            current_tick: self.current_tick,
             index: self.index - 1,
             inner: item,
         })
@@ -132,8 +139,10 @@ impl<T, F: FilterBundle> FusedIterator for ColumnIterMut<'_, T, F> {}
 impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
         ColumnIterMut {
-            changes: None,
+            changes: ChangeTrackerIter::empty(),
             index: 0,
+            last_tick: 0,
+            current_tick: 0,
 
             curr: None,
             remaining: 0,

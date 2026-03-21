@@ -39,6 +39,7 @@ impl<T> Deref for Ref<'_, T> {
 /// systems next tick.
 pub struct Mut<'w, T> {
     pub(crate) index: usize,
+    pub(crate) current_tick: u32,
     pub(crate) tracker: &'w ChangeTracker,
     pub(crate) inner: &'w mut T,
 }
@@ -69,8 +70,8 @@ impl<T> Deref for Mut<'_, T> {
 impl<T> DerefMut for Mut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        todo!("register change");
-        // unsafe { self.tracker.set_changed(self.index) };
+        tracing::error!("CHANGED {}", std::any::type_name::<T>());
+        unsafe { self.tracker.changed(self.index, self.current_tick) };
         self.inner
     }
 }
@@ -96,6 +97,14 @@ impl ChangeTracker {
         }
     }
 
+    pub unsafe fn changed(&self, index: usize, current_tick: u32) {
+        unsafe { *self.changed[index].get() = current_tick };
+    }
+
+    pub unsafe fn added(&self, index: usize, current_tick: u32) {
+        unsafe { *self.added[index].get() = current_tick };
+    }
+
     pub fn resize(&mut self, n: usize) {
         self.added.resize_with(n, UnsafeCell::default);
         self.changed.resize_with(n, UnsafeCell::default);
@@ -104,7 +113,7 @@ impl ChangeTracker {
 
 pub struct ChangeTrackerIter<'a> {
     index: usize,
-    tracker: Option<&'a ChangeTracker>,
+    pub(crate) tracker: Option<&'a ChangeTracker>,
 }
 
 impl<'a> ChangeTrackerIter<'a> {
@@ -133,6 +142,8 @@ impl Iterator for ChangeTrackerIter<'_> {
         self.index += 1;
 
         let added = unsafe { *tracker.added.get(index)?.get().cast_const() };
+
+        debug_assert_eq!(tracker.changed.len(), tracker.added.len());
         let changed = unsafe { *tracker.changed.get_unchecked(index).get().cast_const() };
 
         Some(Changes { added, changed })

@@ -148,7 +148,13 @@ pub unsafe trait ParamRef {
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> Self::Iter<'_, F>;
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        col: usize,
+        last_tick: u32,
+        current_tick: u32,
+    ) -> Self::Iter<'_, F>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -181,7 +187,13 @@ unsafe impl ParamRef for Entity {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, _col: usize) -> EntityIter<'_> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        _col: usize,
+        _last_tick: u32,
+        _current_tick: u32,
+    ) -> EntityIter<'_> {
         let table = world.archetypes.get_by_index(table);
         table.iter_entities(world)
     }
@@ -209,7 +221,13 @@ unsafe impl ParamRef for EntityRef<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, _col: usize) -> EntityRefIter<'_> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        _col: usize,
+        _last_tick: u32,
+        _current_tick: u32,
+    ) -> EntityRefIter<'_> {
         let table = world.archetypes.get_by_index(table);
         table.iter_entity_refs(world)
     }
@@ -244,11 +262,17 @@ unsafe impl<T: Component> ParamRef for &T {
         })
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        col: usize,
+        last_tick: u32,
+        _current_tick: u32,
+    ) -> ColumnIter<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
 
-        col.iter()
+        col.iter(last_tick)
     }
 }
 
@@ -281,10 +305,16 @@ unsafe impl<T: Component> ParamRef for &mut T {
         })
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIterMut<'_, T, F> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        col: usize,
+        last_tick: u32,
+        current_tick: u32,
+    ) -> ColumnIterMut<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
-        col.iter_mut()
+        col.iter_mut(last_tick, current_tick)
     }
 }
 
@@ -317,11 +347,17 @@ unsafe impl<T: Component> ParamRef for Ref<'_, T> {
         })
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIter<'_, T, F> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        col: usize,
+        last_tick: u32,
+        _current_tick: u32,
+    ) -> ColumnIter<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
 
-        col.iter()
+        col.iter(last_tick)
     }
 }
 
@@ -354,9 +390,15 @@ unsafe impl<T: Component> ParamRef for Mut<'_, T> {
         })
     }
 
-    fn iter<F: FilterBundle>(world: &World, table: usize, col: usize) -> ColumnIterMut<'_, T, F> {
+    fn iter<F: FilterBundle>(
+        world: &World,
+        table: usize,
+        col: usize,
+        last_tick: u32,
+        current_tick: u32,
+    ) -> ColumnIterMut<'_, T, F> {
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col);
-        col.iter_mut()
+        col.iter_mut(last_tick, current_tick)
     }
 }

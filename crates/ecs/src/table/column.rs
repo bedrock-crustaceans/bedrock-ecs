@@ -49,7 +49,7 @@ pub struct Column {
     /// The layout of the component type.
     layout: Layout,
     /// The amount of items contained in this Column.
-    len: usize,
+    pub(crate) len: usize,
     /// The capacity of this Column.
     cap: usize,
     /// An optional pointer to the buffer that holds the Column data.
@@ -184,6 +184,7 @@ impl Column {
     /// to `Column::new`.
     pub fn iter_mut<T: 'static, F: FilterBundle>(
         &self,
+        last_tick: u32,
         current_tick: u32,
     ) -> ColumnIterMut<'_, T, F> {
         #[cfg(debug_assertions)]
@@ -195,13 +196,12 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
-        // let tracker = todo!("track readers and writers for change tracker.");
-
-        let tracker = unsafe { &mut *self.tracker.get() };
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
                 index: 0,
-                changes: Some(tracker),
+                changes: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
+                last_tick,
+                current_tick,
 
                 curr: Some(start_ptr.cast::<T>()),
                 remaining: self.len,
@@ -213,7 +213,9 @@ impl Column {
         } else {
             ColumnIterMut {
                 index: 0,
-                changes: Some(tracker),
+                changes: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
+                last_tick,
+                current_tick,
 
                 curr: None,
                 remaining: 0,

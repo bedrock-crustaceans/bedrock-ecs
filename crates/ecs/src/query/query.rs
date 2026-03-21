@@ -67,7 +67,9 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
 
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
         // Update the tick
-        state.last_queried = world.current_tick;
+        state.last_tick = state.current_tick;
+        state.current_tick = world.current_tick;
+
         Query::new(world, state)
     }
 
@@ -100,14 +102,17 @@ pub struct TableCache {
 ///
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
+#[derive(Debug)]
 pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     #[cfg(feature = "generics")]
     pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
     pub(crate) cache: SmallVec<[TableCache; param::INLINE_SIZE]>,
 
+    /// The current tick.
+    pub(crate) current_tick: u32,
     /// The last tick that this query was used.
-    pub(crate) last_queried: u32,
+    pub(crate) last_tick: u32,
     /// The state of the filters being used by this query.
     pub(crate) filter_state: F,
     /// The generation of the cache. If this does not equal the archetype generation, the cache should
@@ -133,7 +138,8 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         tracing::trace!("cached {} archetype tables", cached.len());
 
         QueryMeta {
-            last_queried: current_tick,
+            current_tick,
+            last_tick: 0,
             filter_state,
             generation: archetypes.generation(),
             signature: archetype,
@@ -141,13 +147,14 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         }
     }
 
-    /// Updates the cache if required. If the cache and archetype generations match, this function does
-    /// nothing.
+    /// Updates the cache and ticks.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(name = "QueryCache::update", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
     pub(crate) fn update(&mut self, archetypes: &Archetypes) {
+        self.last_tick = self.current_tick;
+
         if self.generation != archetypes.generation() {
             self.cache.clear();
             archetypes.cache_tables::<Q, F>(&self.signature, &self.filter_state, &mut self.cache);

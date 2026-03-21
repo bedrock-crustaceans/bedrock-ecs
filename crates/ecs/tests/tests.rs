@@ -1,5 +1,5 @@
 use ecs::command::Commands;
-use ecs::entity::Entity;
+use ecs::entity::{Entity, EntityHandle};
 use ecs::message::{Message, MessageReceiver, MessageSender};
 use ecs::query::Changed;
 use ecs::{query::Query, world::World};
@@ -7,60 +7,57 @@ use ecs_derive::{Component, Message, Resource, ScheduleLabel};
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone, Component)]
-struct Velocity {
+struct Position {
     x: f32,
     y: f32,
+    z: f32,
 }
+
 #[derive(Debug, Copy, Clone, Component)]
 struct Health(f32);
 
-#[derive(Debug, Copy, Clone, Component)]
-struct Bytes5(f32, u8);
-
-#[derive(Debug, Copy, Clone, Component)]
-struct Static; // Marker component
-
-#[derive(Debug, Resource)]
-struct GlobalTimer(u32);
-
 #[derive(Message, Debug, Clone)]
-struct Msg {
-    hello: String,
+struct Killed {
+    entity: EntityHandle,
 }
 
-fn simple_system(query: Query<&Bytes5>) {
-    println!("start on thread {:?}", std::thread::current().id());
-
-    for bytes in &query {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        // println!("bytes5: {} {}", b0, bytes.1);
+fn detector(query: Query<(Entity, &Health), Changed<Health>>, mut sender: MessageSender<Killed>) {
+    for (entity, health) in &query {
+        tracing::trace!("detector triggered");
+        if health.0 <= 0.0 {
+            tracing::trace!("Entity death sent");
+            sender.send(Killed {
+                entity: entity.handle,
+            });
+        }
     }
-
-    println!("finish on thread {:?}", std::thread::current().id());
 }
 
-fn simple_system2(
-    query: Query<&mut Bytes5>,
-    mut commands: Commands,
-    mut mailbox: MessageSender<Msg>,
-) {
-    commands.spawn(Static);
-    for mut bytes in &query {
-        bytes.1 -= 1;
+fn damage_system(query: Query<(&Position, &mut Health)>) {
+    for (position, mut health) in &query {
+        println!("position: {position:?}");
+        if position.y <= 10.0 {
+            tracing::trace!("Entity damaged");
+            health.0 -= 1.0;
+        } else {
+            tracing::trace!("Entity unscathed");
+        }
     }
-
-    mailbox.send(Msg {
-        hello: "World".to_owned(),
-    });
 }
 
-fn change_system(query: Query<&Bytes5>, mailbox: MessageReceiver<Msg>) {
-    for msg in mailbox {
-        println!("message received: {msg:?}");
-    }
+fn fall_system(query: Query<&mut Position>) {
+    for mut position in &query {
+        position.y -= 1.0;
 
-    for bytes in &query {
-        println!("bytes {bytes:?} changed");
+        if position.y < 10.0 {
+            position.y = 12.0;
+        }
+    }
+}
+
+fn reviver(recv: MessageReceiver<Killed>) {
+    for msg in recv {
+        tracing::trace!("entity death received");
     }
 }
 
@@ -84,17 +81,23 @@ fn stress_test() {
     let mut world = World::new();
 
     for _ in 0..1 {
-        world.spawn(Bytes5(5.0, 22));
-        world.spawn((Bytes5(f32::MAX, u8::MAX), Static));
+        world.spawn((
+            Position {
+                x: 1.0,
+                y: 12.0,
+                z: 0.0,
+            },
+            Health(1.0),
+        ));
     }
-
-    println!("added: {}", f32::MAX);
 
     let schedule = world
         .build_schedule()
-        .add(Label1, (/*simple_system,*/ simple_system2, change_system))
+        .add(Label1, (damage_system, detector, fall_system, reviver))
         .schedule();
 
-    world.run(&schedule);
-    world.apply_commands();
+    for _ in 0..5 {
+        world.run(&schedule);
+        world.apply_commands();
+    }
 }
