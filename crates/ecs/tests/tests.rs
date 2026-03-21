@@ -1,8 +1,9 @@
 use ecs::command::Commands;
 use ecs::entity::Entity;
+use ecs::message::{Message, MessageReceiver, MessageSender};
 use ecs::query::Changed;
 use ecs::{query::Query, world::World};
-use ecs_derive::{Component, Resource, ScheduleLabel};
+use ecs_derive::{Component, Message, Resource, ScheduleLabel};
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone, Component)]
@@ -22,6 +23,11 @@ struct Static; // Marker component
 #[derive(Debug, Resource)]
 struct GlobalTimer(u32);
 
+#[derive(Message, Debug, Clone)]
+struct Msg {
+    hello: String,
+}
+
 fn simple_system(query: Query<&Bytes5>) {
     println!("start on thread {:?}", std::thread::current().id());
 
@@ -33,14 +39,26 @@ fn simple_system(query: Query<&Bytes5>) {
     println!("finish on thread {:?}", std::thread::current().id());
 }
 
-fn simple_system2(query: Query<&mut Bytes5>, mut commands: Commands) {
+fn simple_system2(
+    query: Query<&mut Bytes5>,
+    mut commands: Commands,
+    mut mailbox: MessageSender<Msg>,
+) {
     commands.spawn(Static);
     for mut bytes in &query {
         bytes.1 -= 1;
     }
+
+    mailbox.send(Msg {
+        hello: "World".to_owned(),
+    });
 }
 
-fn change_system(query: Query<&Bytes5, Changed<Bytes5>>) {
+fn change_system(query: Query<&Bytes5, Changed<Bytes5>>, mailbox: MessageReceiver<Msg>) {
+    for msg in mailbox {
+        println!("message received: {msg:?}");
+    }
+
     for bytes in &query {
         println!("bytes {bytes:?} changed");
     }

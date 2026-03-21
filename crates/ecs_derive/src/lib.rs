@@ -56,13 +56,13 @@ pub fn derive_schedule_label(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(Event)]
-pub fn derive_event(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Message)]
+pub fn derive_message(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let event_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::event::Event for #event_ident {
+        impl ::ecs::message::Message for #event_ident {
             const NAME: &'static str = stringify!(#event_ident);
         }
     };
