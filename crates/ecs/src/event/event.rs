@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 
 use crate::resource::Resource;
 
-pub trait Event: 'static {
+pub trait Event: Send + Sync + 'static {
     const NAME: &'static str;
 }
 
