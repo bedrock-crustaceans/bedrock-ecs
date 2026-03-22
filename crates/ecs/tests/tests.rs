@@ -1,7 +1,7 @@
 use ecs::command::Commands;
 use ecs::entity::{Entity, EntityHandle};
 use ecs::message::{Message, MessageReceiver, MessageSender};
-use ecs::query::{Added, Changed};
+use ecs::query::{Added, Changed, Has};
 use ecs::time::SystemTick;
 use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Message, Resource, ScheduleLabel};
@@ -45,8 +45,8 @@ fn damage_system(query: Query<(&Position, &mut Health)>) {
     }
 }
 
-fn fall_system(query: Query<&mut Position>) {
-    for mut position in &query {
+fn fall_system(query: Query<(&mut Position, Has<Health>)>) {
+    for (mut position, has_health) in &query {
         position.y -= 1.0;
 
         if position.y < 10.0 {

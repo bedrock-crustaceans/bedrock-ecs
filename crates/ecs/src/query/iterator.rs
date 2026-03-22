@@ -9,9 +9,40 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{FilterBundle, ParamRef, QueryBundle, QueryMeta, QueryType, TableCache};
+use crate::query::{FilterBundle, QueryBundle, QueryData, QueryMeta, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
+
+/// Implements all query iteration traits but cannot be instantiated.
+pub struct Impossible<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> Iterator for Impossible<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        unimplemented!("cannot call `Impossible::next`");
+    }
+}
+
+impl<T> ExactSizeIterator for Impossible<T> {}
+
+impl<'w, T> EmptyableIterator<'w, T> for Impossible<T> {
+    fn empty(_world: &'w World) -> Impossible<T> {
+        unimplemented!("cannot create an `Impossible` iterator");
+    }
+}
+
+/// Extension trait that adds the `empty` method to construct an empty iterator.
+/// This is used by the query iterators when there are no more remaining components.
+pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterator {
+    /// Creates an empty iterator that always returns `None`. This exists because
+    /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
+    ///
+    /// [`Empty`]: std::iter::Empty
+    fn empty(world: &'w World) -> Self;
+}
 
 /// An iterator that can jump from table to table.
 ///
@@ -73,7 +104,7 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> {
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> {
                 world: &'w World,
                 /// The remaining cached tables that this iterator will hop to.
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
@@ -87,7 +118,7 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
+            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
                 /// Creates an empty iterator that always returns `None`. This exists because
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
                 ///
@@ -104,7 +135,7 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> HoppingIterator<'w, Q, T> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
+            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> HoppingIterator<'w, Q, T> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
                 fn new(world: &'w World, meta: &'w QueryMeta<Q, T>) -> Self {
                     #[cfg(debug_assertions)]
                     {
@@ -153,7 +184,7 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_parens)]
-            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> Iterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {
+            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
@@ -222,11 +253,11 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: ParamRef),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {}
+            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {}
 
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
-            unsafe impl<$($gen: ParamRef),*> QueryBundle for ($($gen),*) {
+            unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
                 type Iter<'t, T: FilterBundle> = [< IteratorBundle $count >]<'t, ($($gen),*), T, $($gen),*> where Self: 't;
@@ -267,7 +298,7 @@ macro_rules! impl_bundle {
                         ($(
                             (match $gen::TY {
                                 QueryType::Component => $gen::cache_column(lookup),
-                                QueryType::Entity | QueryType::EntityRef => usize::MAX
+                                QueryType::Entity | QueryType::EntityRef | QueryType::Has => usize::MAX,
                             }),
                         )*)
                     )
@@ -429,13 +460,3 @@ impl_bundle!(7, A, B, C, D, E, F, G);
 impl_bundle!(8, A, B, C, D, E, F, G, H);
 impl_bundle!(9, A, B, C, D, E, F, G, H, I);
 impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
-
-/// Extension trait that adds the `empty` method to construct an empty iterator.
-/// This is used by the query iterators when there are no more remaining components.
-pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterator {
-    /// Creates an empty iterator that always returns `None`. This exists because
-    /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-    ///
-    /// [`Empty`]: std::iter::Empty
-    fn empty(world: &'w World) -> Self;
-}

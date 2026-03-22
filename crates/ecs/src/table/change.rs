@@ -46,6 +46,12 @@ pub struct Mut<'w, T> {
     pub(crate) inner: &'w mut T,
 }
 
+impl<T> Mut<'_, T> {
+    pub fn bypass_detection(&mut self) -> &mut T {
+        self.inner
+    }
+}
+
 impl<T: Debug> Debug for Mut<'_, T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

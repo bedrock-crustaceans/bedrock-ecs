@@ -113,7 +113,7 @@ pub unsafe trait QueryBundle: Sized {
 ///
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::EntityRef
-pub unsafe trait ParamRef {
+pub unsafe trait QueryData {
     /// The type you would get if you were to remove the reference attached to `Self`.
     type Unref: 'static;
 
@@ -122,6 +122,12 @@ pub unsafe trait ParamRef {
     type Output<'w>: 'w;
 
     /// Iterator used to iterate over columns of type `Self`.
+    ///
+    /// Use [`Impossible`] if this type does not support iteration.
+    ///
+    /// [`Impossible`]: crate::query::Impossible
+    ///
+    /// TODO: Maybe the `iter` can return an `impl Iterator` in which case we probably don't need this.
     type Iter<'t, F: FilterBundle>: EmptyableIterator<'t, Self::Output<'t>>;
 
     /// Whether this parameter is an entity.
@@ -162,9 +168,10 @@ pub enum QueryType {
     Component,
     Entity,
     EntityRef,
+    Has,
 }
 
-unsafe impl ParamRef for Entity {
+unsafe impl QueryData for Entity {
     type Unref = Entity;
     type Output<'w> = Entity;
     type Iter<'t, F: FilterBundle> = EntityIter<'t>;
@@ -199,7 +206,7 @@ unsafe impl ParamRef for Entity {
     }
 }
 
-unsafe impl ParamRef for EntityRef<'_> {
+unsafe impl QueryData for EntityRef<'_> {
     type Unref = EntityRef<'static>;
     type Output<'w> = EntityRef<'w>;
     type Iter<'t, F: FilterBundle> = EntityRefIter<'t>;
@@ -233,7 +240,7 @@ unsafe impl ParamRef for EntityRef<'_> {
     }
 }
 
-unsafe impl<T: Component> ParamRef for &T {
+unsafe impl<T: Component> QueryData for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
     type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
@@ -276,7 +283,7 @@ unsafe impl<T: Component> ParamRef for &T {
     }
 }
 
-unsafe impl<T: Component> ParamRef for &mut T {
+unsafe impl<T: Component> QueryData for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
     type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
@@ -318,7 +325,7 @@ unsafe impl<T: Component> ParamRef for &mut T {
     }
 }
 
-unsafe impl<T: Component> ParamRef for Ref<'_, T> {
+unsafe impl<T: Component> QueryData for Ref<'_, T> {
     type Unref = T;
     type Output<'t> = Ref<'t, T>;
     type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
@@ -361,7 +368,7 @@ unsafe impl<T: Component> ParamRef for Ref<'_, T> {
     }
 }
 
-unsafe impl<T: Component> ParamRef for Mut<'_, T> {
+unsafe impl<T: Component> QueryData for Mut<'_, T> {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
     type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
