@@ -58,11 +58,6 @@ impl ScheduleGraph {
         self.in_degrees.push(0);
     }
 
-    fn add_edge(&mut self, from: usize, to: usize) {
-        self.adjacency[from].push(to);
-        self.in_degrees[to] += 1;
-    }
-
     fn build_dependencies(&mut self) {
         let mut last_writer: FxHashMap<AccessType, usize> = FxHashMap::default();
         let mut readers: FxHashMap<AccessType, Vec<usize>> = FxHashMap::default();

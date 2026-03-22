@@ -1,15 +1,21 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{
+    any::TypeId,
+    iter::{Cycle, FusedIterator, Once},
+    marker::PhantomData,
+};
 
 use rustc_hash::FxHashMap;
 
 use crate::{
+    archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
-    query::{EmptyableIterator, FilterBundle, Impossible, QueryData, QueryType},
-    scheduler::AccessDesc,
+    prelude::ComponentBundle,
+    query::{EmptyableIterator, FilterBundle, Impossible, QueryData, QueryType, TableCache},
+    scheduler::{AccessDesc, AccessType},
     world::World,
 };
 
-pub struct Has<T: Component> {
+pub struct Has<T: ComponentBundle> {
     _marker: PhantomData<T>,
 }
 
@@ -17,12 +23,15 @@ unsafe impl<T: Component> QueryData for Has<T> {
     type Unref = Has<T>;
 
     type Output<'w> = bool;
-    type Iter<'t, F: FilterBundle> = Impossible<bool>;
+    type Iter<'t, F: FilterBundle> = HasIter<'t>;
 
     const TY: QueryType = QueryType::Has;
 
     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
-        unimplemented!("`Has` does not access any resources");
+        AccessDesc {
+            ty: AccessType::None,
+            exclusive: false,
+        }
     }
 
     fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
@@ -39,7 +48,62 @@ unsafe impl<T: Component> QueryData for Has<T> {
         _col: usize,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> Impossible<bool> {
-        unimplemented!()
+    ) -> HasIter {
+        // TODO: This should be stored in some kind of persistent state.
+        let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
+        let table = world.archetypes.get_by_index(table);
+
+        let matches = table.signature.contains(&signature);
+        HasIter {
+            remaining: table.len(),
+            matches,
+            _marker: PhantomData,
+        }
     }
 }
+
+pub struct HasIter<'t> {
+    matches: bool,
+    remaining: usize,
+    // There is nothing preventing this iterator from outliving the query, but
+    // the query iterators are required to not outlive the query for soundness reasons.
+    _marker: PhantomData<&'t ()>,
+}
+
+impl<'t> EmptyableIterator<'t, bool> for HasIter<'t> {
+    fn empty(_world: &'t World) -> HasIter<'t> {
+        Self {
+            matches: false,
+            remaining: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl Iterator for HasIter<'_> {
+    type Item = bool;
+
+    #[inline]
+    fn next(&mut self) -> Option<bool> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        self.remaining -= 1;
+        Some(self.matches)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for HasIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.remaining
+    }
+}
+
+impl FusedIterator for HasIter<'_> {}

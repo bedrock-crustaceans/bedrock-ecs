@@ -136,13 +136,14 @@ impl World {
             //     schedule.systems.get(id).unwrap().call(&self);
             // }
 
-            // rayon::scope(|s| {
-            //     for id in set {
-            //         s.spawn(|_| {
-            //             unsafe { schedule.systems.get(id).unwrap().call(self) };
-            //         });
-            //     }
-            // });
+            #[cfg(not(miri))]
+            rayon::scope(|s| {
+                for id in set {
+                    s.spawn(|_| {
+                        unsafe { schedule.systems.get(id).unwrap().call(self) };
+                    });
+                }
+            });
 
             #[cfg(miri)] // Miri is not very happy about rayon.
             std::thread::scope(|s| {
