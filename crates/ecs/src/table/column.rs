@@ -243,7 +243,7 @@ impl Column {
             return;
         }
 
-        self.tracker.get_mut().resize(n);
+        self.tracker.get_mut().reserve(n);
 
         let cap = self.cap + n;
         let (new_layout, _) = self.layout.repeat_ext(cap).expect("invalid array layout");
@@ -281,7 +281,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`. This `T` is not stored in the `Column` type to prevent the runtime cost of dynamic dispatch.
-    pub fn push<T: 'static>(&mut self, data: T) {
+    pub fn push<T: 'static>(&mut self, data: T, current_tick: u32) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
@@ -320,7 +320,7 @@ impl Column {
         }
 
         self.len += 1;
-        self.tracker.get_mut().resize(self.len);
+        self.tracker.get_mut().resize(self.len, current_tick);
     }
 
     /// Obtains a pointer to the given entry in the Column.

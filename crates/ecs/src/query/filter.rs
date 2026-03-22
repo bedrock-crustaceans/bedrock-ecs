@@ -10,6 +10,8 @@ use crate::table::{ChangeTracker, Changes};
 
 /// Implements the filtering functionality in queries.
 pub trait Filter {
+    const IS_DYNAMIC: bool;
+
     /// Initialises the filter state.
     ///
     /// With most filters this just creates a bitset used to match with the archetype tables.
@@ -34,6 +36,7 @@ pub trait Filter {
 
 /// A collection of filters.
 pub trait FilterBundle: Sized {
+    const IS_DYNAMIC: bool;
     /// The amount of filters contained in this collection.
     const LEN: usize;
 
@@ -51,6 +54,7 @@ pub trait FilterBundle: Sized {
 }
 
 impl FilterBundle for () {
+    const IS_DYNAMIC: bool = false;
     const LEN: usize = 0;
 
     #[inline]
@@ -73,6 +77,7 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[allow(unused_parens)]
             impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
+                const IS_DYNAMIC: bool = $($gen::IS_DYNAMIC)&&*;
                 const LEN: usize = $count;
 
                 #[inline]
@@ -113,6 +118,8 @@ pub struct With<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for With<T> {
+    const IS_DYNAMIC: bool = false;
+
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
             "constructing filter signature for `{}`",
@@ -146,6 +153,8 @@ pub struct Without<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Without<T> {
+    const IS_DYNAMIC: bool = false;
+
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
             "constructing filter signature for `{}`",
@@ -174,6 +183,8 @@ pub struct Added<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Added<T> {
+    const IS_DYNAMIC: bool = true;
+
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
             "constructing filter signature for `{}`",
@@ -191,11 +202,12 @@ impl<T: ComponentBundle> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool {
-        changes.changed >= last_tick
+    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
+        changes.added >= current_tick
     }
 }
 
+/// Queries using a `Changed` filter will always return everything the first time the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed<T: ComponentBundle> {
     signature: Signature,
@@ -203,6 +215,8 @@ pub struct Changed<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Changed<T> {
+    const IS_DYNAMIC: bool = true;
+
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
             "constructing filter signature for `{}`",
@@ -220,7 +234,7 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool {
-        changes.changed >= last_tick
+    fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
+        changes.changed >= current_tick
     }
 }

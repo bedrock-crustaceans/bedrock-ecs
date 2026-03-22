@@ -143,6 +143,7 @@ impl Archetypes {
         &mut self,
         handle: EntityHandle,
         bundle: B,
+        current_tick: u32,
     ) -> Entity {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
@@ -166,7 +167,7 @@ impl Archetypes {
             self.tables.last_mut().unwrap()
         };
 
-        let row = table.insert(handle, bundle);
+        let row = table.insert(handle, bundle, current_tick);
 
         Entity {
             handle,

@@ -54,7 +54,7 @@ impl World {
     // ======================================================================================
     pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityMut<'_> {
         let id = self.entities.allocate();
-        let meta = self.archetypes.insert(id, bundle);
+        let meta = self.archetypes.insert(id, bundle, self.current_tick);
         self.entities.spawn(meta);
 
         EntityMut {

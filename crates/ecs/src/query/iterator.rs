@@ -158,30 +158,67 @@ macro_rules! impl_bundle {
 
                 #[allow(non_snake_case, unused)]
                 fn next(&mut self) -> Option<Self::Item> {
-                    let ($($gen),*) = &mut self.iters;
-                    if iter_len!($($gen),*) == 0 {
-                        // Attempt to jump to the next table in cache
-                        let cache = self.cache.next()?;
+                    if T::IS_DYNAMIC {
+                        loop {
+                            let ($($gen),*) = &mut self.iters;
 
-                        let mut offset = 0;
-                        self.iters = (
-                            $(
-                                {
-                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
-                                    offset += 1;
-                                    it
+                            // Current iterator has ended, get the next one.
+                            if iter_len!($($gen),*) == 0 {
+                                // Attempt to jump to the next table in cache
+                                let cache = self.cache.next()?;
+
+                                let mut offset = 0;
+                                self.iters = (
+                                    $(
+                                        {
+                                            let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
+                                            offset += 1;
+                                            it
+                                        }
+                                    ),*
+                                );
+                            } else {
+                                // Have to reborrow to ensure that the line above can modify `self.iters`.
+                                let ($($gen),*) = &mut self.iters;
+                                while iter_len!($($gen),*) > 0 {
+                                    // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
+                                    let next = ($($gen.next()),*);
+                                    let ($($gen),*) = next;
+
+                                    // If all iterators returned a result, we found a new item
+                                    if $($gen.is_some())&&* {
+                                        return Some(($($gen.unwrap()),*))
+                                    }
                                 }
-                            ),*
-                        );
+                            }
+                        }
+                    } else {
+                        // Use a more efficient iterator when the query does not make use of dynamic filters.
+                        let ($($gen),*) = &mut self.iters;
+                        if iter_len!($($gen),*) == 0 {
+                            // Attempt to jump to the next table in cache
+                            let cache = self.cache.next()?;
+
+                            let mut offset = 0;
+                            self.iters = (
+                                $(
+                                    {
+                                        let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
+                                        offset += 1;
+                                        it
+                                    }
+                                ),*
+                            );
+                        }
+
+                        // Have to reborrow to ensure that the line above can modify `self.iters`.
+                        let ($($gen),*) = &mut self.iters;
+                        // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
+                        let next = ($($gen.next()),*);
+                        let ($($gen),*) = next;
+
+                        Some(($($gen?),*))
                     }
-
-                    // Have to reborrow to ensure that the line above can modify `self.iters`.
-                    let ($($gen),*) = &mut self.iters;
-                    // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
-                    let next = ($($gen.next()),*);
-                    let ($($gen),*) = next;
-
-                    Some(($($gen?),*))
                 }
             }
 

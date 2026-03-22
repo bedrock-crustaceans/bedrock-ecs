@@ -105,9 +105,15 @@ impl ChangeTracker {
         unsafe { *self.added[index].get() = current_tick };
     }
 
-    pub fn resize(&mut self, n: usize) {
-        self.added.resize_with(n, UnsafeCell::default);
-        self.changed.resize_with(n, UnsafeCell::default);
+    pub fn reserve(&mut self, n: usize) {
+        self.added.reserve(n);
+        self.changed.reserve(n);
+    }
+
+    pub fn resize(&mut self, n: usize, current_tick: u32) {
+        self.added.resize_with(n, || UnsafeCell::new(current_tick));
+        self.changed
+            .resize_with(n, || UnsafeCell::new(current_tick));
     }
 }
 

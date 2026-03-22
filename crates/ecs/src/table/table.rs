@@ -55,13 +55,18 @@ impl Table {
     }
 
     /// Inserts a set of components into this table and returns the row it was inserted at
-    pub fn insert(&mut self, entity: EntityHandle, components: impl ComponentBundle) -> TableRow {
+    pub fn insert(
+        &mut self,
+        entity: EntityHandle,
+        components: impl ComponentBundle,
+        current_tick: u32,
+    ) -> TableRow {
         let row = self.entities.len();
         self.entities.push(entity);
         self.entity_lookup
             .insert(entity, TableRow(self.entities.len() - 1));
 
-        components.insert_into(&mut self.columns);
+        components.insert_into(&mut self.columns, current_tick);
 
         TableRow(row)
     }

@@ -72,7 +72,7 @@ pub trait ComponentBundle: 'static {
     unsafe fn into_table(signature: Signature) -> Table;
 
     /// Insert this bundle into an existing table.
-    fn insert_into(self, storage: &mut [Column]);
+    fn insert_into(self, storage: &mut [Column], current_tick: u32);
 }
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
@@ -132,11 +132,11 @@ macro_rules! impl_component_bundle {
                     tracing::instrument(name = "ComponentBundle::insert_into", fields(bundle = std::any::type_name::<Self>()), skip_all)
                 )]
                 #[allow(unused)]
-                fn insert_into(self, storage: &mut [Column]) {
+                fn insert_into(self, storage: &mut [Column], current_tick: u32) {
                     let ($([<$gen:lower>]),*) = self;
                     let mut counter = 0;
                     $(
-                        storage[counter].push([<$gen:lower>]);
+                        storage[counter].push([<$gen:lower>], current_tick);
                         counter += 1;
                     )*
                 }
