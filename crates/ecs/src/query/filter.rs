@@ -9,7 +9,17 @@ use crate::component::ComponentBundle;
 use crate::table::{ChangeTracker, Changes};
 
 /// Implements the filtering functionality in queries.
+///
+/// This allows queries to return only a subset of entities that match some predicate.
+///
+/// Examples of coarse filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
+/// dynamic filters.
 pub trait Filter {
+    /// Whether this filter uses "dynamic" filtering. Dynamic filtering is used to filter components
+    /// within the table itself, while coarse filters will only filter based on table signature
+    /// and do not perform any filtering during iteration.
+    ///
+    /// Dynamic filters usually have a coarse part as well, that filters entire tables.
     const IS_DYNAMIC: bool;
 
     /// Initialises the filter state.
@@ -17,26 +27,33 @@ pub trait Filter {
     /// With most filters this just creates a bitset used to match with the archetype tables.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    /// Applies the static filter, returning whether the table should be accepted.
+    /// Applies the coarse filter, returning whether the table should be accepted.
     ///
     /// Before a query fetches the requested data, it will cache the tables it intends to access.
     /// These tables are found by performing a bitwise and of the query bitset and archetype bitset.
+    /// Coarse filters are only able to discard entire archetype tables, fine filters should be used to filter
+    /// individual components within a table.
     ///
-    /// If this fails, the table is ignored, otherwise we continue to the filtering stage.
-    /// This is when the static filters are applied, these are filters that can be applied to whole archetype
-    /// tables without needing any tick-specific or entity-specific information.
+    /// If this returns false, the table is ignored, otherwise the table is added to the query cache.
     ///
-    /// Examples of fully static filters are [`With`] and [`Without`]. Other dynamic filters also have
-    /// a static part. The [`Changed`] filter statically filters for tables that include its component for example.
-    /// This does not require any runtime info.
-    fn apply_static_filter(&self, archetype: &Signature) -> bool;
+    /// Examples of coarse filters are [`With`] and [`Without`].
+    /// However, nearly all dynamic filters also have a coarse part.
+    /// [`Changed`] filters for tables that include its component for example.
+    fn apply_coarse_filter(&self, archetype: &Signature) -> bool;
 
+    /// Applies dynamic filters. If this function returns `true`, the component will be yielded
+    /// by the iterator. Otherwise it will be skipped.
+    ///
+    /// Dynamic filters run during iteration and therefore incur a slight cost.
     fn apply_dynamic_filter(changes: Changes, last_tick: u32) -> bool;
 }
 
 /// A collection of filters.
 pub trait FilterBundle: Sized {
+    /// Whether any of the filters in this bundle are dynamic. This means the query iterators
+    /// must switch to dynamic filtering during iteration.
     const IS_DYNAMIC: bool;
+
     /// The amount of filters contained in this collection.
     const LEN: usize;
 
@@ -50,6 +67,7 @@ pub trait FilterBundle: Sized {
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_static_filters(&self, archetype: &Signature) -> bool;
 
+    /// Applies the dynamic filter of all filters in this collection.
     fn apply_dynamic_filters(changes: Changes, last_tick: u32) -> bool;
 }
 
@@ -89,7 +107,7 @@ macro_rules! impl_bundle {
                 fn apply_static_filters(&self, archetype: &Signature) -> bool {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = self;
-                    $($gen.apply_static_filter(archetype))&&+
+                    $($gen.apply_coarse_filter(archetype))&&+
                 }
 
                 #[inline]
@@ -132,7 +150,7 @@ impl<T: ComponentBundle> Filter for With<T> {
     }
 
     #[inline]
-    fn apply_static_filter(&self, sig: &Signature) -> bool {
+    fn apply_coarse_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 
@@ -166,7 +184,7 @@ impl<T: ComponentBundle> Filter for Without<T> {
         }
     }
 
-    fn apply_static_filter(&self, sig: &Signature) -> bool {
+    fn apply_coarse_filter(&self, sig: &Signature) -> bool {
         sig.is_disjoint(&self.signature)
     }
 
@@ -197,13 +215,13 @@ impl<T: ComponentBundle> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_static_filter(&self, sig: &Signature) -> bool {
+    fn apply_coarse_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 
     #[inline]
     fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
-        changes.added >= current_tick
+        changes.added_tick >= current_tick
     }
 }
 
@@ -229,12 +247,12 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_static_filter(&self, sig: &Signature) -> bool {
+    fn apply_coarse_filter(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 
     #[inline]
     fn apply_dynamic_filter(changes: Changes, current_tick: u32) -> bool {
-        changes.changed >= current_tick
+        changes.changed_tick >= current_tick
     }
 }

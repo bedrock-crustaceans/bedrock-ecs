@@ -23,11 +23,13 @@ pub struct SystemTick {
 }
 
 impl SystemTick {
+    /// The current world tick
     #[inline]
     pub fn this_run(&self) -> Tick {
         self.this_run
     }
 
+    /// The world tick from the last time this system ran.
     #[inline]
     pub fn last_run(&self) -> Tick {
         self.last_run

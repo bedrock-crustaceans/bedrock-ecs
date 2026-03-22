@@ -146,6 +146,12 @@ impl World {
 
             #[cfg(miri)] // Miri is not very happy about rayon.
             std::thread::scope(|s| {
+                // for system in schedule.systems.values() {
+                //     s.spawn(|| {
+                //         unsafe { system.call(self) };
+                //     });
+                // }
+
                 for id in set {
                     s.spawn(|| {
                         unsafe { schedule.systems.get(id).unwrap().call(self) };

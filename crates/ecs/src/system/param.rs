@@ -20,21 +20,40 @@ pub const INLINE_SIZE: usize = 8;
 /// lead to reference aliasing and immediate UB.
 #[diagnostic::on_unimplemented(message = "{Self} is not a valid system parameter")]
 pub unsafe trait Param {
+    /// The amount of resources that this parameter needs to access.
+    ///
+    /// Most parameters will only access one, but a query requesting `n` components will access `n` for example.
+    /// One for each query.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
 
+    /// The internal state of this parameter. This state is saved by the system and is persistent
+    /// across calls, unlike the parameter itself.
     type State;
+
+    /// The output of the parameter. This controls what the system receives.
+    ///
+    /// The main use of this is for types containing lifetimes.
+    /// These will have arbitrary lifetimes when declared as parameters in the systems. Using this output type
+    /// the lifetimes will be bounded to the world.
     type Output<'w>;
 
+    /// Declares which resources this parameter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// in parallel.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
+    /// Declares which resources this parameter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// in parallel.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
+    /// Fetches this parameter. Right before executing a system, the ECS will fetch all parameters and pass them
+    /// to the system.
     #[doc(hidden)]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
+    /// Initialises the state of this parameter.
     fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
@@ -123,6 +142,10 @@ macro_rules! impl_bundle {
                     let dest_ptr = array.as_mut_ptr().cast::<AccessDesc>();
                     $(
                         let part = $gen::access(world);
+
+                        // Safety: This is safe because the size of `array` is the sum of all `AccessCount`s, thus
+                        // the pointer will not reach out of bounds. Additionally, these pointers do not overlap since
+                        // they are two different stack variables created by different means.
                         unsafe {
                             std::ptr::copy_nonoverlapping(
                                 part.as_ptr(),
@@ -149,6 +172,7 @@ macro_rules! impl_bundle {
                 fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
                     tracing::trace!("initialising {} system parameter state(s)", Self::AccessCount::USIZE);
 
+                    // Run init on all parameters in the bundle.
                     ($($gen::init(world, meta)),*)
                 }
             }

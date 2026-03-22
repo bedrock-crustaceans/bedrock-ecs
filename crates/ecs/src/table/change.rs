@@ -5,6 +5,8 @@ use std::{
 };
 
 use crate::archetype::PartitionedSignature;
+#[cfg(debug_assertions)]
+use crate::util::debug::BorrowEnforcer;
 
 pub struct Ref<'w, T> {
     pub(crate) inner: &'w T,
@@ -71,19 +73,26 @@ impl<T> DerefMut for Mut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         tracing::error!("CHANGED {}", std::any::type_name::<T>());
-        unsafe { self.tracker.changed(self.index, self.current_tick) };
+        unsafe { self.tracker.set_changed(self.index, self.current_tick) };
         self.inner
     }
 }
 
+/// The changes made to a component.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Changes {
-    pub added: u32,
-    pub changed: u32,
+    /// The tick during which this component was added.
+    pub added_tick: u32,
+    /// The tick during which this component was last modified.
+    pub changed_tick: u32,
 }
 
+/// Keeps track of changes to components.
 #[derive(Default)]
 pub struct ChangeTracker {
+    #[cfg(debug_assertions)]
+    enforcer: BorrowEnforcer,
+
     pub(crate) added: Vec<UnsafeCell<u32>>,
     pub(crate) changed: Vec<UnsafeCell<u32>>,
 }
@@ -92,25 +101,58 @@ impl ChangeTracker {
     /// Creates a new change tracker.
     pub fn new() -> ChangeTracker {
         Self {
+            #[cfg(debug_assertions)]
+            enforcer: BorrowEnforcer::new(),
+
             added: Vec::new(),
             changed: Vec::new(),
         }
     }
 
-    pub unsafe fn changed(&self, index: usize, current_tick: u32) {
+    /// Sets the component at `index` as changed in `current_tick`.
+    ///
+    /// This causes queries using the [`Changed`] filter to return this specific component.
+    ///
+    /// # Safety
+    ///
+    /// There should not be any other references to this component's `changed` state.
+    ///
+    /// [`Changed`]: crate::query::Changed
+    pub unsafe fn set_changed(&self, index: usize, current_tick: u32) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         unsafe { *self.changed[index].get() = current_tick };
     }
 
-    pub unsafe fn added(&self, index: usize, current_tick: u32) {
+    /// Sets the component at `index` as added in `current_tick`.
+    ///
+    /// This causes queries using the [`Added`] filter to return this specific component.
+    ///
+    /// # Safety
+    ///
+    /// There should not be any other references to this component's `added` state.
+    ///
+    /// [`Added`]: crate::query::Added
+    pub unsafe fn set_added(&self, index: usize, current_tick: u32) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         unsafe { *self.added[index].get() = current_tick };
     }
 
     pub fn reserve(&mut self, n: usize) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         self.added.reserve(n);
         self.changed.reserve(n);
     }
 
     pub fn resize(&mut self, n: usize, current_tick: u32) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         self.added.resize_with(n, || UnsafeCell::new(current_tick));
         self.changed
             .resize_with(n, || UnsafeCell::new(current_tick));
@@ -147,11 +189,15 @@ impl Iterator for ChangeTrackerIter<'_> {
 
         self.index += 1;
 
+        #[cfg(debug_assertions)]
+        let _guard = tracker.enforcer.read();
+
         let added = unsafe { *tracker.added.get(index)?.get().cast_const() };
+        let changed = unsafe { *tracker.changed.get(index)?.get().cast_const() };
 
-        debug_assert_eq!(tracker.changed.len(), tracker.added.len());
-        let changed = unsafe { *tracker.changed.get_unchecked(index).get().cast_const() };
-
-        Some(Changes { added, changed })
+        Some(Changes {
+            added_tick: added,
+            changed_tick: changed,
+        })
     }
 }
