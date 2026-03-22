@@ -11,6 +11,8 @@ use crate::prelude::ComponentBundle;
 use crate::query::TableCache;
 use crate::query::{FilterBundle, QueryBundle};
 use crate::table::Table;
+
+#[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 
 /// Contains all archetype tables.

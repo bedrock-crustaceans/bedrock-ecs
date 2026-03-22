@@ -15,6 +15,7 @@ pub mod resource;
 pub mod scheduler;
 pub mod system;
 pub mod table;
+pub mod time;
 pub mod util;
 pub mod world;
 

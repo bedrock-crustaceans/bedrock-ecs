@@ -246,6 +246,11 @@ impl Column {
         self.tracker.get_mut().reserve(n);
 
         let cap = self.cap + n;
+
+        let (old_layout, _) = self
+            .layout
+            .repeat_ext(self.cap)
+            .expect("invalid array layout");
         let (new_layout, _) = self.layout.repeat_ext(cap).expect("invalid array layout");
 
         assert!(
@@ -260,7 +265,7 @@ impl Column {
             // Additionally, the given layout is the same as the one used in the original allocation since it is
             // stored in the Column unchanged. Furthermore, the pointer used to reallocate is the one
             // that was originally allocated using `alloc` and the new size is less than or equal to `isize::MAX`.
-            unsafe { std::alloc::realloc(ptr.as_ptr(), self.layout, new_layout.size()) }
+            unsafe { std::alloc::realloc(ptr.as_ptr(), old_layout, new_layout.size()) }
         } else {
             // Safety:
             //

@@ -2,6 +2,7 @@ use ecs::command::Commands;
 use ecs::entity::{Entity, EntityHandle};
 use ecs::message::{Message, MessageReceiver, MessageSender};
 use ecs::query::{Added, Changed};
+use ecs::time::SystemTick;
 use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Message, Resource, ScheduleLabel};
 use tracing::Level;
@@ -54,9 +55,9 @@ fn fall_system(query: Query<&mut Position>) {
     }
 }
 
-fn reviver(recv: MessageReceiver<Killed>) {
+fn reviver(recv: MessageReceiver<Killed>, tick: SystemTick) {
     for msg in recv {
-        tracing::trace!("entity death received");
+        tracing::trace!("entity death received in tick {:?}", tick.this_run());
     }
 }
 
@@ -95,11 +96,11 @@ fn stress_test() {
         .add(Label1, (damage_system, detector, fall_system, reviver))
         .schedule();
 
-    for i in 0..5 {
+    for i in 0..50 {
         world.run(&schedule);
         world.apply_commands();
 
-        if i == 2 {
+        if i % 10 == 0 {
             tracing::trace!("spawned");
             world.spawn((
                 Position {
