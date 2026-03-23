@@ -1,10 +1,10 @@
-use ecs::command::Commands;
-use ecs::entity::{Entity, EntityHandle};
-use ecs::message::{Message, MessageReceiver, MessageSender};
-use ecs::query::{Added, Changed, Has, With, Without};
-use ecs::time::SystemTick;
-use ecs::{query::Query, world::World};
-use ecs_derive::{Component, Message, Resource, ScheduleLabel};
+use bedrock_ecs::command::Commands;
+use bedrock_ecs::entity::{Entity, EntityHandle};
+use bedrock_ecs::message::{Message, MessageReceiver, MessageSender};
+use bedrock_ecs::query::{Added, Changed, Has, With, Without};
+use bedrock_ecs::time::SystemTick;
+use bedrock_ecs::{query::Query, world::World};
+use bedrock_ecs_derive::{Component, Message, Resource, ScheduleLabel};
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone, Component)]
@@ -16,6 +16,9 @@ struct Position {
 
 #[derive(Debug, Copy, Clone, Component)]
 struct Health(f32);
+
+#[derive(Component)]
+struct Zst;
 
 #[derive(Message, Debug, Clone)]
 struct Killed {
@@ -110,6 +113,15 @@ fn stress_test() {
     for i in 0..5 {
         world.run(&schedule);
         world.apply_commands();
+
+        world.spawn((
+            Position {
+                x: 1.0,
+                y: 15.0,
+                z: 0.0,
+            },
+            Zst,
+        ));
 
         // if i % 10 == 0 {
         //     tracing::trace!("spawned");

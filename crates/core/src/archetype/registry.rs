@@ -1,5 +1,6 @@
 use std::ptr::NonNull;
 
+use nonmax::NonMaxUsize;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -73,9 +74,7 @@ impl Archetypes {
     ///
     /// # Returns
     ///
-    /// This function returns a list of [`CachedTable`] objects. These contain the table index and
-    /// the columns in the table that contain the requested components. These columns are in the same order
-    /// as the components in the query.
+    /// This function returns the last table that was scanned.
     ///
     /// [`Filter`]: crate::filter::Filter
     /// [`CachedTable`]: crate::query::CachedTable
@@ -86,18 +85,16 @@ impl Archetypes {
     pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
         &self,
         archetype: &Signature,
+        last_scanned: Option<NonMaxUsize>,
         filter: &F,
 
         #[cfg(feature = "generics")] cache: &mut SmallVec<[TableCache<Q::AccessCount>; 8]>,
         #[cfg(not(feature = "generics"))] cache: &mut SmallVec<[TableCache; 8]>,
-    ) {
+    ) -> NonMaxUsize {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        cache.clear();
-
-        let iter = self
-            .lookup_array
+        let iter = self.lookup_array[last_scanned.unwrap_or(NonMaxUsize::ZERO).get()..]
             .iter()
             .enumerate()
             .filter_map(|(table_index, sig)| {
@@ -123,6 +120,7 @@ impl Archetypes {
             });
 
         cache.extend(iter);
+        NonMaxUsize::new(self.lookup_array.len()).expect("archetype lookup array was maximum size")
     }
 
     /// Inserts a set of components into a table.

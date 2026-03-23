@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use generic_array::{ArrayLength, GenericArray};
+use nonmax::NonMaxUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
@@ -109,6 +110,9 @@ pub struct QueryState<Q: QueryBundle, F: FilterBundle> {
     #[cfg(not(feature = "generics"))]
     pub(crate) cache: SmallVec<[TableCache; param::INLINE_SIZE]>,
 
+    /// The index of the next table that should be scanned if this state is updated. We only need to check
+    /// tables that have an index greater than or equal to this one.
+    pub(crate) next_scan: Option<NonMaxUsize>,
     /// The current tick.
     pub(crate) current_tick: u32,
     /// The last tick that this query was used.
@@ -133,13 +137,14 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
         let filter_state = F::init(archetypes);
 
         let mut cached = SmallVec::new();
-        archetypes.cache_tables::<Q, F>(&archetype, &filter_state, &mut cached);
+        archetypes.cache_tables::<Q, F>(&archetype, None, &filter_state, &mut cached);
 
         tracing::trace!("cached {} archetype tables", cached.len());
 
         QueryState {
             current_tick,
             last_tick: 0,
+            next_scan: None,
             filter_state,
             generation: archetypes.generation(),
             signature: archetype,
@@ -161,10 +166,14 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
             //
             // We should also use smallest index scanning. Keep track of the amount of archetype tables that have a certain component
             // and only check all tables
-            todo!("better table scanning");
+            // todo!("better table scanning");
 
-            self.cache.clear();
-            archetypes.cache_tables::<Q, F>(&self.signature, &self.filter_state, &mut self.cache);
+            self.next_scan = Some(archetypes.cache_tables::<Q, F>(
+                &self.signature,
+                self.next_scan,
+                &self.filter_state,
+                &mut self.cache,
+            ));
 
             tracing::trace!(
                 "refreshing archetype table cache ({} -> {}), {} tables cached",

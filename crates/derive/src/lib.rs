@@ -7,7 +7,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     let comp_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::component::Component for #comp_ident {
+        impl ::bedrock_ecs::component::Component for #comp_ident {
 
         }
     };
@@ -21,7 +21,7 @@ pub fn derive_resource(input: TokenStream) -> TokenStream {
     let res_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::resource::Resource for #res_ident {
+        impl ::bedrock_ecs::resource::Resource for #res_ident {
             #[inline]
             fn as_any(&self) -> &dyn ::std::any::Any {
                 self
@@ -48,7 +48,7 @@ pub fn derive_schedule_label(input: TokenStream) -> TokenStream {
     let sched_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::scheduler::ScheduleLabel for #sched_ident {
+        impl ::bedrock_ecs::scheduler::ScheduleLabel for #sched_ident {
             const NAME: &'static str = stringify!(#sched_ident);
         }
     };
@@ -62,7 +62,7 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
     let event_ident = input.ident;
 
     let expanded = quote! {
-        impl ::ecs::message::Message for #event_ident {
+        impl ::bedrock_ecs::message::Message for #event_ident {
             const NAME: &'static str = stringify!(#event_ident);
         }
     };

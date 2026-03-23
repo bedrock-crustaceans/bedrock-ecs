@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/ecs",
-    "crates/ecs_derive"
+    "crates/core",
+    "crates/derive"
 ]
 resolver = "2"
