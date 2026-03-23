@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{FilterBundle, QueryBundle, QueryData, QueryMeta, QueryType, TableCache};
+use crate::query::{FilterBundle, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
 
@@ -50,7 +50,7 @@ pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterat
 #[cfg(feature = "generics")]
 pub trait HoppingIterator<'t, Q: QueryBundle, F: FilterBundle>: Sized {
     /// Creates a new iterator over the given cache.
-    fn new(world: &'t World, meta: &'t QueryMeta<Q, F>) -> Self;
+    fn new(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 
     // /// Estimates the total amount of components remaining, including remaining tables.
     // /// This estimate does not apply filters and will therefore always overestimate.
@@ -136,7 +136,7 @@ macro_rules! impl_bundle {
             }
 
             impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> HoppingIterator<'w, Q, T> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
-                fn new(world: &'w World, meta: &'w QueryMeta<Q, T>) -> Self {
+                fn new(world: &'w World, meta: &'w QueryState<Q, T>) -> Self {
                     #[cfg(debug_assertions)]
                     {
                         for cached in &meta.cache {

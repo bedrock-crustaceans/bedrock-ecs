@@ -1,9 +1,11 @@
+use std::marker::PhantomData;
+
 use crate::command::{Command, Commands};
 use crate::entity::{Entity, EntityHandle, EntityIndex};
 use crate::prelude::ComponentBundle;
 use crate::world::World;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityCommandsHandle {
     /// The commands will be applied to an existing entity
     Spawned(Entity),
@@ -58,13 +60,23 @@ impl EntityCommands<'_, '_> {
     /// Adds components to this entity.
     ///
     /// This is a deferred operation and will be performed after the end of this tick.
-    pub fn insert(&mut self, _components: impl ComponentBundle) -> &mut Self {
-        todo!()
+    pub fn insert(&mut self, components: impl ComponentBundle) -> &mut Self {
+        self.commands.buffer.push(InsertCommand {
+            entity: self.entity,
+            components,
+        });
+        self
     }
 
     /// Removes the given components from this entity.
-    pub fn remove<S: ComponentBundle>(&mut self) {
-        todo!()
+    pub fn remove<B: ComponentBundle>(&mut self) -> &mut Self {
+        let cmd: RemoveCommand<B> = RemoveCommand {
+            entity: self.entity,
+            _marker: PhantomData,
+        };
+
+        self.commands.buffer.push(cmd);
+        self
     }
 
     /// Despawns the entity
@@ -72,6 +84,17 @@ impl EntityCommands<'_, '_> {
         self.commands.buffer.push(DespawnCommand {
             handle: self.entity,
         });
+    }
+}
+
+pub struct RemoveCommand<T: ComponentBundle> {
+    entity: EntityCommandsHandle,
+    _marker: PhantomData<T>,
+}
+
+impl<T: ComponentBundle> Command for RemoveCommand<T> {
+    fn apply(self, world: &mut World) {
+        todo!()
     }
 }
 
@@ -83,12 +106,6 @@ pub struct InsertCommand<T: ComponentBundle> {
 impl<T: ComponentBundle> Command for InsertCommand<T> {
     fn apply(self, world: &mut World) {
         todo!()
-    }
-}
-
-impl<T: ComponentBundle> Drop for InsertCommand<T> {
-    fn drop(&mut self) {
-        println!("drop insert test: {:?}", self.entity);
     }
 }
 

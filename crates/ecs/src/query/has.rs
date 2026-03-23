@@ -15,11 +15,12 @@ use crate::{
     world::World,
 };
 
+/// Whether the entity has the given set of components.
 pub struct Has<T: ComponentBundle> {
     _marker: PhantomData<T>,
 }
 
-unsafe impl<T: Component> QueryData for Has<T> {
+unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     type Unref = Has<T>;
 
     type Output<'w> = bool;
@@ -48,7 +49,7 @@ unsafe impl<T: Component> QueryData for Has<T> {
         _col: usize,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> HasIter {
+    ) -> HasIter<'_> {
         // TODO: This should be stored in some kind of persistent state.
         let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
         let table = world.archetypes.get_by_index(table);
@@ -62,6 +63,7 @@ unsafe impl<T: Component> QueryData for Has<T> {
     }
 }
 
+/// Iterator that returns whether the entity has the component.
 pub struct HasIter<'t> {
     matches: bool,
     remaining: usize,

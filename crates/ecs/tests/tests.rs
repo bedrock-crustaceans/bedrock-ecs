@@ -1,7 +1,7 @@
 use ecs::command::Commands;
 use ecs::entity::{Entity, EntityHandle};
 use ecs::message::{Message, MessageReceiver, MessageSender};
-use ecs::query::{Added, Changed, Has};
+use ecs::query::{Added, Changed, Has, With, Without};
 use ecs::time::SystemTick;
 use ecs::{query::Query, world::World};
 use ecs_derive::{Component, Message, Resource, ScheduleLabel};
@@ -61,9 +61,12 @@ struct Killed {
 //     }
 // }
 
-fn test_system(query: Query<(&Health, Has<Position>)>) {
-    for (health, has) in &query {
-        println!("{health:?}: {has}");
+fn test_system(query: Query<(Entity, &Health, Has<(Position, Health)>), With<Position>>) {
+    for (entity, health, has) in &query {
+        println!(
+            "Entity {} has {health:?}. Does it have a position and health?: {has}",
+            entity.handle.index()
+        );
     }
 }
 

@@ -36,7 +36,11 @@ impl From<usize> for ComponentId {
 }
 
 /// A marker trait indicating that the implementor can be used as a component.
-pub trait Component: 'static {}
+pub trait Component: 'static {
+    // TODO: Add a tracking type so change tracking can be enabled or disabled for specific components.
+    // TODO: Add a storage type constant so each component can decide whether it should be stored in a sparse set
+    // or archetype table.
+}
 
 /// A collection of components used in a filter. This trait makes it possible to use tuples
 /// of components inside of filters rather than just a single component.

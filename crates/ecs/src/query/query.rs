@@ -15,7 +15,7 @@ pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
     /// The world that this query was created in.
     world: &'w World,
     /// The query's associated cache. This cache tells the query where to find its data.
-    cache: &'w mut QueryMeta<Q, F>,
+    cache: &'w mut QueryState<Q, F>,
 }
 
 impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
@@ -23,7 +23,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     ///
     /// A new query is created every time a system runs, while the
     /// [`QueryCache`] is persistent across runs by storing it in the system state.
-    pub(crate) fn new(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
+    pub(crate) fn new(world: &'w World, state: &'w mut QueryState<Q, F>) -> Query<'w, Q, F> {
         // Update the plan cache
         state.update(&world.archetypes);
 
@@ -35,7 +35,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
 
     /// Returns the metadata associated with this query.
     #[inline]
-    pub fn meta(&self) -> &QueryMeta<Q, F> {
+    pub fn meta(&self) -> &QueryState<Q, F> {
         self.cache
     }
 
@@ -52,7 +52,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
 unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query<'_, Q, F> {
     #[cfg(feature = "generics")]
     type AccessCount = Q::AccessCount;
-    type State = QueryMeta<Q, F>;
+    type State = QueryState<Q, F>;
     type Output<'w> = Query<'w, Q, F>;
 
     #[cfg(feature = "generics")]
@@ -65,7 +65,7 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
         Q::access(&mut world.archetypes.registry)
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryMeta<Q, F>) -> Query<'w, Q, F> {
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryState<Q, F>) -> Query<'w, Q, F> {
         // Update the tick
         state.last_tick = state.current_tick;
         state.current_tick = world.current_tick;
@@ -73,8 +73,8 @@ unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query
         Query::new(world, state)
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> QueryMeta<Q, F> {
-        QueryMeta::new(&mut world.archetypes, world.current_tick)
+    fn init(world: &mut World, _meta: &SystemMeta) -> QueryState<Q, F> {
+        QueryState::new(&mut world.archetypes, world.current_tick)
     }
 }
 
@@ -103,7 +103,7 @@ pub struct TableCache {
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
 #[derive(Debug)]
-pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
+pub struct QueryState<Q: QueryBundle, F: FilterBundle> {
     #[cfg(feature = "generics")]
     pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
@@ -122,13 +122,13 @@ pub struct QueryMeta<Q: QueryBundle, F: FilterBundle> {
     pub(crate) signature: Signature,
 }
 
-impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
+impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
     /// Creates a new query cache. This is only called when a system is first constructed.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(name = "QueryCache::new", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
-    pub(crate) fn new(archetypes: &mut Archetypes, current_tick: u32) -> QueryMeta<Q, F> {
+    pub(crate) fn new(archetypes: &mut Archetypes, current_tick: u32) -> QueryState<Q, F> {
         let archetype = Q::signature(&mut archetypes.component_registry);
         let filter_state = F::init(archetypes);
 
@@ -137,7 +137,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
 
         tracing::trace!("cached {} archetype tables", cached.len());
 
-        QueryMeta {
+        QueryState {
             current_tick,
             last_tick: 0,
             filter_state,
@@ -156,6 +156,13 @@ impl<Q: QueryBundle, F: FilterBundle> QueryMeta<Q, F> {
         self.last_tick = self.current_tick;
 
         if self.generation != archetypes.generation() {
+            // Rather than iterating over every single table again, just store the index where iteration stopped last generation
+            // and only check the newly added tables. The old tables have not changed anyways.
+            //
+            // We should also use smallest index scanning. Keep track of the amount of archetype tables that have a certain component
+            // and only check all tables
+            todo!("better table scanning");
+
             self.cache.clear();
             archetypes.cache_tables::<Q, F>(&self.signature, &self.filter_state, &mut self.cache);
 

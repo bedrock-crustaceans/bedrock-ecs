@@ -54,7 +54,7 @@ impl EntityRef<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entity {
     pub handle: EntityHandle,
     pub table: Option<NonNull<Table>>,
