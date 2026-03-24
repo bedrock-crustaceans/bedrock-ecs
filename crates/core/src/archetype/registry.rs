@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{ArchetypeGraph, Signature};
 use crate::component::ComponentRegistry;
-use crate::entity::{EntityHandle, EntityMeta};
+use crate::entity::{Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
@@ -145,7 +145,7 @@ impl Archetypes {
     )]
     pub fn insert<B: ComponentBundle + 'static>(
         &mut self,
-        handle: EntityHandle,
+        handle: Entity,
         bundle: B,
         current_tick: u32,
     ) -> EntityMeta {
@@ -201,7 +201,7 @@ impl Archetypes {
     }
 
     /// Checks whether the given entity is found in any of the tables containing the archetype `A`.
-    pub fn has_components<A: ComponentBundle>(&self, entity: EntityHandle) -> bool {
+    pub fn has_components<A: ComponentBundle>(&self, entity: Entity) -> bool {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 

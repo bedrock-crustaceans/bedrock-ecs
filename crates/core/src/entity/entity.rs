@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
 use crate::component::ComponentBundle;
-use crate::entity::{EntityGeneration, EntityHandle, EntityIndex};
+use crate::entity::{Entity, EntityGeneration, EntityIndex};
 use crate::table::{Table, TableRow};
 use crate::world::World;
 
@@ -10,12 +10,12 @@ use crate::world::World;
 /// This allows calling mutable methods directly rather than having to push them to command buffers.
 pub struct EntityMut<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) handle: EntityHandle,
+    pub(crate) handle: Entity,
 }
 
 impl EntityMut<'_> {
     #[inline]
-    pub fn handle(&self) -> EntityHandle {
+    pub fn handle(&self) -> Entity {
         self.handle
     }
 
@@ -37,12 +37,12 @@ impl EntityMut<'_> {
 #[derive(Clone)]
 pub struct EntityRef<'w> {
     pub(crate) world: &'w World,
-    pub(crate) handle: EntityHandle,
+    pub(crate) handle: Entity,
 }
 
 impl EntityRef<'_> {
     /// Returns the handle of this entity.
-    pub fn handle(&self) -> EntityHandle {
+    pub fn handle(&self) -> Entity {
         self.handle
     }
 
@@ -56,7 +56,7 @@ impl EntityRef<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntityMeta {
-    pub handle: EntityHandle,
+    pub handle: Entity,
     pub table: Option<NonNull<Table>>,
     pub row: TableRow,
 }

@@ -12,7 +12,7 @@ use crate::param;
 use crate::archetype::Archetypes;
 use crate::command::CommandPool;
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, EntityHandle, EntityMeta, EntityMut, EntityRef};
+use crate::entity::{Entities, Entity, EntityMeta, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
 use crate::sealed::Sealed;
@@ -74,11 +74,11 @@ impl World {
     }
 
     #[inline]
-    pub(crate) fn has_components<T: ComponentBundle>(&self, entity: EntityHandle) -> bool {
+    pub(crate) fn has_components<T: ComponentBundle>(&self, entity: Entity) -> bool {
         self.archetypes.has_components::<T>(entity)
     }
 
-    pub fn get_entity(&self, handle: EntityHandle) -> Option<EntityRef<'_>> {
+    pub fn get_entity(&self, handle: Entity) -> Option<EntityRef<'_>> {
         if self.entities.is_alive(handle) {
             return Some(EntityRef {
                 handle,
@@ -89,7 +89,7 @@ impl World {
         None
     }
 
-    pub fn get_entity_mut(&mut self, handle: EntityHandle) -> Option<EntityMut<'_>> {
+    pub fn get_entity_mut(&mut self, handle: Entity) -> Option<EntityMut<'_>> {
         if self.entities.is_alive(handle) {
             return Some(EntityMut {
                 handle,

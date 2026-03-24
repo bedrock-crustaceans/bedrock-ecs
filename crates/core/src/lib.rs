@@ -22,7 +22,7 @@ pub mod world;
 pub mod prelude {
     pub use crate::archetype::Archetypes;
     pub use crate::component::{Component, ComponentBundle};
-    pub use crate::entity::{EntityHandle, EntityRef};
+    pub use crate::entity::{Entity, EntityRef};
     pub use crate::local::Local;
     pub use crate::query::{Added, Changed, Filter, FilterBundle, With, Without};
     pub use crate::query::{Query, QueryBundle};

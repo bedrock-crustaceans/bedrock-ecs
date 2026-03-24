@@ -7,54 +7,54 @@ use std::hash::{Hash, Hasher};
 // is equivalent to a `u64`.
 #[derive(Debug, Clone, Copy)]
 #[repr(C, align(8))]
-pub struct EntityHandle {
+pub struct Entity {
     index: EntityIndex,
     generation: EntityGeneration,
 }
 
-impl PartialEq for EntityHandle {
+impl PartialEq for Entity {
     #[inline]
-    fn eq(&self, other: &EntityHandle) -> bool {
+    fn eq(&self, other: &Entity) -> bool {
         self.to_bits() == other.to_bits()
     }
 }
 
-impl Eq for EntityHandle {}
+impl Eq for Entity {}
 
-impl PartialOrd for EntityHandle {
+impl PartialOrd for Entity {
     #[inline]
-    fn partial_cmp(&self, other: &EntityHandle) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Entity) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for EntityHandle {
+impl Ord for Entity {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.to_bits().cmp(&other.to_bits())
     }
 }
 
-impl Hash for EntityHandle {
+impl Hash for Entity {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.to_bits().hash(state);
     }
 }
 
-impl EntityHandle {
-    const DANGLING: EntityHandle =
-        EntityHandle::from_index_and_generation(EntityIndex(u32::MAX), EntityGeneration(u32::MAX));
+impl Entity {
+    const DANGLING: Entity =
+        Entity::from_index_and_generation(EntityIndex(u32::MAX), EntityGeneration(u32::MAX));
 
     #[inline]
     pub const fn from_index_and_generation(
         index: EntityIndex,
         generation: EntityGeneration,
-    ) -> EntityHandle {
-        EntityHandle { index, generation }
+    ) -> Entity {
+        Entity { index, generation }
     }
 
     #[inline]
-    pub const fn dangling() -> EntityHandle {
+    pub const fn dangling() -> Entity {
         Self::DANGLING
     }
 

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::command::{Command, Commands};
-use crate::entity::{EntityHandle, EntityIndex, EntityMeta};
+use crate::entity::{Entity, EntityIndex, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::world::World;
 
@@ -34,7 +34,7 @@ impl EntityCommands<'_, '_> {
     ///
     /// Entities that have been spawned during this tick will not have a handle yet.
     #[inline]
-    pub fn handle(&self) -> Option<EntityHandle> {
+    pub fn handle(&self) -> Option<Entity> {
         self.entity().map(|entity| entity.handle)
     }
 

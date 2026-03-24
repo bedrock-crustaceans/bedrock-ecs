@@ -5,8 +5,8 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
-use crate::entity::EntityHandle;
-use crate::table::{Column, EntityHandleIter, EntityRefIter, TableRow};
+use crate::entity::Entity;
+use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
 use crate::world::World;
 
 /// A table is the main storage container for entity components. It is made for a specific archetype only
@@ -26,9 +26,9 @@ pub struct Table {
     // The `entities` and `columnns` fields are perfectly aligned, i.e.
     // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
-    pub(crate) entities: Vec<EntityHandle>,
+    pub(crate) entities: Vec<Entity>,
 
-    pub(crate) entity_lookup: FxHashMap<EntityHandle, TableRow>,
+    pub(crate) entity_lookup: FxHashMap<Entity, TableRow>,
     /// A lookup table that maps component type IDs to columns.
     pub(crate) lookup: FxHashMap<TypeId, usize>,
     /// All columns that this table contains. Most users will know exactly which column they want.
@@ -57,7 +57,7 @@ impl Table {
     /// Inserts a set of components into this table and returns the row it was inserted at
     pub fn insert(
         &mut self,
-        entity: EntityHandle,
+        entity: Entity,
         components: impl ComponentBundle,
         current_tick: u32,
     ) -> TableRow {
@@ -71,7 +71,7 @@ impl Table {
         TableRow(row)
     }
 
-    pub fn remove(&mut self, entity: EntityHandle) {
+    pub fn remove(&mut self, entity: Entity) {
         if let Some(row) = self.entity_lookup.remove(&entity) {
             self.entities.swap_remove(row.0);
             self.columns.iter_mut().for_each(|c| c.swap_remove(row.0));
@@ -96,8 +96,8 @@ impl Table {
         }
     }
 
-    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityHandleIter<'w> {
-        EntityHandleIter {
+    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
+        EntityIter {
             iter: self.entities.iter(),
         }
     }

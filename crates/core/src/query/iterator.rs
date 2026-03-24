@@ -13,6 +13,7 @@ use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
 use crate::query::{Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
+use crate::table::{Table, TableRow};
 use crate::world::World;
 
 /// Implements all query iteration traits but cannot be instantiated.
@@ -261,7 +262,9 @@ macro_rules! impl_bundle {
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
-                type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
+                type Output<'t> = ($($gen::Output<'t>),*) where
+                    Self: 't,
+                    ($($gen),*): 't;
                 type Iter<'t, FA: Filter> = [< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
@@ -277,6 +280,10 @@ macro_rules! impl_bundle {
                     )*
 
                     sig
+                }
+
+                fn get<'t, T: Filter>(table: &'t Table, row: TableRow) -> Option<Self::Output<'t>> where Self: 't {
+                    todo!("hello")
                 }
 
                 #[cfg_attr(

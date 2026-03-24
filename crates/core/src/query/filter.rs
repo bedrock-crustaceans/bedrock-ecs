@@ -107,11 +107,11 @@ impl Filter for () {
 
     fn init(_archetypes: &mut Archetypes) {}
 
-    fn apply_coarse(&self, archetype: &Signature) -> bool {
+    fn apply_coarse(&self, _archetype: &Signature) -> bool {
         true
     }
 
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+    fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
 }
@@ -125,12 +125,13 @@ pub trait FilterBundle {
     /// Initializes the state of the filters in this aggregator.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    /// Applies the static filter of all filters in this collection.
+    /// Applies the static filter of all filters in this collection and returns an iterators over the results.
     ///
     /// See [`Filter::apply_static_filter`] for more information about static filters.
     fn apply_coarse_iterable(&self, archetype: &Signature) -> impl FilterIterable;
 
-    /// Applies the dynamic filter of all filters in this collection.
+    /// Applies the dynamic filter of all filters in this collection and returns an iterator over the
+    /// results.
     fn apply_dynamic_iterable(changes: Changes, last_tick: u32) -> impl FilterIterable;
 
     /// Apply all coarse filters and perform this aggregator's action.

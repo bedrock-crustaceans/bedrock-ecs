@@ -1,4 +1,4 @@
-use crate::entity::{EntityGeneration, EntityHandle, EntityIndex, EntityMeta};
+use crate::entity::{Entity, EntityGeneration, EntityIndex, EntityMeta};
 
 #[derive(Default, Debug, Clone)]
 pub struct Entities {
@@ -16,7 +16,7 @@ impl Entities {
     }
 
     /// Allocates an entity handle but does not insert it into the registry yet.
-    pub fn allocate(&mut self) -> EntityHandle {
+    pub fn allocate(&mut self) -> Entity {
         // Allocate an ID for this new entity.
         if let Some(id) = self.freelist.pop() {
             self.generations[id as usize] += 1;
@@ -24,7 +24,7 @@ impl Entities {
             let generation = self.generations[id as usize];
 
             tracing::trace!("spawned entity via freelist (id: {id}, generation: {generation})");
-            EntityHandle::from_index_and_generation(
+            Entity::from_index_and_generation(
                 EntityIndex::from_bits(id),
                 EntityGeneration::from_bits(generation),
             )
@@ -34,11 +34,23 @@ impl Entities {
 
             self.generations.push(0);
 
-            EntityHandle::from_index_and_generation(
-                EntityIndex::from_bits(id),
-                EntityGeneration::FIRST,
-            )
+            Entity::from_index_and_generation(EntityIndex::from_bits(id), EntityGeneration::FIRST)
         }
+    }
+
+    /// Retrieves the metadata of the given entity.
+    pub fn get_meta(&self, entity: Entity) -> Option<EntityMeta> {
+        let index = entity.index().0;
+        let generation = entity.generation().0;
+
+        // Check whether generation is up to date
+        if *self.generations.get(index as usize)? != generation {
+            return None;
+        }
+
+        // Safety: `generations` and `sparse` have the same length.
+        let dense_idx = *self.sparse.get(index as usize)?;
+        self.dense.get(dense_idx as usize).copied()
     }
 
     /// Inserts the given entity metadata into the registry.
@@ -53,7 +65,7 @@ impl Entities {
         self.sparse[index] = self.dense.len() as u32 - 1;
     }
 
-    pub fn despawn(&mut self, entity: EntityHandle) {
+    pub fn despawn(&mut self, entity: Entity) {
         let id = entity.index().0;
         let generation = entity.generation().0;
 
@@ -78,7 +90,7 @@ impl Entities {
         self.sparse.len()
     }
 
-    pub fn is_alive(&self, entity: EntityHandle) -> bool {
+    pub fn is_alive(&self, entity: Entity) -> bool {
         let id = entity.index().0;
         let generation = entity.generation().0;
 

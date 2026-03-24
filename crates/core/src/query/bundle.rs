@@ -11,10 +11,12 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
-use crate::entity::{EntityHandle, EntityRef};
+use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, Filter, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnIter, ColumnIterMut, EntityHandleIter, EntityRefIter, Mut, Ref};
+use crate::table::{
+    ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref, Table, TableRow,
+};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -63,6 +65,10 @@ pub unsafe trait QueryBundle: Sized {
 
     /// Returns the signature of this query. This signature does not include possible filters.
     fn signature(reg: &mut ComponentRegistry) -> Signature;
+
+    fn get<'t, F: Filter>(table: &'t Table, row: TableRow) -> Option<Self::Output<'t>>
+    where
+        Self: 't;
 
     #[cfg(feature = "generics")]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
@@ -176,10 +182,10 @@ pub enum QueryType {
     Has,
 }
 
-unsafe impl QueryData for EntityHandle {
-    type Unref = EntityHandle;
-    type Output<'w> = EntityHandle;
-    type Iter<'t, F: Filter> = EntityHandleIter<'t>;
+unsafe impl QueryData for Entity {
+    type Unref = Entity;
+    type Output<'w> = Entity;
+    type Iter<'t, F: Filter> = EntityIter<'t>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -205,7 +211,7 @@ unsafe impl QueryData for EntityHandle {
         col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> EntityHandleIter<'_> {
+    ) -> EntityIter<'_> {
         debug_assert!(
             col.is_none(),
             "column index passed to entity handle iterator",

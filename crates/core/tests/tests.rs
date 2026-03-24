@@ -1,5 +1,5 @@
 use bedrock_ecs::command::Commands;
-use bedrock_ecs::entity::EntityHandle;
+use bedrock_ecs::entity::{Entity, EntityGeneration, EntityIndex};
 use bedrock_ecs::message::{Message, MessageReceiver, MessageSender};
 use bedrock_ecs::query::{Added, Changed, Has, Not, Or, With, Without, Xor};
 use bedrock_ecs::time::SystemTick;
@@ -25,7 +25,7 @@ struct Example3;
 
 #[derive(Message, Debug, Clone)]
 struct Killed {
-    entity: EntityHandle,
+    entity: Entity,
 }
 
 // fn detector(query: Query<(Entity, &Health), Changed<Health>>, mut sender: MessageSender<Killed>) {
@@ -77,6 +77,13 @@ fn test_system(
     >,
 ) {
     println!("{:?}", query.meta().cache());
+
+    let handle = Entity::from_index_and_generation(
+        EntityIndex::from_bits(0),
+        EntityGeneration::from_bits(0),
+    );
+
+    println!("{:?}", query.get(handle));
 
     for name in &query {
         tracing::error!("found {}", name.0);

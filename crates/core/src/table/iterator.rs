@@ -2,7 +2,7 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::entity::{EntityHandle, EntityRef};
+use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, Filter};
 use crate::table::{ChangeTracker, ChangeTrackerIter, Mut, Ref, Table, TableRow};
 use crate::world::World;
@@ -154,14 +154,14 @@ impl<'a, T, F: Filter> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T
     }
 }
 
-pub struct EntityHandleIter<'w> {
-    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
+pub struct EntityIter<'w> {
+    pub(crate) iter: std::slice::Iter<'w, Entity>,
 }
 
-impl Iterator for EntityHandleIter<'_> {
-    type Item = EntityHandle;
+impl Iterator for EntityIter<'_> {
+    type Item = Entity;
 
-    fn next(&mut self) -> Option<EntityHandle> {
+    fn next(&mut self) -> Option<Entity> {
         let handle = *self.iter.next()?;
         Some(handle)
     }
@@ -172,24 +172,24 @@ impl Iterator for EntityHandleIter<'_> {
     }
 }
 
-impl ExactSizeIterator for EntityHandleIter<'_> {
+impl ExactSizeIterator for EntityIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl FusedIterator for EntityHandleIter<'_> {}
+impl FusedIterator for EntityIter<'_> {}
 
-impl<'w> EmptyableIterator<'w, EntityHandle> for EntityHandleIter<'w> {
-    fn empty(_world: &'w World) -> EntityHandleIter<'w> {
-        EntityHandleIter { iter: [].iter() }
+impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
+    fn empty(_world: &'w World) -> EntityIter<'w> {
+        EntityIter { iter: [].iter() }
     }
 }
 
 pub struct EntityRefIter<'w> {
     pub(crate) world: &'w World,
-    pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
+    pub(crate) iter: std::slice::Iter<'w, Entity>,
 }
 
 impl<'w> Iterator for EntityRefIter<'w> {

@@ -3,6 +3,7 @@ use nonmax::NonMaxUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
+use crate::entity::Entity;
 use crate::query::{Filter, HoppingIterator, QueryBundle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
@@ -14,7 +15,7 @@ pub struct Query<'w, Q: QueryBundle, F: Filter = ()> {
     /// The world that this query was created in.
     world: &'w World,
     /// The query's associated cache. This cache tells the query where to find its data.
-    cache: &'w mut QueryState<Q, F>,
+    state: &'w mut QueryState<Q, F>,
 }
 
 impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
@@ -26,16 +27,23 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         // Update the plan cache
         state.update(&world.archetypes);
 
-        Query {
-            world,
-            cache: state,
-        }
+        Query { world, state }
+    }
+
+    pub fn get(&self, entity: Entity) -> Option<Q::Output<'_>> {
+        let meta = self.world.entities.get_meta(entity)?;
+        println!("meta: {meta:?}");
+
+        let table_ptr = meta.table?;
+
+        let table = unsafe { table_ptr.as_ptr().cast_const().as_ref_unchecked() };
+        Q::get::<F>(table, meta.row)
     }
 
     /// Returns the metadata associated with this query.
     #[inline]
     pub fn meta(&self) -> &QueryState<Q, F> {
-        self.cache
+        self.state
     }
 
     /// Creates an iterator that iterates over all components matching this query.
@@ -44,7 +52,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
     /// retrieve items from the tables.
     #[inline]
     pub fn iter(&self) -> Q::Iter<'_, F> {
-        self.cache.iter(self.world)
+        self.state.iter(self.world)
     }
 }
 
