@@ -4,7 +4,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::query::FilterBundle;
+use crate::query::FilterAggregator;
 use crate::table::{ChangeTracker, ChangeTrackerIter, ColumnIter, ColumnIterMut};
 use crate::util::LayoutExt;
 
@@ -141,7 +141,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter<T: 'static, F: FilterBundle>(&self, current_tick: u32) -> ColumnIter<'_, T, F> {
+    pub fn iter<T: 'static, F: FilterAggregator>(&self, current_tick: u32) -> ColumnIter<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
@@ -182,7 +182,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter_mut<T: 'static, F: FilterBundle>(
+    pub fn iter_mut<T: 'static, F: FilterAggregator>(
         &self,
         last_tick: u32,
         current_tick: u32,

@@ -1,10 +1,11 @@
 use bedrock_ecs::command::Commands;
-use bedrock_ecs::entity::{Entity, EntityHandle};
+use bedrock_ecs::entity::EntityHandle;
 use bedrock_ecs::message::{Message, MessageReceiver, MessageSender};
-use bedrock_ecs::query::{Added, Changed, Has, With, Without};
+use bedrock_ecs::query::{Added, Changed, Has, Not, With, Without};
 use bedrock_ecs::time::SystemTick;
 use bedrock_ecs::{query::Query, world::World};
 use bedrock_ecs_derive::{Component, Message, Resource, ScheduleLabel};
+use rustc_hash::FxHashMap;
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone, Component)]
@@ -64,11 +65,13 @@ struct Killed {
 //     }
 // }
 
-fn test_system(query: Query<(Entity, &Health, Has<(Position, Health)>), With<Position>>) {
+fn test_system(
+    query: Query<(EntityHandle, &Health, Has<(Position, Health)>), Not<With<Position>>>,
+) {
     for (entity, health, has) in &query {
         println!(
             "Entity {} has {health:?}. Does it have a position and health?: {has}",
-            entity.handle.index()
+            entity.index()
         );
     }
 }

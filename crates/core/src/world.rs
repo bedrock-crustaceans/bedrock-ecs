@@ -12,7 +12,7 @@ use crate::param;
 use crate::archetype::Archetypes;
 use crate::command::CommandPool;
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, Entity, EntityHandle, EntityMut, EntityRef};
+use crate::entity::{Entities, EntityHandle, EntityMeta, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
 use crate::sealed::Sealed;
@@ -64,7 +64,7 @@ impl World {
     }
 
     #[inline]
-    pub(crate) fn despawn(&mut self, entity: Entity) {
+    pub(crate) fn despawn(&mut self, entity: EntityMeta) {
         // Remove from table
         // self.archetypes.remove(&entity);
         todo!();

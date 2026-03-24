@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
 use crate::command::{EntityCommands, EntityCommandsHandle, LocalCommandBuffer, SpawnCommand};
-use crate::entity::Entity;
+use crate::entity::EntityMeta;
 use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
@@ -120,7 +120,7 @@ impl<'s> Commands<'s> {
     }
 
     #[inline]
-    pub fn entity(&mut self, entity: Entity) -> EntityCommands<'_, 's> {
+    pub fn entity(&mut self, entity: EntityMeta) -> EntityCommands<'_, 's> {
         EntityCommands {
             entity: EntityCommandsHandle::Spawned(entity),
             commands: self,

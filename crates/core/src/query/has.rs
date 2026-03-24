@@ -4,13 +4,14 @@ use std::{
     marker::PhantomData,
 };
 
+use nonmax::NonMaxUsize;
 use rustc_hash::FxHashMap;
 
 use crate::{
     archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
     prelude::ComponentBundle,
-    query::{EmptyableIterator, FilterBundle, Impossible, QueryData, QueryType, TableCache},
+    query::{EmptyableIterator, FilterAggregator, Impossible, QueryData, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
     world::World,
 };
@@ -24,7 +25,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     type Unref = Has<T>;
 
     type Output<'w> = bool;
-    type Iter<'t, F: FilterBundle> = HasIter<'t>;
+    type Iter<'t, F: FilterAggregator> = HasIter<'t>;
 
     const TY: QueryType = QueryType::Has;
 
@@ -39,17 +40,19 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         unimplemented!()
     }
 
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> usize {
+    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
         unimplemented!()
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        _col: usize,
+        col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
     ) -> HasIter<'_> {
+        debug_assert!(col.is_none(), "column index passed to `Has` iterator");
+
         // TODO: This should be stored in some kind of persistent state.
         let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
         let table = world.archetypes.get_by_index(table);

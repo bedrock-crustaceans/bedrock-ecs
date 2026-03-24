@@ -1,17 +1,20 @@
 //! Implements the [`QueryBundle`] and [`ParamRef`] related traits.
 
 use std::any::TypeId;
+#[cfg(feature = "generics")]
+use std::fmt::Debug;
 use std::ops::Add;
 
 use generic_array::{ArrayLength, GenericArray};
+use nonmax::NonMaxUsize;
 use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
-use crate::entity::{Entity, EntityRef};
-use crate::query::{EmptyableIterator, FilterBundle, HoppingIterator};
+use crate::entity::{EntityHandle, EntityRef};
+use crate::query::{EmptyableIterator, FilterAggregator, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref};
+use crate::table::{ColumnIter, ColumnIterMut, EntityHandleIter, EntityRefIter, Mut, Ref};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -34,7 +37,7 @@ use crate::world::World;
 pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The amount of resources that this query accesses.
-    type AccessCount: ArrayLength + Add;
+    type AccessCount: ArrayLength + Add + Debug;
 
     /// The item that the query outputs. This is what is actually given to the system when ran.
     type Output<'a>
@@ -44,7 +47,8 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a, F: FilterBundle>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: FilterAggregator>: HoppingIterator<'a, Self, F>
+        + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 
@@ -72,7 +76,9 @@ pub unsafe trait QueryBundle: Sized {
     /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
     /// It however is not aware of the columns. This function then figures out which columns are useful
     /// and in which order they should be queried.
-    fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount>;
+    fn cache_columns(
+        lookup: &FxHashMap<TypeId, usize>,
+    ) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount>;
 
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
@@ -128,7 +134,7 @@ pub unsafe trait QueryData {
     /// [`Impossible`]: crate::query::Impossible
     ///
     /// TODO: Maybe the `iter` can return an `impl Iterator` in which case we probably don't need this.
-    type Iter<'t, F: FilterBundle>: EmptyableIterator<'t, Self::Output<'t>>;
+    type Iter<'t, F: FilterAggregator>: EmptyableIterator<'t, Self::Output<'t>>;
 
     /// Whether this parameter is an entity.
     const TY: QueryType;
@@ -149,15 +155,15 @@ pub unsafe trait QueryData {
     ///
     /// This function panics when `Self` is an entity since entities are not stored in columns.
     /// It also panics if the column is not found.
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize;
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize;
 
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        col: usize,
+        col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
     ) -> Self::Iter<'_, F>;
@@ -171,10 +177,10 @@ pub enum QueryType {
     Has,
 }
 
-unsafe impl QueryData for Entity {
-    type Unref = Entity;
-    type Output<'w> = Entity;
-    type Iter<'t, F: FilterBundle> = EntityIter<'t>;
+unsafe impl QueryData for EntityHandle {
+    type Unref = EntityHandle;
+    type Output<'w> = EntityHandle;
+    type Iter<'t, F: FilterAggregator> = EntityHandleIter<'t>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -190,17 +196,22 @@ unsafe impl QueryData for Entity {
         unimplemented!("cannot call `component_id` on `Entity`")
     }
 
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> usize {
+    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        _col: usize,
+        col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> EntityIter<'_> {
+    ) -> EntityHandleIter<'_> {
+        debug_assert!(
+            col.is_none(),
+            "column index passed to entity handle iterator",
+        );
+
         let table = world.archetypes.get_by_index(table);
         table.iter_entities(world)
     }
@@ -209,7 +220,7 @@ unsafe impl QueryData for Entity {
 unsafe impl QueryData for EntityRef<'_> {
     type Unref = EntityRef<'static>;
     type Output<'w> = EntityRef<'w>;
-    type Iter<'t, F: FilterBundle> = EntityRefIter<'t>;
+    type Iter<'t, F: FilterAggregator> = EntityRefIter<'t>;
 
     const TY: QueryType = QueryType::EntityRef;
 
@@ -224,17 +235,19 @@ unsafe impl QueryData for EntityRef<'_> {
         unreachable!("attempt to lookup component ID of entity");
     }
 
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> usize {
+    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        _col: usize,
+        col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
     ) -> EntityRefIter<'_> {
+        debug_assert!(col.is_none(), "column index passed to entity ref iterator");
+
         let table = world.archetypes.get_by_index(table);
         table.iter_entity_refs(world)
     }
@@ -243,7 +256,7 @@ unsafe impl QueryData for EntityRef<'_> {
 unsafe impl<T: Component> QueryData for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
-    type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
+    type Iter<'t, F: FilterAggregator> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -260,24 +273,32 @@ unsafe impl<T: Component> QueryData for &T {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
-            panic!(
-                "table column lookup failed for component {}",
-                std::any::type_name::<T>()
-            )
-        })
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+        map.get(&TypeId::of::<T>())
+            .copied()
+            .map(NonMaxUsize::new)
+            .flatten()
+            .unwrap_or_else(|| {
+                panic!(
+                    "table column lookup failed for component {}",
+                    std::any::type_name::<T>()
+                )
+            })
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        col: usize,
+        col: Option<NonMaxUsize>,
         last_tick: u32,
         _current_tick: u32,
     ) -> ColumnIter<'_, T, F> {
+        let col_index = col
+            .expect("no column index given to query data iterator")
+            .get();
+
         let table = world.archetypes.get_by_index(table);
-        let col = table.column(col);
+        let col = table.column(col_index);
 
         col.iter(last_tick)
     }
@@ -286,7 +307,7 @@ unsafe impl<T: Component> QueryData for &T {
 unsafe impl<T: Component> QueryData for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
+    type Iter<'t, F: FilterAggregator> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -303,24 +324,32 @@ unsafe impl<T: Component> QueryData for &mut T {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
-            panic!(
-                "table column lookup failed for component {}",
-                std::any::type_name::<T>()
-            )
-        })
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+        map.get(&TypeId::of::<T>())
+            .copied()
+            .map(NonMaxUsize::new)
+            .flatten()
+            .unwrap_or_else(|| {
+                panic!(
+                    "table column lookup failed for component {}",
+                    std::any::type_name::<T>()
+                )
+            })
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        col: usize,
+        col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
     ) -> ColumnIterMut<'_, T, F> {
+        let col_index = col
+            .expect("no column index given to query data iterator")
+            .get();
+
         let table = world.archetypes.get_by_index(table);
-        let col = table.column(col);
+        let col = table.column(col_index);
         col.iter_mut(last_tick, current_tick)
     }
 }
@@ -328,7 +357,7 @@ unsafe impl<T: Component> QueryData for &mut T {
 unsafe impl<T: Component> QueryData for Ref<'_, T> {
     type Unref = T;
     type Output<'t> = Ref<'t, T>;
-    type Iter<'t, F: FilterBundle> = ColumnIter<'t, T, F>;
+    type Iter<'t, F: FilterAggregator> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -345,24 +374,32 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
-            panic!(
-                "table column lookup failed for component {}",
-                std::any::type_name::<T>()
-            )
-        })
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+        map.get(&TypeId::of::<T>())
+            .copied()
+            .map(NonMaxUsize::new)
+            .flatten()
+            .unwrap_or_else(|| {
+                panic!(
+                    "table column lookup failed for component {}",
+                    std::any::type_name::<T>()
+                )
+            })
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        col: usize,
+        col: Option<NonMaxUsize>,
         last_tick: u32,
         _current_tick: u32,
     ) -> ColumnIter<'_, T, F> {
+        let col_index = col
+            .expect("no column index given to query data iterator")
+            .get();
+
         let table = world.archetypes.get_by_index(table);
-        let col = table.column(col);
+        let col = table.column(col_index);
 
         col.iter(last_tick)
     }
@@ -371,7 +408,7 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
 unsafe impl<T: Component> QueryData for Mut<'_, T> {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: FilterBundle> = ColumnIterMut<'t, T, F>;
+    type Iter<'t, F: FilterAggregator> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -388,24 +425,32 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> usize {
-        *map.get(&TypeId::of::<T>()).unwrap_or_else(|| {
-            panic!(
-                "table column lookup failed for component {}",
-                std::any::type_name::<T>()
-            )
-        })
+    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+        map.get(&TypeId::of::<T>())
+            .copied()
+            .map(NonMaxUsize::new)
+            .flatten()
+            .unwrap_or_else(|| {
+                panic!(
+                    "table column lookup failed for component {}",
+                    std::any::type_name::<T>()
+                )
+            })
     }
 
-    fn iter<F: FilterBundle>(
+    fn iter<F: FilterAggregator>(
         world: &World,
         table: usize,
-        col: usize,
+        col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
     ) -> ColumnIterMut<'_, T, F> {
+        let col_index = col
+            .expect("no column index given to query data iterator")
+            .get();
+
         let table = world.archetypes.get_by_index(table);
-        let col = table.column(col);
+        let col = table.column(col_index);
         col.iter_mut(last_tick, current_tick)
     }
 }

@@ -1,11 +1,11 @@
-use crate::entity::{Entity, EntityGeneration, EntityHandle, EntityIndex};
+use crate::entity::{EntityGeneration, EntityHandle, EntityIndex, EntityMeta};
 
 #[derive(Default, Debug, Clone)]
 pub struct Entities {
     next_id: u32,
     freelist: Vec<u32>,
     generations: Vec<u32>,
-    dense: Vec<Entity>,
+    dense: Vec<EntityMeta>,
     sparse: Vec<u32>,
 }
 
@@ -42,7 +42,7 @@ impl Entities {
     }
 
     /// Inserts the given entity metadata into the registry.
-    pub fn spawn(&mut self, meta: Entity) {
+    pub fn spawn(&mut self, meta: EntityMeta) {
         let index = meta.handle.index().0 as usize;
 
         self.dense.push(meta);

@@ -1,14 +1,14 @@
 use std::marker::PhantomData;
 
 use crate::command::{Command, Commands};
-use crate::entity::{Entity, EntityHandle, EntityIndex};
+use crate::entity::{EntityHandle, EntityIndex, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::world::World;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityCommandsHandle {
     /// The commands will be applied to an existing entity
-    Spawned(Entity),
+    Spawned(EntityMeta),
     /// The commands will be applied to an entity that still needs to be spawned.
     /// This happens when a system spawns an entity and then also modifies it within the same
     /// tick.
@@ -42,7 +42,7 @@ impl EntityCommands<'_, '_> {
     ///
     /// Entities that have been spawned during this tick will not have a handle yet.
     #[inline]
-    pub fn entity(&self) -> Option<&Entity> {
+    pub fn entity(&self) -> Option<&EntityMeta> {
         match &self.entity {
             EntityCommandsHandle::Spawned(entity) => Some(entity),
             EntityCommandsHandle::Deferred(_) => None,

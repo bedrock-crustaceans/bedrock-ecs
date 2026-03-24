@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::EntityHandle;
-use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
+use crate::table::{Column, EntityHandleIter, EntityRefIter, TableRow};
 use crate::world::World;
 
 /// A table is the main storage container for entity components. It is made for a specific archetype only
@@ -96,10 +96,8 @@ impl Table {
         }
     }
 
-    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
-        EntityIter {
-            row_index: 0,
-            table: NonNull::new(std::ptr::from_ref(self).cast_mut()),
+    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityHandleIter<'w> {
+        EntityHandleIter {
             iter: self.entities.iter(),
         }
     }

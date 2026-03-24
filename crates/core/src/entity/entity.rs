@@ -55,10 +55,11 @@ impl EntityRef<'_> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Entity {
+pub struct EntityMeta {
     pub handle: EntityHandle,
     pub table: Option<NonNull<Table>>,
     pub row: TableRow,
 }
 
-unsafe impl Send for Entity {}
+unsafe impl Send for EntityMeta {}
+unsafe impl Sync for EntityMeta {}

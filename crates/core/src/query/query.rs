@@ -1,25 +1,23 @@
-use std::sync::atomic::Ordering;
-
 use generic_array::{ArrayLength, GenericArray};
 use nonmax::NonMaxUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
-use crate::query::{FilterBundle, HoppingIterator, QueryBundle};
+use crate::query::{FilterAggregator, HoppingIterator, QueryBundle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
 /// A query is used to retrieve components from the components database.
-pub struct Query<'w, Q: QueryBundle, F: FilterBundle = ()> {
+pub struct Query<'w, Q: QueryBundle, F: FilterAggregator = ()> {
     /// The world that this query was created in.
     world: &'w World,
     /// The query's associated cache. This cache tells the query where to find its data.
     cache: &'w mut QueryState<Q, F>,
 }
 
-impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
+impl<'w, Q: QueryBundle, F: FilterAggregator> Query<'w, Q, F> {
     /// Creates a new query.
     ///
     /// A new query is created every time a system runs, while the
@@ -50,7 +48,7 @@ impl<'w, Q: QueryBundle, F: FilterBundle> Query<'w, Q, F> {
     }
 }
 
-unsafe impl<Q: QueryBundle + 'static, F: FilterBundle + 'static> Param for Query<'_, Q, F> {
+unsafe impl<Q: QueryBundle + 'static, F: FilterAggregator + 'static> Param for Query<'_, Q, F> {
     #[cfg(feature = "generics")]
     type AccessCount = Q::AccessCount;
     type State = QueryState<Q, F>;
@@ -86,7 +84,7 @@ pub struct TableCache<N: ArrayLength> {
     /// The index of the table in the archetypes container.
     pub table: usize,
     /// The columns within this table that should be queried.
-    pub cols: GenericArray<usize, N>,
+    pub cols: GenericArray<Option<NonMaxUsize>, N>,
 }
 
 /// A collection of columns in a table.
@@ -96,7 +94,7 @@ pub struct TableCache {
     /// The table that contains the components.
     pub table: usize,
     /// The columns from this table that contain the components for this query.
-    pub cols: SmallVec<[usize; param::INLINE_SIZE]>,
+    pub cols: SmallVec<[Option<NonMaxUsize>; param::INLINE_SIZE]>,
 }
 
 /// The metadata of the query.
@@ -104,7 +102,7 @@ pub struct TableCache {
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
 #[derive(Debug)]
-pub struct QueryState<Q: QueryBundle, F: FilterBundle> {
+pub struct QueryState<Q: QueryBundle, F: FilterAggregator> {
     #[cfg(feature = "generics")]
     pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
@@ -126,7 +124,7 @@ pub struct QueryState<Q: QueryBundle, F: FilterBundle> {
     pub(crate) signature: Signature,
 }
 
-impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
+impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
     /// Creates a new query cache. This is only called when a system is first constructed.
     #[cfg_attr(
         feature = "tracing",
@@ -170,7 +168,8 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
 
             self.next_scan = Some(archetypes.cache_tables::<Q, F>(
                 &self.signature,
-                self.next_scan,
+                // self.next_scan,
+                None,
                 &self.filter_state,
                 &mut self.cache,
             ));
@@ -181,6 +180,8 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
                 archetypes.generation(),
                 self.cache.len()
             );
+
+            tracing::debug!("{:?}", self.cache);
 
             self.generation = archetypes.generation();
         }
@@ -194,14 +195,8 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
 
     /// Returns the amount of components that this query requests.
     #[inline]
-    pub const fn count(&self) -> usize {
+    pub const fn data_len(&self) -> usize {
         Q::LEN
-    }
-
-    /// Returns the amount of filters this query has.
-    #[inline]
-    pub const fn count_filters(&self) -> usize {
-        F::LEN
     }
 
     /// The current generation of the cache. This corresponds to the archetype generation if the cache is up
@@ -243,7 +238,7 @@ impl<Q: QueryBundle, F: FilterBundle> QueryState<Q, F> {
 }
 
 #[diagnostic::do_not_recommend]
-impl<'q, Q: QueryBundle, F: FilterBundle> IntoIterator for &'q Query<'_, Q, F> {
+impl<'q, Q: QueryBundle, F: FilterAggregator> IntoIterator for &'q Query<'_, Q, F> {
     type Item = Q::Output<'q>;
     type IntoIter = Q::Iter<'q, F>;
 

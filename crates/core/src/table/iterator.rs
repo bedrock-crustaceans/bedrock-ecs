@@ -2,15 +2,15 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-use crate::entity::{Entity, EntityHandle, EntityRef};
-use crate::query::{EmptyableIterator, FilterBundle};
+use crate::entity::{EntityHandle, EntityRef};
+use crate::query::{EmptyableIterator, FilterAggregator, FilterBundle};
 use crate::table::{ChangeTracker, ChangeTrackerIter, Mut, Ref, Table, TableRow};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
-pub struct ColumnIter<'a, T, F: FilterBundle> {
+pub struct ColumnIter<'a, T, F: FilterAggregator> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: ChangeTrackerIter<'a>,
     /// Pointer to current component.
@@ -23,7 +23,7 @@ pub struct ColumnIter<'a, T, F: FilterBundle> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
+impl<'a, T, F: FilterAggregator> Iterator for ColumnIter<'a, T, F> {
     type Item = Ref<'a, T>;
 
     fn next(&mut self) -> Option<Ref<'a, T>> {
@@ -32,7 +32,7 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
         }
 
         // Check whether this item satisfies the filter
-        if !F::apply_dynamic_filters(self.tracker.next()?, self.current_tick) {
+        if !F::apply_dynamic(self.tracker.next()?, self.current_tick) {
             return None;
         }
 
@@ -54,15 +54,15 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIter<'a, T, F> {
     }
 }
 
-impl<T, F: FilterBundle> ExactSizeIterator for ColumnIter<'_, T, F> {
+impl<T, F: FilterAggregator> ExactSizeIterator for ColumnIter<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<T, F: FilterBundle> FusedIterator for ColumnIter<'_, T, F> {}
+impl<T, F: FilterAggregator> FusedIterator for ColumnIter<'_, T, F> {}
 
-impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
+impl<'a, T, F: FilterAggregator> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
         ColumnIter {
             current_tick: 0,
@@ -77,7 +77,7 @@ impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a
     }
 }
 
-pub struct ColumnIterMut<'a, T, F: FilterBundle> {
+pub struct ColumnIterMut<'a, T, F: FilterAggregator> {
     pub(crate) changes: ChangeTrackerIter<'a>,
     pub(crate) last_tick: u32,
     pub(crate) current_tick: u32,
@@ -92,7 +92,7 @@ pub struct ColumnIterMut<'a, T, F: FilterBundle> {
     pub(crate) _guard: Option<WriteGuard>,
 }
 
-impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
+impl<'a, T, F: FilterAggregator> Iterator for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
     fn next(&mut self) -> Option<Mut<'a, T>> {
@@ -100,9 +100,10 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
             return None;
         }
 
-        if !F::apply_dynamic_filters(self.changes.next()?, self.last_tick) {
-            return None;
-        }
+        todo!();
+        // if !F::apply_dynamic_filters(self.changes.next()?, self.last_tick) {
+        //     return None;
+        // }
 
         let ptr = self.curr.as_mut().unwrap();
         let item = unsafe { &mut *ptr.as_ptr() };
@@ -128,15 +129,15 @@ impl<'a, T, F: FilterBundle> Iterator for ColumnIterMut<'a, T, F> {
     }
 }
 
-impl<T, F: FilterBundle> ExactSizeIterator for ColumnIterMut<'_, T, F> {
+impl<T, F: FilterAggregator> ExactSizeIterator for ColumnIterMut<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<T, F: FilterBundle> FusedIterator for ColumnIterMut<'_, T, F> {}
+impl<T, F: FilterAggregator> FusedIterator for ColumnIterMut<'_, T, F> {}
 
-impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
+impl<'a, T, F: FilterAggregator> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
         ColumnIterMut {
             changes: ChangeTrackerIter::empty(),
@@ -154,26 +155,16 @@ impl<'a, T, F: FilterBundle> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut
     }
 }
 
-pub struct EntityIter<'w> {
-    pub(crate) table: Option<NonNull<Table>>,
-    pub(crate) row_index: usize,
+pub struct EntityHandleIter<'w> {
     pub(crate) iter: std::slice::Iter<'w, EntityHandle>,
 }
 
-impl Iterator for EntityIter<'_> {
-    type Item = Entity;
+impl Iterator for EntityHandleIter<'_> {
+    type Item = EntityHandle;
 
-    fn next(&mut self) -> Option<Entity> {
+    fn next(&mut self) -> Option<EntityHandle> {
         let handle = *self.iter.next()?;
-        let row_index = self.row_index;
-
-        self.row_index += 1;
-
-        Some(Entity {
-            table: self.table,
-            row: TableRow(row_index),
-            handle,
-        })
+        Some(handle)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -182,22 +173,18 @@ impl Iterator for EntityIter<'_> {
     }
 }
 
-impl ExactSizeIterator for EntityIter<'_> {
+impl ExactSizeIterator for EntityHandleIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         self.iter.len()
     }
 }
 
-impl FusedIterator for EntityIter<'_> {}
+impl FusedIterator for EntityHandleIter<'_> {}
 
-impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
-    fn empty(_world: &'w World) -> EntityIter<'w> {
-        EntityIter {
-            table: None,
-            row_index: 0,
-            iter: [].iter(),
-        }
+impl<'w> EmptyableIterator<'w, EntityHandle> for EntityHandleIter<'w> {
+    fn empty(_world: &'w World) -> EntityHandleIter<'w> {
+        EntityHandleIter { iter: [].iter() }
     }
 }
 

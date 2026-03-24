@@ -4,12 +4,14 @@ use std::any::TypeId;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 
+use nonmax::NonMaxUsize;
+
 use generic_array::GenericArray;
 use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{FilterBundle, QueryBundle, QueryData, QueryState, QueryType, TableCache};
+use crate::query::{FilterAggregator, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
 
@@ -48,7 +50,7 @@ pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterat
 ///
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(feature = "generics")]
-pub trait HoppingIterator<'t, Q: QueryBundle, F: FilterBundle>: Sized {
+pub trait HoppingIterator<'t, Q: QueryBundle, F: FilterAggregator>: Sized {
     /// Creates a new iterator over the given cache.
     fn new(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 
@@ -104,12 +106,12 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> {
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> {
                 world: &'w World,
                 /// The remaining cached tables that this iterator will hop to.
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
                 /// The subiterators of this iterator.
-                iters: ($($gen::Iter<'w, T>),*),
+                iters: ($($gen::Iter<'w, FA>),*),
                 /// The current tick.
                 current_tick: u32,
                 /// The previous tick that this iterator was used in.
@@ -118,7 +120,7 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
+            impl<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 /// Creates an empty iterator that always returns `None`. This exists because
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
                 ///
@@ -135,8 +137,8 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'w, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> HoppingIterator<'w, Q, T> for [< IteratorBundle $count >]<'w, Q, T, $($gen),*> {
-                fn new(world: &'w World, meta: &'w QueryState<Q, T>) -> Self {
+            impl<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+                fn new(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
                     #[cfg(debug_assertions)]
                     {
                         for cached in &meta.cache {
@@ -184,12 +186,12 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_parens)]
-            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {
+            impl<'t, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
                 fn next(&mut self) -> Option<Self::Item> {
-                    if T::IS_DYNAMIC {
+                    if FA::METHOD.is_dynamic() {
                         loop {
                             let ($($gen),*) = &mut self.iters;
 
@@ -253,14 +255,14 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'t, Q: QueryBundle, T: FilterBundle, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, T, $($gen),*> {}
+            impl<'t, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {}
 
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t, T: FilterBundle> = [< IteratorBundle $count >]<'t, ($($gen),*), T, $($gen),*> where Self: 't;
+                type Iter<'t, FA: FilterAggregator> = [< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 
@@ -293,12 +295,12 @@ macro_rules! impl_bundle {
                     feature = "tracing",
                     tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
                 )]
-                fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<usize, Self::AccessCount> {
+                fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount> {
                     GenericArray::from(
                         ($(
                             (match $gen::TY {
-                                QueryType::Component => $gen::cache_column(lookup),
-                                QueryType::Entity | QueryType::EntityRef | QueryType::Has => usize::MAX,
+                                QueryType::Component => Some($gen::cache_column(lookup)),
+                                QueryType::Entity | QueryType::EntityRef | QueryType::Has => None,
                             }),
                         )*)
                     )

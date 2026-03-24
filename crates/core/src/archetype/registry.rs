@@ -4,13 +4,13 @@ use nonmax::NonMaxUsize;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use crate::archetype::Signature;
+use crate::archetype::{ArchetypeGraph, Signature};
 use crate::component::ComponentRegistry;
-use crate::entity::{Entity, EntityHandle};
+use crate::entity::{EntityHandle, EntityMeta};
 use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
-use crate::query::{FilterBundle, QueryBundle};
+use crate::query::{FilterAggregator, QueryBundle};
 use crate::table::Table;
 
 #[cfg(debug_assertions)]
@@ -23,6 +23,8 @@ use crate::util::debug::BorrowEnforcer;
 pub struct Archetypes {
     #[cfg(debug_assertions)]
     enforcer: BorrowEnforcer,
+
+    graph: ArchetypeGraph,
 
     /// The current archetype generation.
     /// This is used by the query cache to figure out when the cache should be updated.
@@ -82,7 +84,7 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::cache_tables", skip_all)
     )]
-    pub fn cache_tables<Q: QueryBundle, F: FilterBundle>(
+    pub fn cache_tables<Q: QueryBundle, F: FilterAggregator>(
         &self,
         archetype: &Signature,
         last_scanned: Option<NonMaxUsize>,
@@ -101,7 +103,8 @@ impl Archetypes {
                 if sig.contains(archetype) {
                     // This table matches the queried components. We now apply all passive filters.
                     // Dynamic filters will be applied during iteration.
-                    if !filter.apply_static_filters(sig) {
+
+                    if !filter.apply_coarse(sig) {
                         return None;
                     }
 
@@ -144,7 +147,7 @@ impl Archetypes {
         handle: EntityHandle,
         bundle: B,
         current_tick: u32,
-    ) -> Entity {
+    ) -> EntityMeta {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
@@ -169,7 +172,7 @@ impl Archetypes {
 
         let row = table.insert(handle, bundle, current_tick);
 
-        Entity {
+        EntityMeta {
             handle,
             row,
             table: Some(unsafe {
