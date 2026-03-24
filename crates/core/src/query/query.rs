@@ -110,7 +110,7 @@ pub struct QueryState<Q: QueryBundle, F: FilterAggregator> {
 
     /// The index of the next table that should be scanned if this state is updated. We only need to check
     /// tables that have an index greater than or equal to this one.
-    pub(crate) next_scan: Option<NonMaxUsize>,
+    pub(crate) next_scan: NonMaxUsize,
     /// The current tick.
     pub(crate) current_tick: u32,
     /// The last tick that this query was used.
@@ -135,14 +135,19 @@ impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
         let filter_state = F::init(archetypes);
 
         let mut cached = SmallVec::new();
-        archetypes.cache_tables::<Q, F>(&archetype, None, &filter_state, &mut cached);
+        let next_scan = archetypes.cache_tables::<Q, F>(
+            &archetype,
+            NonMaxUsize::ZERO,
+            &filter_state,
+            &mut cached,
+        );
 
         tracing::trace!("cached {} archetype tables", cached.len());
 
         QueryState {
             current_tick,
             last_tick: 0,
-            next_scan: None,
+            next_scan,
             filter_state,
             generation: archetypes.generation(),
             signature: archetype,
@@ -166,13 +171,12 @@ impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
             // and only check all tables
             // todo!("better table scanning");
 
-            self.next_scan = Some(archetypes.cache_tables::<Q, F>(
+            self.next_scan = archetypes.cache_tables::<Q, F>(
                 &self.signature,
-                // self.next_scan,
-                None,
+                self.next_scan,
                 &self.filter_state,
                 &mut self.cache,
-            ));
+            );
 
             tracing::trace!(
                 "refreshing archetype table cache ({} -> {}), {} tables cached",
@@ -181,7 +185,7 @@ impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
                 self.cache.len()
             );
 
-            tracing::debug!("{:?}", self.cache);
+            tracing::error!("{:?}", self.cache);
 
             self.generation = archetypes.generation();
         }

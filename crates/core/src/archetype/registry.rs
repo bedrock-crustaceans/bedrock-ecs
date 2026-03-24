@@ -87,7 +87,7 @@ impl Archetypes {
     pub fn cache_tables<Q: QueryBundle, F: FilterAggregator>(
         &self,
         archetype: &Signature,
-        last_scanned: Option<NonMaxUsize>,
+        start_at: NonMaxUsize,
         filter: &F,
 
         #[cfg(feature = "generics")] cache: &mut SmallVec<[TableCache<Q::AccessCount>; 8]>,
@@ -96,14 +96,15 @@ impl Archetypes {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        let iter = self.lookup_array[last_scanned.unwrap_or(NonMaxUsize::ZERO).get()..]
+        let iter = self.lookup_array[start_at.get()..]
             .iter()
             .enumerate()
-            .filter_map(|(table_index, sig)| {
+            .filter_map(|(i, sig)| {
+                let table_index = i + start_at.get();
+
                 if sig.contains(archetype) {
                     // This table matches the queried components. We now apply all passive filters.
                     // Dynamic filters will be applied during iteration.
-
                     if !filter.apply_coarse(sig) {
                         return None;
                     }

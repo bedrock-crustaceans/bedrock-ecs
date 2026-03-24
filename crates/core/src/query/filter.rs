@@ -107,7 +107,7 @@ pub trait FilterBundle: Sized {
 
 /// A wrapper around `[bool; N]` that provides a method to create an array. This is basically a
 /// type system way to work around generic const expressions.
-pub trait FilterOutput {
+pub trait FilterOutput: Debug {
     /// Gives an iterator over the results from the filters.
     fn iter(self) -> impl Iterator<Item = bool>;
 }
@@ -225,26 +225,35 @@ impl<B: FilterBundle> FilterAggregator for B {
     }
 }
 
+/// Performs an exclusive OR on all filters.
+///
+/// It is extended to an arbitrary number of filters by returning true if and only if an odd number of
+/// filters returned true.
 #[repr(transparent)]
-pub struct Any<B: FilterAggregator>(B);
+pub struct Xor<B: FilterBundle>(B);
 
-impl<B: FilterAggregator> FilterAggregator for Any<B> {
+impl<B: FilterBundle> FilterAggregator for Xor<B> {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
-    fn init(archetypes: &mut Archetypes) -> Any<B> {
-        Any(B::init(archetypes))
+    fn init(archetypes: &mut Archetypes) -> Xor<B> {
+        Xor(B::init(archetypes))
     }
 
     #[inline]
     fn collect(results: impl FilterOutput) -> bool {
-        results.iter().any(|b| b)
+        let truthy = results.iter().map(|b| b as u8).sum::<u8>();
+        truthy % 2 == 1
     }
 
     #[inline]
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
-        let out = B::apply_dynamic(changes, last_tick);
-        Self::collect(out)
+        if Self::METHOD.is_dynamic() {
+            let out = B::apply_dynamic(changes, last_tick);
+            Self::collect(out)
+        } else {
+            true
+        }
     }
 
     #[inline]
@@ -255,9 +264,43 @@ impl<B: FilterAggregator> FilterAggregator for Any<B> {
 }
 
 #[repr(transparent)]
-pub struct Not<B: FilterAggregator>(B);
+pub struct Or<B: FilterBundle>(B);
 
-impl<B: FilterAggregator> FilterAggregator for Not<B> {
+impl<B: FilterBundle> FilterAggregator for Or<B> {
+    const METHOD: FilterMethod = B::METHOD;
+
+    #[inline]
+    fn init(archetypes: &mut Archetypes) -> Or<B> {
+        Or(B::init(archetypes))
+    }
+
+    #[inline]
+    fn collect(results: impl FilterOutput) -> bool {
+        results.iter().any(|b| b)
+    }
+
+    #[inline]
+    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+        if Self::METHOD.is_dynamic() {
+            let out = B::apply_dynamic(changes, last_tick);
+            Self::collect(out)
+        } else {
+            true
+        }
+    }
+
+    #[inline]
+    fn apply_coarse(&self, archetypes: &Signature) -> bool {
+        let out = self.0.apply_coarse(archetypes);
+        Self::collect(out)
+    }
+}
+
+/// Inverts the filter. For example `Not<With<T>>` is equivalent to `Without<T>`.
+#[repr(transparent)]
+pub struct Not<B: FilterBundle>(B);
+
+impl<B: FilterBundle> FilterAggregator for Not<B> {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -272,8 +315,12 @@ impl<B: FilterAggregator> FilterAggregator for Not<B> {
 
     #[inline]
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
-        let out = B::apply_dynamic(changes, last_tick);
-        Self::collect(out)
+        if Self::METHOD.is_dynamic() {
+            let out = B::apply_dynamic(changes, last_tick);
+            Self::collect(out)
+        } else {
+            true
+        }
     }
 
     #[inline]

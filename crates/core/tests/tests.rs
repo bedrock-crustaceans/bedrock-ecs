@@ -1,7 +1,7 @@
 use bedrock_ecs::command::Commands;
 use bedrock_ecs::entity::EntityHandle;
 use bedrock_ecs::message::{Message, MessageReceiver, MessageSender};
-use bedrock_ecs::query::{Added, Changed, Has, Not, With, Without};
+use bedrock_ecs::query::{Added, Changed, Has, Not, Or, With, Without, Xor};
 use bedrock_ecs::time::SystemTick;
 use bedrock_ecs::{query::Query, world::World};
 use bedrock_ecs_derive::{Component, Message, Resource, ScheduleLabel};
@@ -20,6 +20,9 @@ struct Health(f32);
 
 #[derive(Component)]
 struct Zst;
+
+#[derive(Component)]
+struct Zst2;
 
 #[derive(Message, Debug, Clone)]
 struct Killed {
@@ -65,14 +68,9 @@ struct Killed {
 //     }
 // }
 
-fn test_system(
-    query: Query<(EntityHandle, &Health, Has<(Position, Health)>), Not<With<Position>>>,
-) {
-    for (entity, health, has) in &query {
-        println!(
-            "Entity {} has {health:?}. Does it have a position and health?: {has}",
-            entity.index()
-        );
+fn test_system(query: Query<&Health, Xor<(With<Position>, With<Zst>)>>) {
+    for health in &query {
+        tracing::error!("{health:?}");
     }
 }
 
@@ -102,9 +100,9 @@ fn stress_test() {
                 y: 12.0,
                 z: 0.0,
             },
-            Health(1.0),
+            Health(42.0),
         ));
-        world.spawn(Health(0.0));
+        world.spawn((Zst, Health(69.0)));
     }
 
     let schedule = world
@@ -113,7 +111,7 @@ fn stress_test() {
         .add(Label1, test_system)
         .schedule();
 
-    for i in 0..5 {
+    for i in 0..2 {
         world.run(&schedule);
         world.apply_commands();
 
@@ -123,6 +121,7 @@ fn stress_test() {
                 y: 15.0,
                 z: 0.0,
             },
+            Health(120.0),
             Zst,
         ));
 

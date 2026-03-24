@@ -100,10 +100,9 @@ impl<'a, T, F: FilterAggregator> Iterator for ColumnIterMut<'a, T, F> {
             return None;
         }
 
-        todo!();
-        // if !F::apply_dynamic_filters(self.changes.next()?, self.last_tick) {
-        //     return None;
-        // }
+        if !F::apply_dynamic(self.changes.next()?, self.last_tick) {
+            return None;
+        }
 
         let ptr = self.curr.as_mut().unwrap();
         let item = unsafe { &mut *ptr.as_ptr() };
