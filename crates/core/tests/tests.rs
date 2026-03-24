@@ -9,11 +9,7 @@ use rustc_hash::FxHashMap;
 use tracing::Level;
 
 #[derive(Debug, Copy, Clone, Component)]
-struct Position {
-    x: f32,
-    y: f32,
-    z: f32,
-}
+struct Name(&'static str);
 
 #[derive(Debug, Copy, Clone, Component)]
 struct Health(f32);
@@ -71,9 +67,9 @@ struct Killed {
 //     }
 // }
 
-fn test_system(query: Query<&Health, Or<(With<Position>, (With<Example1>, With<Example2>))>>) {
-    for health in &query {
-        tracing::error!("{health:?}");
+fn test_system(query: Query<&Name, With<Example2>>) {
+    for name in &query {
+        tracing::error!("found {}", name.0);
     }
 }
 
@@ -96,17 +92,9 @@ fn stress_test() {
 
     let mut world = World::new();
 
-    for _ in 0..1 {
-        world.spawn((
-            Position {
-                x: 1.0,
-                y: 12.0,
-                z: 0.0,
-            },
-            Health(42.0),
-        ));
-        world.spawn((Example1, Health(69.0)));
-    }
+    world.spawn((Name("example3"), Example3));
+    world.spawn((Name("example1+2"), Example1, Example2));
+    world.spawn((Name("example2"), Example2));
 
     let schedule = world
         .build_schedule()
@@ -114,30 +102,5 @@ fn stress_test() {
         .add(Label1, test_system)
         .schedule();
 
-    for i in 0..2 {
-        world.run(&schedule);
-        world.apply_commands();
-
-        world.spawn((
-            Position {
-                x: 1.0,
-                y: 15.0,
-                z: 0.0,
-            },
-            Health(120.0),
-            Example2,
-        ));
-
-        // if i % 10 == 0 {
-        //     tracing::trace!("spawned");
-        //     world.spawn((
-        //         Position {
-        //             x: 1.0,
-        //             y: 15.0,
-        //             z: 0.0,
-        //         },
-        //         Health(1.0),
-        //     ));
-        // }
-    }
+    world.run(&schedule);
 }
