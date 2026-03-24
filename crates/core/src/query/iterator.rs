@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::query::{FilterAggregator, QueryBundle, QueryData, QueryState, QueryType, TableCache};
+use crate::query::{Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::world::World;
 
@@ -50,7 +50,7 @@ pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterat
 ///
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(feature = "generics")]
-pub trait HoppingIterator<'t, Q: QueryBundle, F: FilterAggregator>: Sized {
+pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
     /// Creates a new iterator over the given cache.
     fn new(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 
@@ -106,7 +106,7 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> {
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> {
                 world: &'w World,
                 /// The remaining cached tables that this iterator will hop to.
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
@@ -120,7 +120,7 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 /// Creates an empty iterator that always returns `None`. This exists because
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
                 ///
@@ -137,7 +137,7 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'w, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 fn new(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
                     #[cfg(debug_assertions)]
                     {
@@ -186,7 +186,7 @@ macro_rules! impl_bundle {
             }
 
             #[allow(unused_parens)]
-            impl<'t, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {
+            impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
@@ -255,14 +255,14 @@ macro_rules! impl_bundle {
                 }
             }
 
-            impl<'t, Q: QueryBundle, FA: FilterAggregator, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {}
+            impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {}
 
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t, FA: FilterAggregator> = [< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
+                type Iter<'t, FA: Filter> = [< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 

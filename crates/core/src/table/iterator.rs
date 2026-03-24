@@ -3,14 +3,14 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::entity::{EntityHandle, EntityRef};
-use crate::query::{EmptyableIterator, FilterAggregator, FilterBundle};
+use crate::query::{EmptyableIterator, Filter};
 use crate::table::{ChangeTracker, ChangeTrackerIter, Mut, Ref, Table, TableRow};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
-pub struct ColumnIter<'a, T, F: FilterAggregator> {
+pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: ChangeTrackerIter<'a>,
     /// Pointer to current component.
@@ -23,7 +23,7 @@ pub struct ColumnIter<'a, T, F: FilterAggregator> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-impl<'a, T, F: FilterAggregator> Iterator for ColumnIter<'a, T, F> {
+impl<'a, T, F: Filter> Iterator for ColumnIter<'a, T, F> {
     type Item = Ref<'a, T>;
 
     fn next(&mut self) -> Option<Ref<'a, T>> {
@@ -54,15 +54,15 @@ impl<'a, T, F: FilterAggregator> Iterator for ColumnIter<'a, T, F> {
     }
 }
 
-impl<T, F: FilterAggregator> ExactSizeIterator for ColumnIter<'_, T, F> {
+impl<T, F: Filter> ExactSizeIterator for ColumnIter<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<T, F: FilterAggregator> FusedIterator for ColumnIter<'_, T, F> {}
+impl<T, F: Filter> FusedIterator for ColumnIter<'_, T, F> {}
 
-impl<'a, T, F: FilterAggregator> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
+impl<'a, T, F: Filter> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
         ColumnIter {
             current_tick: 0,
@@ -77,7 +77,7 @@ impl<'a, T, F: FilterAggregator> EmptyableIterator<'a, Ref<'a, T>> for ColumnIte
     }
 }
 
-pub struct ColumnIterMut<'a, T, F: FilterAggregator> {
+pub struct ColumnIterMut<'a, T, F: Filter> {
     pub(crate) changes: ChangeTrackerIter<'a>,
     pub(crate) last_tick: u32,
     pub(crate) current_tick: u32,
@@ -92,7 +92,7 @@ pub struct ColumnIterMut<'a, T, F: FilterAggregator> {
     pub(crate) _guard: Option<WriteGuard>,
 }
 
-impl<'a, T, F: FilterAggregator> Iterator for ColumnIterMut<'a, T, F> {
+impl<'a, T, F: Filter> Iterator for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
     fn next(&mut self) -> Option<Mut<'a, T>> {
@@ -128,15 +128,15 @@ impl<'a, T, F: FilterAggregator> Iterator for ColumnIterMut<'a, T, F> {
     }
 }
 
-impl<T, F: FilterAggregator> ExactSizeIterator for ColumnIterMut<'_, T, F> {
+impl<T, F: Filter> ExactSizeIterator for ColumnIterMut<'_, T, F> {
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<T, F: FilterAggregator> FusedIterator for ColumnIterMut<'_, T, F> {}
+impl<T, F: Filter> FusedIterator for ColumnIterMut<'_, T, F> {}
 
-impl<'a, T, F: FilterAggregator> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
+impl<'a, T, F: Filter> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
         ColumnIterMut {
             changes: ChangeTrackerIter::empty(),

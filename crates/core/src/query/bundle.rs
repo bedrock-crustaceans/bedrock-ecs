@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{EntityHandle, EntityRef};
-use crate::query::{EmptyableIterator, FilterAggregator, HoppingIterator};
+use crate::query::{EmptyableIterator, Filter, HoppingIterator};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnIter, ColumnIterMut, EntityHandleIter, EntityRefIter, Mut, Ref};
 use crate::world::World;
@@ -47,8 +47,7 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a, F: FilterAggregator>: HoppingIterator<'a, Self, F>
-        + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: Filter>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 
@@ -134,7 +133,7 @@ pub unsafe trait QueryData {
     /// [`Impossible`]: crate::query::Impossible
     ///
     /// TODO: Maybe the `iter` can return an `impl Iterator` in which case we probably don't need this.
-    type Iter<'t, F: FilterAggregator>: EmptyableIterator<'t, Self::Output<'t>>;
+    type Iter<'t, F: Filter>: EmptyableIterator<'t, Self::Output<'t>>;
 
     /// Whether this parameter is an entity.
     const TY: QueryType;
@@ -160,7 +159,7 @@ pub unsafe trait QueryData {
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -180,7 +179,7 @@ pub enum QueryType {
 unsafe impl QueryData for EntityHandle {
     type Unref = EntityHandle;
     type Output<'w> = EntityHandle;
-    type Iter<'t, F: FilterAggregator> = EntityHandleIter<'t>;
+    type Iter<'t, F: Filter> = EntityHandleIter<'t>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -200,7 +199,7 @@ unsafe impl QueryData for EntityHandle {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -220,7 +219,7 @@ unsafe impl QueryData for EntityHandle {
 unsafe impl QueryData for EntityRef<'_> {
     type Unref = EntityRef<'static>;
     type Output<'w> = EntityRef<'w>;
-    type Iter<'t, F: FilterAggregator> = EntityRefIter<'t>;
+    type Iter<'t, F: Filter> = EntityRefIter<'t>;
 
     const TY: QueryType = QueryType::EntityRef;
 
@@ -239,7 +238,7 @@ unsafe impl QueryData for EntityRef<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -256,7 +255,7 @@ unsafe impl QueryData for EntityRef<'_> {
 unsafe impl<T: Component> QueryData for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
-    type Iter<'t, F: FilterAggregator> = ColumnIter<'t, T, F>;
+    type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -286,7 +285,7 @@ unsafe impl<T: Component> QueryData for &T {
             })
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -307,7 +306,7 @@ unsafe impl<T: Component> QueryData for &T {
 unsafe impl<T: Component> QueryData for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: FilterAggregator> = ColumnIterMut<'t, T, F>;
+    type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -337,7 +336,7 @@ unsafe impl<T: Component> QueryData for &mut T {
             })
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -357,7 +356,7 @@ unsafe impl<T: Component> QueryData for &mut T {
 unsafe impl<T: Component> QueryData for Ref<'_, T> {
     type Unref = T;
     type Output<'t> = Ref<'t, T>;
-    type Iter<'t, F: FilterAggregator> = ColumnIter<'t, T, F>;
+    type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -387,7 +386,7 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
             })
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
@@ -408,7 +407,7 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
 unsafe impl<T: Component> QueryData for Mut<'_, T> {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: FilterAggregator> = ColumnIterMut<'t, T, F>;
+    type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -438,7 +437,7 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
             })
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,

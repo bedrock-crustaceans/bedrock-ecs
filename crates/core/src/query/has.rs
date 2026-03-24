@@ -11,7 +11,7 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
     prelude::ComponentBundle,
-    query::{EmptyableIterator, FilterAggregator, Impossible, QueryData, QueryType, TableCache},
+    query::{EmptyableIterator, Filter, Impossible, QueryData, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
     world::World,
 };
@@ -25,7 +25,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     type Unref = Has<T>;
 
     type Output<'w> = bool;
-    type Iter<'t, F: FilterAggregator> = HasIter<'t>;
+    type Iter<'t, F: Filter> = HasIter<'t>;
 
     const TY: QueryType = QueryType::Has;
 
@@ -44,7 +44,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         unimplemented!()
     }
 
-    fn iter<F: FilterAggregator>(
+    fn iter<F: Filter>(
         world: &World,
         table: usize,
         col: Option<NonMaxUsize>,

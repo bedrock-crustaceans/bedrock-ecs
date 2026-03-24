@@ -3,21 +3,21 @@ use nonmax::NonMaxUsize;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
-use crate::query::{FilterAggregator, HoppingIterator, QueryBundle};
+use crate::query::{Filter, HoppingIterator, QueryBundle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
 /// A query is used to retrieve components from the components database.
-pub struct Query<'w, Q: QueryBundle, F: FilterAggregator = ()> {
+pub struct Query<'w, Q: QueryBundle, F: Filter = ()> {
     /// The world that this query was created in.
     world: &'w World,
     /// The query's associated cache. This cache tells the query where to find its data.
     cache: &'w mut QueryState<Q, F>,
 }
 
-impl<'w, Q: QueryBundle, F: FilterAggregator> Query<'w, Q, F> {
+impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
     /// Creates a new query.
     ///
     /// A new query is created every time a system runs, while the
@@ -48,7 +48,7 @@ impl<'w, Q: QueryBundle, F: FilterAggregator> Query<'w, Q, F> {
     }
 }
 
-unsafe impl<Q: QueryBundle + 'static, F: FilterAggregator + 'static> Param for Query<'_, Q, F> {
+unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q, F> {
     #[cfg(feature = "generics")]
     type AccessCount = Q::AccessCount;
     type State = QueryState<Q, F>;
@@ -102,7 +102,7 @@ pub struct TableCache {
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
 #[derive(Debug)]
-pub struct QueryState<Q: QueryBundle, F: FilterAggregator> {
+pub struct QueryState<Q: QueryBundle, F: Filter> {
     #[cfg(feature = "generics")]
     pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
     #[cfg(not(feature = "generics"))]
@@ -124,7 +124,7 @@ pub struct QueryState<Q: QueryBundle, F: FilterAggregator> {
     pub(crate) signature: Signature,
 }
 
-impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
+impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
     /// Creates a new query cache. This is only called when a system is first constructed.
     #[cfg_attr(
         feature = "tracing",
@@ -242,7 +242,7 @@ impl<Q: QueryBundle, F: FilterAggregator> QueryState<Q, F> {
 }
 
 #[diagnostic::do_not_recommend]
-impl<'q, Q: QueryBundle, F: FilterAggregator> IntoIterator for &'q Query<'_, Q, F> {
+impl<'q, Q: QueryBundle, F: Filter> IntoIterator for &'q Query<'_, Q, F> {
     type Item = Q::Output<'q>;
     type IntoIter = Q::Iter<'q, F>;
 

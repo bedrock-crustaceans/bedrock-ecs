@@ -10,7 +10,7 @@ use crate::entity::{EntityHandle, EntityMeta};
 use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
-use crate::query::{FilterAggregator, QueryBundle};
+use crate::query::{Filter, QueryBundle};
 use crate::table::Table;
 
 #[cfg(debug_assertions)]
@@ -84,7 +84,7 @@ impl Archetypes {
         feature = "tracing",
         tracing::instrument(name = "Archetypes::cache_tables", skip_all)
     )]
-    pub fn cache_tables<Q: QueryBundle, F: FilterAggregator>(
+    pub fn cache_tables<Q: QueryBundle, F: Filter>(
         &self,
         archetype: &Signature,
         start_at: NonMaxUsize,

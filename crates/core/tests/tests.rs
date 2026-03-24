@@ -67,7 +67,17 @@ struct Killed {
 //     }
 // }
 
-fn test_system(query: Query<&Name, With<Example2>>) {
+fn test_system(
+    query: Query<
+        &Name,
+        Or<(
+            Not<(With<Example1>, With<Example2>)>,
+            Xor<(With<Example1>, With<Example2>)>,
+        )>,
+    >,
+) {
+    println!("{:?}", query.meta().cache());
+
     for name in &query {
         tracing::error!("found {}", name.0);
     }
@@ -92,6 +102,7 @@ fn stress_test() {
 
     let mut world = World::new();
 
+    world.spawn(Name("none"));
     world.spawn((Name("example3"), Example3));
     world.spawn((Name("example1+2"), Example1, Example2));
     world.spawn((Name("example2"), Example2));
