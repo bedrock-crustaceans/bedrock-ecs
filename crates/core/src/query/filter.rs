@@ -198,8 +198,26 @@ pub trait FilterAggregator {
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
 }
 
+impl FilterAggregator for () {
+    const METHOD: FilterMethod = FilterMethod::Coarse;
+
+    fn init(_archetypes: &mut Archetypes) {}
+
+    fn collect(_results: impl FilterOutput) -> bool {
+        true
+    }
+
+    fn apply_coarse(&self, _signature: &Signature) -> bool {
+        true
+    }
+
+    fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
+        true
+    }
+}
+
 /// This blanket implementation just ANDs all filters together.
-impl<B: FilterBundle> FilterAggregator for B {
+impl<B: Filter> FilterAggregator for B {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -225,14 +243,49 @@ impl<B: FilterBundle> FilterAggregator for B {
     }
 }
 
+macro_rules! impl_agg {
+    ($($gen:ident),*) => {
+        impl<$($gen: FilterAggregator),*> FilterAggregator for ($($gen),*) {
+            const METHOD: FilterMethod = FilterMethod::from_bool($($gen::METHOD.to_bool())&&*);
+
+            #[inline]
+            fn init(archetypes: &mut Archetypes) -> Self {
+                ($($gen::init(archetypes)),*)
+            }
+
+            #[inline]
+            fn collect(_results: impl FilterOutput) -> bool {
+                unimplemented!("cannot call collect on tuple of filter aggregrators, use `apply_coarse` and `apply_dynamic` instead");
+            }
+
+            #[inline]
+            fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+                $($gen::collect($gen::apply_dynamic(changes, last_tick)))&&*
+            }
+
+            #[inline]
+            fn apply_coarse(&self, archetypes: &Signature) -> bool {
+                #[allow(non_snake_case)]
+                let ($($gen),*) = self;
+                $($gen::collect($gen.apply_coarse(archetypes)))&&*
+            }
+        }
+    };
+}
+
+impl_agg!(A, B);
+impl_agg!(A, B, C);
+impl_agg!(A, B, C, D);
+impl_agg!(A, B, C, D, E);
+
 /// Performs an exclusive OR on all filters.
 ///
 /// It is extended to an arbitrary number of filters by returning true if and only if an odd number of
 /// filters returned true.
 #[repr(transparent)]
-pub struct Xor<B: FilterBundle>(B);
+pub struct Xor<B: FilterAggregator>(B);
 
-impl<B: FilterBundle> FilterAggregator for Xor<B> {
+impl<B: FilterAggregator> FilterAggregator for Xor<B> {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -264,9 +317,9 @@ impl<B: FilterBundle> FilterAggregator for Xor<B> {
 }
 
 #[repr(transparent)]
-pub struct Or<B: FilterBundle>(B);
+pub struct Or<B: FilterAggregator>(B);
 
-impl<B: FilterBundle> FilterAggregator for Or<B> {
+impl<B: FilterAggregator> FilterAggregator for Or<B> {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -298,9 +351,9 @@ impl<B: FilterBundle> FilterAggregator for Or<B> {
 
 /// Inverts the filter. For example `Not<With<T>>` is equivalent to `Without<T>`.
 #[repr(transparent)]
-pub struct Not<B: FilterBundle>(B);
+pub struct Not<B: FilterAggregator>(B);
 
-impl<B: FilterBundle> FilterAggregator for Not<B> {
+impl<B: FilterAggregator> FilterAggregator for Not<B> {
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]

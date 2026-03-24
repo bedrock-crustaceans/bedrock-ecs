@@ -19,10 +19,13 @@ struct Position {
 struct Health(f32);
 
 #[derive(Component)]
-struct Zst;
+struct Example1;
 
 #[derive(Component)]
-struct Zst2;
+struct Example2;
+
+#[derive(Component)]
+struct Example3;
 
 #[derive(Message, Debug, Clone)]
 struct Killed {
@@ -68,7 +71,7 @@ struct Killed {
 //     }
 // }
 
-fn test_system(query: Query<&Health, Xor<(With<Position>, With<Zst>)>>) {
+fn test_system(query: Query<&Health, Or<(With<Position>, (With<Example1>, With<Example2>))>>) {
     for health in &query {
         tracing::error!("{health:?}");
     }
@@ -102,7 +105,7 @@ fn stress_test() {
             },
             Health(42.0),
         ));
-        world.spawn((Zst, Health(69.0)));
+        world.spawn((Example1, Health(69.0)));
     }
 
     let schedule = world
@@ -122,7 +125,7 @@ fn stress_test() {
                 z: 0.0,
             },
             Health(120.0),
-            Zst,
+            Example2,
         ));
 
         // if i % 10 == 0 {
