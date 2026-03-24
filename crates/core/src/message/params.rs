@@ -14,23 +14,23 @@ use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
 #[derive(Debug, Default)]
-pub struct MessageReceiverState {
+pub struct InboxState {
     next_index: usize,
 }
 
-pub struct MessageReceiver<'a, T: Message> {
+pub struct Inbox<'a, T: Message> {
     mailbox: &'a Mailbox<T>,
-    state: &'a mut MessageReceiverState,
+    state: &'a mut InboxState,
 }
 
-impl<T: Message> MessageReceiver<'_, T> {
+impl<T: Message> Inbox<'_, T> {
     /// Returns the index of the next potential message.
     pub fn last_seen(&self) -> MessageIndex {
         MessageIndex(self.state.next_index)
     }
 }
 
-impl<'a, T: Message> Iterator for MessageReceiver<'a, T> {
+impl<'a, T: Message> Iterator for Inbox<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<&'a T> {
@@ -53,7 +53,7 @@ impl<'a, T: Message> Iterator for MessageReceiver<'a, T> {
     }
 }
 
-impl<T: Message> ExactSizeIterator for MessageReceiver<'_, T> {
+impl<T: Message> ExactSizeIterator for Inbox<'_, T> {
     #[inline]
     fn len(&self) -> usize {
         self.mailbox
@@ -62,14 +62,14 @@ impl<T: Message> ExactSizeIterator for MessageReceiver<'_, T> {
 }
 
 // Messages cannot be sent to the mailbox while this iterator exists.
-impl<T: Message> FusedIterator for MessageReceiver<'_, T> {}
+impl<T: Message> FusedIterator for Inbox<'_, T> {}
 
-unsafe impl<T: Message> Param for MessageReceiver<'_, T> {
+unsafe impl<T: Message> Param for Inbox<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
 
-    type State = MessageReceiverState;
-    type Output<'a> = MessageReceiver<'a, T>;
+    type State = InboxState;
+    type Output<'a> = Inbox<'a, T>;
 
     #[cfg(feature = "generics")]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
@@ -87,10 +87,7 @@ unsafe impl<T: Message> Param for MessageReceiver<'_, T> {
         }]
     }
 
-    fn fetch<'w, S: Sealed>(
-        world: &'w World,
-        state: &'w mut MessageReceiverState,
-    ) -> MessageReceiver<'w, T> {
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut InboxState) -> Inbox<'w, T> {
         let bus = world.resources.get::<Mailbox<T>>().unwrap_or_else(|| {
             panic!(
                 "event bus for type {} does not exist",
@@ -98,43 +95,43 @@ unsafe impl<T: Message> Param for MessageReceiver<'_, T> {
             )
         });
 
-        MessageReceiver {
+        Inbox {
             mailbox: bus,
             state,
         }
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> MessageReceiverState {
+    fn init(world: &mut World, _meta: &SystemMeta) -> InboxState {
         // Check whether the mailbox exists, otherwise create it.
         if !world.resources.contains::<Mailbox<T>>() {
             world.resources.insert(Mailbox::<T>::new());
         }
 
-        MessageReceiverState::default()
+        InboxState::default()
     }
 }
 
 #[derive(Debug, Default)]
-pub struct MessageSenderState {}
+pub struct OutboxState {}
 
-pub struct MessageSender<'a, T: Message> {
+pub struct Outbox<'a, T: Message> {
     mailbox: &'a mut Mailbox<T>,
-    state: &'a mut MessageSenderState,
+    state: &'a mut OutboxState,
 }
 
-impl<T: Message> MessageSender<'_, T> {
+impl<T: Message> Outbox<'_, T> {
     #[inline]
     pub fn send(&mut self, message: T) -> MessageIndex {
         self.mailbox.send(message)
     }
 }
 
-unsafe impl<T: Message> Param for MessageSender<'_, T> {
+unsafe impl<T: Message> Param for Outbox<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
 
-    type State = MessageSenderState;
-    type Output<'a> = MessageSender<'a, T>;
+    type State = OutboxState;
+    type Output<'a> = Outbox<'a, T>;
 
     #[cfg(feature = "generics")]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
@@ -152,10 +149,7 @@ unsafe impl<T: Message> Param for MessageSender<'_, T> {
         }]
     }
 
-    fn fetch<'w, S: Sealed>(
-        world: &'w World,
-        state: &'w mut MessageSenderState,
-    ) -> MessageSender<'w, T> {
+    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut OutboxState) -> Outbox<'w, T> {
         let bus_ptr = world.resources.get_ptr::<Mailbox<T>>().unwrap_or_else(|| {
             panic!(
                 "mailbox for type {} does not exist",
@@ -167,17 +161,17 @@ unsafe impl<T: Message> Param for MessageSender<'_, T> {
         // to the `Events<T>` resource.
         let bus = unsafe { &mut *bus_ptr.as_ptr() };
 
-        MessageSender {
+        Outbox {
             mailbox: bus,
             state,
         }
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> MessageSenderState {
+    fn init(world: &mut World, _meta: &SystemMeta) -> OutboxState {
         if !world.resources.contains::<Mailbox<T>>() {
             world.resources.insert(Mailbox::<T>::new());
         }
 
-        MessageSenderState::default()
+        OutboxState::default()
     }
 }

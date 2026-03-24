@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{EmptyableIterator, Filter, HoppingIterator};
+use crate::query::{EmptyableIterator, Filter, HoppingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{
     ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref, Table, TableRow,
@@ -66,7 +66,12 @@ pub unsafe trait QueryBundle: Sized {
     /// Returns the signature of this query. This signature does not include possible filters.
     fn signature(reg: &mut ComponentRegistry) -> Signature;
 
-    fn get<'t, F: Filter>(table: &'t Table, row: TableRow) -> Option<Self::Output<'t>>
+    fn get<'t, F: Filter>(
+        world: &'t World,
+        state: &'t QueryState<Self, F>,
+        table: &'t Table,
+        row: TableRow,
+    ) -> Option<Self::Output<'t>>
     where
         Self: 't;
 
@@ -162,16 +167,24 @@ pub unsafe trait QueryData {
     /// It also panics if the column is not found.
     fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize;
 
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        world: &'w World,
+        state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>>;
+
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<F: Filter>(
-        world: &World,
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
-    ) -> Self::Iter<'_, F>;
+    ) -> Self::Iter<'w, F>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -205,13 +218,28 @@ unsafe impl QueryData for Entity {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
-    fn iter<F: Filter>(
-        world: &World,
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        _world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        debug_assert!(
+            col.is_none(),
+            "column index passed to entity handle iterator",
+        );
+
+        table.get_entity(row.0)
+    }
+
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> EntityIter<'_> {
+    ) -> Self::Iter<'w, F> {
         debug_assert!(
             col.is_none(),
             "column index passed to entity handle iterator",
@@ -244,13 +272,29 @@ unsafe impl QueryData for EntityRef<'_> {
         unreachable!("attempt to lookup column index of entity");
     }
 
-    fn iter<F: Filter>(
-        world: &World,
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        debug_assert!(col.is_none(), "column index passed to entity ref iterator");
+
+        let entity = table.get_entity(row.0)?;
+        Some(EntityRef {
+            world,
+            handle: entity,
+        })
+    }
+
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> EntityRefIter<'_> {
+    ) -> Self::Iter<'w, F> {
         debug_assert!(col.is_none(), "column index passed to entity ref iterator");
 
         let table = world.archetypes.get_by_index(table);
@@ -291,13 +335,31 @@ unsafe impl<T: Component> QueryData for &T {
             })
     }
 
-    fn iter<F: Filter>(
-        world: &World,
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        _world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        let col = table.column(col.unwrap().get());
+        let item = unsafe {
+            col.get_ptr::<T>(row.0)?
+                .as_ptr()
+                .cast_const()
+                .as_ref_unchecked()
+        };
+
+        Some(Ref { inner: item })
+    }
+
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         _current_tick: u32,
-    ) -> ColumnIter<'_, T, F> {
+    ) -> Self::Iter<'w, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();
@@ -340,6 +402,29 @@ unsafe impl<T: Component> QueryData for &mut T {
                     std::any::type_name::<T>()
                 )
             })
+    }
+
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        world: &'w World,
+        state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        let col = table.column(col.unwrap().get());
+
+        // Safety: This query has unique access to this column.
+        let item = unsafe { col.get_ptr::<T>(row.0)?.as_ptr().as_mut_unchecked() };
+
+        // Safety: This query has unique access to this column.
+        let tracker = unsafe { col.tracker_ptr().as_ptr().as_mut_unchecked() };
+
+        Some(Mut {
+            index: row.0,
+            inner: item,
+            current_tick: state.current_tick,
+            tracker,
+        })
     }
 
     fn iter<F: Filter>(
@@ -392,13 +477,31 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
             })
     }
 
-    fn iter<F: Filter>(
-        world: &World,
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        _world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        let col = table.column(col.unwrap().get());
+        let item = unsafe {
+            col.get_ptr::<T>(row.0)?
+                .as_ptr()
+                .cast_const()
+                .as_ref_unchecked()
+        };
+
+        Some(Ref { inner: item })
+    }
+
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         _current_tick: u32,
-    ) -> ColumnIter<'_, T, F> {
+    ) -> ColumnIter<'w, T, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();
@@ -443,13 +546,36 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
             })
     }
 
-    fn iter<F: Filter>(
-        world: &World,
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        _world: &'w World,
+        state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: TableRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        let col = table.column(col.unwrap().get());
+
+        // Safety: This query has unique access to this column.
+        let item = unsafe { col.get_ptr::<T>(row.0)?.as_ptr().as_mut_unchecked() };
+
+        // Safety: This query has unique access to this column.
+        let tracker = unsafe { col.tracker_ptr().as_ptr().as_mut_unchecked() };
+
+        Some(Mut {
+            index: row.0,
+            inner: item,
+            current_tick: state.current_tick,
+            tracker,
+        })
+    }
+
+    fn iter<'w, F: Filter>(
+        world: &'w World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
-    ) -> ColumnIterMut<'_, T, F> {
+    ) -> ColumnIterMut<'w, T, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();

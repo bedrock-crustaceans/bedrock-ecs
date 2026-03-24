@@ -1,6 +1,6 @@
 use bedrock_ecs::command::Commands;
 use bedrock_ecs::entity::{Entity, EntityGeneration, EntityIndex};
-use bedrock_ecs::message::{Message, MessageReceiver, MessageSender};
+use bedrock_ecs::message::{Inbox, Message, Outbox};
 use bedrock_ecs::query::{Added, Changed, Has, Not, Or, With, Without, Xor};
 use bedrock_ecs::time::SystemTick;
 use bedrock_ecs::{query::Query, world::World};
@@ -76,10 +76,8 @@ fn test_system(
         )>,
     >,
 ) {
-    println!("{:?}", query.meta().cache());
-
     let handle = Entity::from_index_and_generation(
-        EntityIndex::from_bits(0),
+        EntityIndex::from_bits(1),
         EntityGeneration::from_bits(0),
     );
 

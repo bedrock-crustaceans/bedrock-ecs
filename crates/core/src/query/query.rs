@@ -37,7 +37,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         let table_ptr = meta.table?;
 
         let table = unsafe { table_ptr.as_ptr().cast_const().as_ref_unchecked() };
-        Q::get::<F>(table, meta.row)
+        Q::get::<F>(self.world, &self.state, table, meta.row)
     }
 
     /// Returns the metadata associated with this query.
@@ -202,7 +202,7 @@ impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
     /// Creates an iterator that iterates over this cache.
     #[inline]
     pub(crate) fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w, F> {
-        Q::Iter::new(world, self)
+        Q::Iter::from_cache(world, self)
     }
 
     /// Returns the amount of components that this query requests.

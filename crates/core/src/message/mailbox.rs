@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 
-use crate::{message::MessageReceiver, resource::Resource};
+use crate::{message::Inbox, resource::Resource};
 
 pub trait Message: Send + Sync + 'static {
     const NAME: &'static str;

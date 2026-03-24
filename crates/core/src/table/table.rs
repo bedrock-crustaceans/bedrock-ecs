@@ -88,6 +88,11 @@ impl Table {
         &self.columns[index]
     }
 
+    #[inline]
+    pub fn get_entity(&self, index: usize) -> Option<Entity> {
+        self.entities.get(index).copied()
+    }
+
     /// Creates an iterator over all the entities in this table.
     pub fn iter_entity_refs<'w>(&'w self, world: &'w World) -> EntityRefIter<'w> {
         EntityRefIter {

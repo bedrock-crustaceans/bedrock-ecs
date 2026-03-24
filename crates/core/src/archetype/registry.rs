@@ -39,7 +39,9 @@ pub struct Archetypes {
     /// already known. Queries cache these indices and access the vector directly
     /// instead of going through the lookup map. The `lookup` table can be used to
     /// find tables in this vector.
-    tables: Vec<Table>,
+    ///
+    /// Each table is stored in a box to ensure that pointers to the tables remain stable.
+    tables: Vec<Box<Table>>,
     /// An array of signatures where the indices in the array correspond to indices in the table array.
     /// This is faster to iterate over than using the lookup map.
     lookup_array: Vec<Signature>,
@@ -165,21 +167,20 @@ impl Archetypes {
             self.lookup.insert(sig.clone(), self.tables.len());
 
             // Safety: This is safe because `sig` is derived from `B`.
-            let table = unsafe { Table::new::<B>(sig) };
+            let table = Box::new(unsafe { Table::new::<B>(sig) });
 
             self.tables.push(table);
             self.tables.last_mut().unwrap()
         };
 
         let row = table.insert(handle, bundle, current_tick);
+        let table_ptr: *mut Table = table.as_mut();
 
         EntityMeta {
             handle,
             row,
-            table: Some(unsafe {
-                // Safety: This is safe because `table` is a reference which is guaranteed to be nonnull.
-                NonNull::new_unchecked(std::ptr::from_mut::<Table>(table))
-            }),
+            // Safety: This is safe because a the pointer inside of a `Box<Table>` is guaranteed to be non-null.
+            table: Some(unsafe { NonNull::new_unchecked(table_ptr) }),
         }
     }
 

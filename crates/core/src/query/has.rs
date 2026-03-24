@@ -11,8 +11,12 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
     prelude::ComponentBundle,
-    query::{EmptyableIterator, Filter, Impossible, QueryData, QueryType, TableCache},
+    query::{
+        EmptyableIterator, Filter, Impossible, QueryBundle, QueryData, QueryState, QueryType,
+        TableCache,
+    },
     scheduler::{AccessDesc, AccessType},
+    table::{Table, TableRow},
     world::World,
 };
 
@@ -42,6 +46,17 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
 
     fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
         unimplemented!()
+    }
+
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        _row: TableRow,
+        _col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
+        Some(table.signature.contains(&signature))
     }
 
     fn iter<F: Filter>(

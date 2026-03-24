@@ -52,8 +52,15 @@ pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterat
 /// These iterators usually contain multiple subiterators that iterate over the columns in each table.
 #[cfg(feature = "generics")]
 pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
+    // /// Creates an iterator that returns a single item.
+    // ///
+    // /// This is used to implement [`Query::get`].
+    // ///
+    // /// [`Query::get`]: crate::query::Query::get
+    // fn once(table: &'t Table, row: TableRow) -> Self;
+
     /// Creates a new iterator over the given cache.
-    fn new(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
+    fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 
     // /// Estimates the total amount of components remaining, including remaining tables.
     // /// This estimate does not apply filters and will therefore always overestimate.
@@ -139,7 +146,7 @@ macro_rules! impl_bundle {
             }
 
             impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
-                fn new(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
+                fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
                     #[cfg(debug_assertions)]
                     {
                         for cached in &meta.cache {
@@ -282,8 +289,23 @@ macro_rules! impl_bundle {
                     sig
                 }
 
-                fn get<'t, T: Filter>(table: &'t Table, row: TableRow) -> Option<Self::Output<'t>> where Self: 't {
-                    todo!("hello")
+                fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: TableRow) -> Option<Self::Output<'t>> where Self: 't {
+                    Some(($(
+                        {
+                            let col = match $gen::TY {
+                                QueryType::Component => Some($gen::cache_column(&table.lookup)),
+                                _ => None
+                            };
+
+                            $gen::get(
+                                world,
+                                state,
+                                table,
+                                row,
+                                col
+                            )?
+                        }
+                    ),*))
                 }
 
                 #[cfg_attr(

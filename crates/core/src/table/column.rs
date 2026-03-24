@@ -124,6 +124,12 @@ impl Column {
         }
     }
 
+    #[inline]
+    pub fn tracker_ptr(&self) -> NonNull<ChangeTracker> {
+        // Safety: References are never null.
+        unsafe { NonNull::new_unchecked(self.tracker.get()) }
+    }
+
     /// Returns the size of an entry in bytes. This includes potential padding.
     ///
     /// In other words, this is equivalent to `std::mem::size_of::<T>()` where
@@ -342,7 +348,7 @@ impl Column {
     /// # Panics
     ///
     /// This function panics if `T` is not the type that is contained in this table.
-    pub fn get<T: 'static>(&self, index: usize) -> Option<&T> {
+    pub fn get_ptr<T: 'static>(&self, index: usize) -> Option<NonNull<T>> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
@@ -369,10 +375,7 @@ impl Column {
         // above we know that `index < self.len` and the offset result is within this allocation.
         //
         // By the assertion we also know that the pointer is pointing to some type `T`.
-        let ptr = unsafe { self.data.unwrap().add(offset).cast::<T>() };
-
-        // Safety: This is a valid pointer by the check above.
-        Some(unsafe { &*ptr.as_ptr().cast_const() })
+        Some(unsafe { self.data.unwrap().add(offset).cast::<T>() })
     }
 
     /// Removes the item at index and moves the last item in the Column to the, now empty, slot.

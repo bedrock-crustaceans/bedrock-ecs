@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use generic_array::GenericArray;
 #[cfg(feature = "generics")]
 use generic_array::typenum::U1;
