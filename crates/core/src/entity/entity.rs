@@ -55,7 +55,7 @@ impl EntityRef<'_> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EntityMeta {
+pub(crate) struct EntityMeta {
     pub handle: Entity,
     pub table: Option<NonNull<Table>>,
     pub row: TableRow,

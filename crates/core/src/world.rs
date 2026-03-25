@@ -62,13 +62,15 @@ impl World {
     }
 
     #[inline]
-    pub(crate) fn despawn(&mut self, entity: EntityMeta) {
-        // Remove from table
-        // self.archetypes.remove(&entity);
-        todo!();
-
+    pub(crate) fn despawn(&mut self, entity: Entity) {
         // Remove from alive list.
-        self.entities.despawn(entity.handle);
+        let Some(meta) = self.entities.despawn_meta(entity) else {
+            // Entity was dead already
+            return;
+        };
+
+        // Remove from table
+        self.archetypes.despawn(&mut self.entities, meta);
     }
 
     #[inline]

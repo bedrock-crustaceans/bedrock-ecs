@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
-use crate::entity::Entity;
+use crate::entity::{Entities, Entity, EntityMeta};
 use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
 use crate::world::World;
 
@@ -71,8 +71,15 @@ impl Table {
         TableRow(row)
     }
 
-    pub fn remove(&mut self, entity: Entity) {
-        if let Some(row) = self.entity_lookup.remove(&entity) {
+    /// Removes the entity's data from this table and updates the entities metadata table to reflect this
+    /// change.
+    pub(crate) fn remove(&mut self, entities: &mut Entities, meta: EntityMeta) {
+        if let Some(row) = self.entity_lookup.remove(&meta.handle) {
+            // Update metadata of the entity that will be moved into the current index.
+            let last_index = self.entities.len() - 1;
+            entities.set_row_meta(meta.handle.index(), TableRow(last_index));
+
+            // Remove entity data
             self.entities.swap_remove(row.0);
             self.columns.iter_mut().for_each(|c| c.swap_remove(row.0));
         }

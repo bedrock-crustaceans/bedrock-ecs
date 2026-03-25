@@ -1,14 +1,14 @@
 use std::marker::PhantomData;
 
 use crate::command::{Command, Commands};
-use crate::entity::{Entity, EntityIndex, EntityMeta};
+use crate::entity::{Entity, EntityIndex};
 use crate::prelude::ComponentBundle;
 use crate::world::World;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityCommandsHandle {
     /// The commands will be applied to an existing entity
-    Spawned(EntityMeta),
+    Spawned(Entity),
     /// The commands will be applied to an entity that still needs to be spawned.
     /// This happens when a system spawns an entity and then also modifies it within the same
     /// tick.
@@ -30,19 +30,11 @@ pub struct EntityCommands<'parent, 'state> {
 }
 
 impl EntityCommands<'_, '_> {
-    /// Returns the entity's handle if it exists.
-    ///
-    /// Entities that have been spawned during this tick will not have a handle yet.
-    #[inline]
-    pub fn handle(&self) -> Option<Entity> {
-        self.entity().map(|entity| entity.handle)
-    }
-
     /// Returns the entity if it exists.
     ///
     /// Entities that have been spawned during this tick will not have a handle yet.
     #[inline]
-    pub fn entity(&self) -> Option<&EntityMeta> {
+    pub fn entity(&self) -> Option<&Entity> {
         match &self.entity {
             EntityCommandsHandle::Spawned(entity) => Some(entity),
             EntityCommandsHandle::Deferred(_) => None,
@@ -128,8 +120,10 @@ pub struct DespawnCommand {
 
 impl Command for DespawnCommand {
     #[inline]
-    fn apply(self, _world: &mut World) {
-        todo!()
-        // world.entities.despawn(self.handle)
+    fn apply(self, world: &mut World) {
+        match self.handle {
+            EntityCommandsHandle::Spawned(handle) => world.despawn(handle),
+            _ => todo!(),
+        }
     }
 }

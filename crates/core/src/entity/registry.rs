@@ -1,4 +1,7 @@
-use crate::entity::{Entity, EntityGeneration, EntityIndex, EntityMeta};
+use crate::{
+    entity::{Entity, EntityGeneration, EntityIndex, EntityMeta},
+    table::TableRow,
+};
 
 #[derive(Default, Debug, Clone)]
 pub struct Entities {
@@ -65,24 +68,41 @@ impl Entities {
         self.sparse[index] = self.dense.len() as u32 - 1;
     }
 
+    #[inline]
     pub fn despawn(&mut self, entity: Entity) {
+        let _ = self.despawn_meta(entity);
+    }
+
+    /// Despawns the entity, returning its metadata.
+    pub(crate) fn despawn_meta(&mut self, entity: Entity) -> Option<EntityMeta> {
         let id = entity.index().0;
         let generation = entity.generation().0;
 
         if self.generations[id as usize] != generation {
             // This is an old entity, ignore it
             tracing::trace!("attempt to despawn old entity");
-            return;
+            return None;
         }
 
-        self.dense.swap_remove(id as usize);
+        let meta = self.dense.swap_remove(id as usize);
         let swapped_index = self.dense[id as usize].handle.index().0;
         self.sparse[swapped_index as usize] = id;
 
         self.sparse[id as usize] = EntityIndex::TOMBSTONE.0;
         self.freelist.push(id);
 
-        tracing::trace!("despawned entity {id}");
+        Some(meta)
+    }
+
+    /// Updates the `row` metadata of the specified entity.
+    ///
+    /// This method assumes the entity is up to date and does not check generations.
+    pub(crate) fn set_row_meta(&mut self, entity: EntityIndex, row: TableRow) -> Option<TableRow> {
+        let dense_idx = *self.sparse.get(entity.0 as usize)?;
+        Some(std::mem::replace(
+            &mut self.dense[dense_idx as usize].row,
+            row,
+        ))
     }
 
     #[inline]

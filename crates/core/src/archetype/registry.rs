@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{ArchetypeGraph, Signature};
 use crate::component::ComponentRegistry;
-use crate::entity::{Entity, EntityMeta};
+use crate::entity::{Entities, Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
@@ -182,6 +182,20 @@ impl Archetypes {
             // Safety: This is safe because a the pointer inside of a `Box<Table>` is guaranteed to be non-null.
             table: Some(unsafe { NonNull::new_unchecked(table_ptr) }),
         }
+    }
+
+    /// Removes the components of the specified entity.
+    ///
+    /// # Safety
+    ///
+    /// Not sure whether this function should be marked unsafe but I'll do it just to be sure.
+    ///
+    /// This function requires that the `table` field of `meta` points to a valid table inside this archetypes container.
+    pub(crate) fn despawn(&mut self, entities: &mut Entities, meta: EntityMeta) {
+        // Safety: This is safe because the caller should have given a valid pointer and since
+        // this function receives a mutable self, we have unique access to this table.
+        let table = unsafe { meta.table.unwrap().as_ptr().as_mut_unchecked() };
+        table.remove(entities, meta);
     }
 
     /// Returns the amount of archetypes currently contained in this container.

@@ -69,12 +69,13 @@ struct Killed {
 
 fn test_system(
     query: Query<
-        &Name,
+        (Entity, &Name, Has<Example1>),
         Or<(
             Not<(With<Example1>, With<Example2>)>,
             Xor<(With<Example1>, With<Example2>)>,
         )>,
     >,
+    mut commands: Commands,
 ) {
     let handle = Entity::from_index_and_generation(
         EntityIndex::from_bits(1),
@@ -83,8 +84,12 @@ fn test_system(
 
     println!("{:?}", query.get(handle));
 
-    for name in &query {
-        tracing::error!("found {}", name.0);
+    for (entity, name, has) in &query {
+        if has {
+            commands.entity(entity).despawn();
+        }
+
+        tracing::error!("found {}, has: {has}, handle: {:?}", name.0, entity);
     }
 }
 
@@ -119,4 +124,5 @@ fn stress_test() {
         .schedule();
 
     world.run(&schedule);
+    world.apply_commands();
 }
