@@ -154,17 +154,15 @@ impl LocalCommandBuffer {
             drop_fn: std::mem::needs_drop::<C>().then_some(drop_fn::<C>),
         };
 
-        let container = CommandContainer { vtable, cmd };
-
         // Add enough to the total size to cover the alignment. This ensures that after reserving capacity, if the pointer is suddenly at
         // a location that needs an even larger offset, it is already covered.
-        let size_upper_bound =
-            std::mem::size_of_val(&container) + std::mem::align_of_val(&container);
+        let size_upper_bound = std::mem::align_of::<CommandVTable>()
+            + std::mem::size_of::<CommandVTable>()
+            + std::mem::align_of::<C>()
+            + std::mem::size_of::<C>();
 
-        // Ensure there is enough capacity left
+        // Ensure there is enough capacity left for the worst possible alignment situation.
         let spare_cap = self.commands.spare_capacity_mut().len();
-        println!("spare_cap: {spare_cap:?}, total_size: {size_upper_bound}");
-
         if spare_cap < size_upper_bound {
             // Clamp to the current capacity to make sure that the capacity doubles every time.
             // This is similar to the reallocation strategy normally used by Vec.
@@ -172,32 +170,40 @@ impl LocalCommandBuffer {
             self.commands.reserve(size);
         }
 
-        let spare_cap = self.commands.spare_capacity_mut().len();
-        println!("spare_cap: {spare_cap:?}, total_size: {size_upper_bound}");
-
         // vec has enough capacity, we can now create a pointer to the data
         let start_ptr = self.commands.spare_capacity_mut().as_mut_ptr().cast::<u8>();
-        let align_offset = start_ptr.align_offset(std::mem::align_of_val(&container));
-        let actual_size = std::mem::size_of_val(&container) + align_offset;
+        let align_offset = start_ptr.align_offset(std::mem::align_of::<CommandVTable>());
+
+        let vtable_size = align_offset + std::mem::size_of::<CommandVTable>();
+        let vtable_ptr = unsafe { start_ptr.add(align_offset).cast::<CommandVTable>() };
 
         debug_assert!(
-            actual_size < size_upper_bound,
-            "actual size was larger than upper bound"
-        );
-
-        let write_ptr = unsafe { start_ptr.add(align_offset).cast::<CommandContainer<C>>() };
-
-        debug_assert!(
-            write_ptr.is_aligned(),
-            "command container write pointer was not aligned"
+            vtable_ptr.is_aligned(),
+            "command vtable write pointer is not aligned"
         );
 
         unsafe {
-            std::ptr::write(write_ptr, container);
+            std::ptr::write(vtable_ptr, vtable);
+            self.commands.set_len(self.commands.len() + vtable_size);
         }
 
+        // Go to end of vtable.
+        let cmd_ptr = unsafe {
+            vtable_ptr
+                .cast::<u8>()
+                .add(std::mem::size_of::<CommandVTable>())
+        };
+
+        // Then add padding for alignment
+        let align_offset = cmd_ptr.align_offset(std::mem::align_of::<C>());
+
+        let cmd_size = align_offset + std::mem::size_of::<C>();
+        let cmd_ptr = unsafe { cmd_ptr.add(align_offset).cast::<C>() };
+
+        debug_assert!(cmd_ptr.is_aligned(), "command write pointer is not aligned");
         unsafe {
-            self.commands.set_len(self.commands.len() + actual_size);
+            std::ptr::write(cmd_ptr, cmd);
+            self.commands.set_len(self.commands.len() + cmd_size);
         }
     }
 
@@ -206,10 +212,9 @@ impl LocalCommandBuffer {
         reason = "assert for safety, but should realistically never be triggered"
     )]
     pub fn apply_all(&mut self, world: &mut World) {
-        tracing::error!("applying all commands");
+        tracing::trace!("applying all commands");
 
         let buffer_len = self.commands.len();
-
         assert!(
             buffer_len < isize::MAX as usize,
             "command buffer length exceeds `isize::MAX`"
@@ -231,6 +236,8 @@ impl LocalCommandBuffer {
                     .add(offset)
                     .cast::<u8>()
             };
+
+            // Align pointer to start
 
             let vtable_ptr = align_ptr::<CommandVTable>(start_ptr).cast::<CommandVTable>();
             debug_assert!(vtable_ptr.is_aligned(), "command vtable not aligned");
