@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
-use crate::command::{EntityCommands, EntityCommandsHandle, LocalCommandBuffer, SpawnCommand};
+use crate::command::{EntityCommands, EntityCommandsHandle, LocalCommandQueue, SpawnCommand};
 use crate::entity::{Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
@@ -14,15 +14,16 @@ use generic_array::GenericArray;
 use generic_array::typenum::U0;
 use thread_local::ThreadLocal;
 
-pub trait Command {
-    fn apply(self, world: &mut World);
+/// A command must have an alignment of at most 8.
+pub trait Command: 'static + Send {
+    fn apply(self: Box<Self>, world: &mut World);
 }
 
 #[derive(Default)]
 struct CommandCell {
     #[cfg(debug_assertions)]
     pub(crate) enforcer: BorrowEnforcer,
-    pub(crate) buffer: UnsafeCell<LocalCommandBuffer>,
+    pub(crate) buffer: UnsafeCell<LocalCommandQueue>,
 }
 
 #[derive(Default)]
@@ -80,7 +81,7 @@ impl CommandPool {
 }
 
 pub struct Commands<'state> {
-    pub(crate) buffer: &'state mut LocalCommandBuffer,
+    pub(crate) buffer: &'state mut LocalCommandQueue,
     /// Ensure that this type is !Send and !Sync.
     pub(crate) _marker: PhantomData<*const ()>,
 

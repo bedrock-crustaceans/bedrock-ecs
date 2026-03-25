@@ -36,7 +36,7 @@ impl From<usize> for ComponentId {
 }
 
 /// A marker trait indicating that the implementor can be used as a component.
-pub trait Component: 'static {
+pub trait Component: 'static + Send {
     // TODO: Add a tracking type so change tracking can be enabled or disabled for specific components.
     // TODO: Add a storage type constant so each component can decide whether it should be stored in a sparse set
     // or archetype table.
@@ -46,7 +46,7 @@ pub trait Component: 'static {
 /// of components inside of filters rather than just a single component.
 ///
 /// It enables filters such as `With<(Health, Transform)>`.
-pub trait ComponentBundle: 'static {
+pub trait ComponentBundle: 'static + Send {
     const LEN: usize;
 
     /// Converts this bundle to a signature to compare against archetype tables. If a component had not been

@@ -85,7 +85,7 @@ pub struct RemoveCommand<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Command for RemoveCommand<T> {
-    fn apply(self, world: &mut World) {
+    fn apply(self: Box<Self>, world: &mut World) {
         todo!()
     }
 }
@@ -96,7 +96,7 @@ pub struct InsertCommand<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Command for InsertCommand<T> {
-    fn apply(self, world: &mut World) {
+    fn apply(self: Box<Self>, world: &mut World) {
         todo!()
     }
 }
@@ -108,7 +108,7 @@ pub struct SpawnCommand<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Command for SpawnCommand<T> {
     #[inline]
-    fn apply(self, world: &mut World) {
+    fn apply(self: Box<Self>, world: &mut World) {
         world.spawn(self.components);
     }
 }
@@ -120,7 +120,7 @@ pub struct DespawnCommand {
 
 impl Command for DespawnCommand {
     #[inline]
-    fn apply(self, world: &mut World) {
+    fn apply(self: Box<Self>, world: &mut World) {
         println!("Despawning {:?}", self.handle);
 
         match self.handle {
