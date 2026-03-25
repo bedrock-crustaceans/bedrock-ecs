@@ -42,7 +42,7 @@ impl Entities {
     }
 
     /// Retrieves the metadata of the given entity.
-    pub fn get_meta(&self, entity: Entity) -> Option<EntityMeta> {
+    pub(crate) fn get_meta(&self, entity: Entity) -> Option<EntityMeta> {
         let index = entity.index().0;
         let generation = entity.generation().0;
 
@@ -57,7 +57,7 @@ impl Entities {
     }
 
     /// Inserts the given entity metadata into the registry.
-    pub fn spawn(&mut self, meta: EntityMeta) {
+    pub(crate) fn spawn(&mut self, meta: EntityMeta) {
         let index = meta.handle.index().0 as usize;
 
         self.dense.push(meta);
@@ -99,6 +99,12 @@ impl Entities {
     /// This method assumes the entity is up to date and does not check generations.
     pub(crate) fn set_row_meta(&mut self, entity: EntityIndex, row: TableRow) -> Option<TableRow> {
         let dense_idx = *self.sparse.get(entity.0 as usize)?;
+        if dense_idx == EntityIndex::TOMBSTONE.0 {
+            tracing::warn!("Attempted to despawn entity that was already dead");
+            // Entity is already dead
+            return None;
+        }
+
         Some(std::mem::replace(
             &mut self.dense[dense_idx as usize].row,
             row,

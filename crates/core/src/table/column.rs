@@ -130,17 +130,6 @@ impl Column {
         unsafe { NonNull::new_unchecked(self.tracker.get()) }
     }
 
-    /// Returns the size of an entry in bytes. This includes potential padding.
-    ///
-    /// In other words, this is equivalent to `std::mem::size_of::<T>()` where
-    /// `T` is the type contained in this `Column`.
-    pub fn padded_size(&self) -> usize {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
-        self.layout.pad_to_align().size()
-    }
-
     /// Creates an iterator over this column. Optional filters can be applied using the `F` generic.
     ///
     /// # Panics
@@ -390,7 +379,7 @@ impl Column {
         assert!(idx < self.len, "Column::swap_remove index out of bounds");
 
         let data_ptr = self.data.unwrap().as_ptr();
-        let dst_offset = self.padded_size() * idx;
+        let dst_offset = self.layout.pad_to_align().size() * idx;
         assert!(
             isize::try_from(dst_offset).is_ok(),
             "pointer offset overflow in Column::swap_remove dst pointer"
@@ -420,7 +409,7 @@ impl Column {
         });
 
         if idx != self.len - 1 {
-            let src_offset = self.padded_size() * (self.len() - 1);
+            let src_offset = self.layout.pad_to_align().size() * (self.len() - 1);
             assert!(
                 isize::try_from(src_offset).is_ok(),
                 "pointer offset overflow in Column::swap_remove src pointer"
@@ -474,9 +463,6 @@ impl Column {
 
 impl Drop for Column {
     fn drop(&mut self) {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.write();
-
         if let Some(ptr) = self.data {
             // Drop contents if it matters
             if let Some(drop_fn) = self.drop_fn {

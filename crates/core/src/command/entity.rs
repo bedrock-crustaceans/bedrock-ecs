@@ -121,9 +121,17 @@ pub struct DespawnCommand {
 impl Command for DespawnCommand {
     #[inline]
     fn apply(self, world: &mut World) {
+        println!("Despawning {:?}", self.handle);
+
         match self.handle {
             EntityCommandsHandle::Spawned(handle) => world.despawn(handle),
             _ => todo!(),
         }
+    }
+}
+
+impl Drop for DespawnCommand {
+    fn drop(&mut self) {
+        println!("dropping despawn");
     }
 }

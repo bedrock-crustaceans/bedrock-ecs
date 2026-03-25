@@ -86,6 +86,7 @@ fn test_system(
 
     for (entity, name, has) in &query {
         if has {
+            println!("test: despawn {entity:?}");
             commands.entity(entity).despawn();
         }
 

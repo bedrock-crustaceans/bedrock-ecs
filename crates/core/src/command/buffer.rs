@@ -25,7 +25,11 @@ fn align_ptr<T>(ptr: NonNull<u8>) -> NonNull<u8> {
 struct CommandVTable {
     /// The amount of offset until the next command.
     stride: usize,
+    /// Offset from the start of this vtable to the start of the command
+    padding: usize,
+    /// Pointer to function that knows how to apply this command.
     apply_fn: ApplyFn,
+    /// Pointer to function that knows how to drop this command. Is `None` if the type does not need to be dropped.
     drop_fn: Option<DropFn>,
 }
 
@@ -149,10 +153,13 @@ impl LocalCommandBuffer {
 
     pub fn push<C: Command>(&mut self, cmd: C) {
         let vtable = CommandVTable {
-            stride: 0,
+            stride: 0,  // Will be set later
+            padding: 0, // Will be set later
             apply_fn: apply_command::<C>,
             drop_fn: std::mem::needs_drop::<C>().then_some(drop_fn::<C>),
         };
+
+        let start_len = self.commands.len();
 
         // Add enough to the total size to cover the alignment. This ensures that after reserving capacity, if the pointer is suddenly at
         // a location that needs an even larger offset, it is already covered.
@@ -205,6 +212,12 @@ impl LocalCommandBuffer {
             std::ptr::write(cmd_ptr, cmd);
             self.commands.set_len(self.commands.len() + cmd_size);
         }
+
+        let stride = self.commands.len() - start_len;
+        let vtable = unsafe { &mut *vtable_ptr };
+
+        vtable.stride = stride;
+        vtable.padding = align_offset + std::mem::size_of::<CommandVTable>();
     }
 
     #[expect(
@@ -214,48 +227,24 @@ impl LocalCommandBuffer {
     pub fn apply_all(&mut self, world: &mut World) {
         tracing::trace!("applying all commands");
 
-        let buffer_len = self.commands.len();
-        assert!(
-            buffer_len < isize::MAX as usize,
-            "command buffer length exceeds `isize::MAX`"
-        );
+        let mut curr_ptr =
+            unsafe { NonNull::new_unchecked(self.commands.as_mut_ptr().cast::<u8>()) };
 
-        // Set length to 0 immediately to ensure that no uninit memory is read in case of a panic.
-        // Safety: This is sound because an empty vector has no items and 0 is always less than or equal
-        // to any capacity.
-        unsafe {
-            self.commands.set_len(0);
-        }
+        loop {
+            let align_offset = curr_ptr.align_offset(std::mem::align_of::<CommandVTable>());
 
-        let mut offset = 0;
-        while offset < buffer_len {
-            // Safety: This is safe because the pointer is derived from an initialised slice
-            // and therefore cannot be null.
-            let start_ptr: NonNull<u8> = unsafe {
-                NonNull::new_unchecked(self.commands.as_mut_ptr())
-                    .add(offset)
-                    .cast::<u8>()
-            };
+            let vtable_ptr = unsafe { curr_ptr.add(align_offset) };
+            let vtable = unsafe { &*vtable_ptr.cast::<CommandVTable>().as_ptr() };
 
-            // Align pointer to start
+            let apply_fn = vtable.apply_fn;
 
-            let vtable_ptr = align_ptr::<CommandVTable>(start_ptr).cast::<CommandVTable>();
-            debug_assert!(vtable_ptr.is_aligned(), "command vtable not aligned");
+            let cmd_ptr = unsafe { curr_ptr.add(vtable.padding) };
 
-            let vtable = unsafe { vtable_ptr.as_ptr().cast_const().as_ref_unchecked() };
-            println!("vtable is: {vtable:?}");
+            unsafe {
+                apply_fn(cmd_ptr, world);
+            }
 
-            // Skip over the vtable and cast back to raw pointer.
-            // Safety:
-            // This is safe because every vtable is always followed by a command, thus this pointer
-            // will not be outside of the allocation. Furthermore, the `add` operation skips over exactly
-            // one [`CommandVTable`] which will not exceed `isize::MAX` in size.
-            let cmd_ptr = unsafe { vtable_ptr.add(1) }.cast::<u8>();
-
-            unsafe { vtable.apply(cmd_ptr, world) };
-
-            // Skip over vtable and data to reach next command.
-            offset += vtable.stride;
+            break;
         }
     }
 
