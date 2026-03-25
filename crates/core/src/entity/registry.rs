@@ -80,16 +80,24 @@ impl Entities {
 
         if self.generations[id as usize] != generation {
             // This is an old entity, ignore it
-            tracing::trace!("attempt to despawn old entity");
+            tracing::trace!("attempt to despawn dead entity");
             return None;
         }
 
-        let meta = self.dense.swap_remove(id as usize);
-        let swapped_index = self.dense[id as usize].handle.index().0;
-        self.sparse[swapped_index as usize] = id;
-
-        self.sparse[id as usize] = EntityIndex::TOMBSTONE.0;
+        let dense_idx = std::mem::replace(&mut self.sparse[id as usize], EntityIndex::TOMBSTONE.0);
+        println!("dense_idx = {dense_idx}");
         self.freelist.push(id);
+
+        let meta = self.dense.swap_remove(dense_idx as usize);
+        if dense_idx as usize != self.dense.len() {
+            // If it's the last element, `swap_remove` just decreases the len.
+            // Because nothing moves we don't have to do anything.
+
+            let swapped_idx = self.dense[dense_idx as usize].handle.index().0;
+            self.sparse[swapped_idx as usize] = dense_idx;
+        }
+
+        println!("sparse: {:?}", self.sparse);
 
         Some(meta)
     }

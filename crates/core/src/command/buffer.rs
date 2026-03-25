@@ -244,7 +244,7 @@ impl LocalCommandBuffer {
                 apply_fn(cmd_ptr, world);
             }
 
-            break;
+            curr_ptr = unsafe { curr_ptr.add(vtable.stride) };
         }
     }
 
