@@ -29,6 +29,7 @@ unsafe fn drop_fn<C: Command>(cmd_ptr: NonNull<u8>) {
 pub struct LocalCommandQueue {
     // Deferred entity ID counter.
     next_deferred_id: u32,
+    // TODO: This should be done with a raw memory buffer to reduce pointer indirection.
     buffer: Vec<Box<dyn Command>>,
 }
 

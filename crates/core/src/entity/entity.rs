@@ -27,9 +27,24 @@ impl EntityMut<'_> {
         self.handle.generation()
     }
 
+    pub fn insert(&mut self, bundle: impl ComponentBundle) {
+        let meta = self
+            .world
+            .entities
+            .get_meta(self.handle)
+            .expect("`EntityMut` entity died");
+
+        self.world.archetypes.insert(
+            self.world.current_tick,
+            &mut self.world.entities,
+            meta,
+            bundle,
+        );
+    }
+
     #[inline]
     pub fn despawn(self) {
-        todo!()
+        self.world.despawn(self.handle);
     }
 }
 

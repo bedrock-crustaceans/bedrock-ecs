@@ -46,7 +46,7 @@ impl Table {
     /// `signature` must be the actual signature of the component bundle in generic `B`.
     #[inline]
     pub unsafe fn new<B: ComponentBundle>(signature: Signature) -> Table {
-        unsafe { B::into_table(signature) }
+        unsafe { B::new_table(signature) }
     }
 
     /// Returns the archetype of this table.
@@ -66,7 +66,7 @@ impl Table {
         self.entity_lookup
             .insert(entity, TableRow(self.entities.len() - 1));
 
-        components.insert_into(&mut self.columns, current_tick);
+        components.insert_into(self, current_tick);
 
         TableRow(row)
     }

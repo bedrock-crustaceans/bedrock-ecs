@@ -4,7 +4,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::archetype::PartitionedSignature;
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 

@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
 use nonmax::NonMaxUsize;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use smallvec::SmallVec;
 
 use crate::archetype::{ArchetypeGraph, Signature};
@@ -11,7 +11,7 @@ use crate::prelude::ComponentBundle;
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
 use crate::query::{Filter, QueryBundle};
-use crate::table::Table;
+use crate::table::{Column, Table, TableRow};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -145,7 +145,7 @@ impl Archetypes {
         clippy::missing_panics_doc,
         reason = "this function does not panic since an item is inserted before unwrapping"
     )]
-    pub fn insert<B: ComponentBundle + 'static>(
+    pub fn spawn<B: ComponentBundle>(
         &mut self,
         handle: Entity,
         bundle: B,
@@ -182,6 +182,77 @@ impl Archetypes {
             // Safety: This is safe because a the pointer inside of a `Box<Table>` is guaranteed to be non-null.
             table: Some(unsafe { NonNull::new_unchecked(table_ptr) }),
         }
+    }
+
+    pub fn insert<B: ComponentBundle>(
+        &mut self,
+        current_tick: u32,
+        entities: &mut Entities,
+        entity: EntityMeta,
+        components: B,
+    ) -> bool {
+        // Check whether entity is alive.
+        if !entities.is_alive(entity.handle) {
+            return false;
+        }
+
+        let signature = B::get_or_assign_signature(&mut self.component_registry);
+        let Some(table) = entity.table else {
+            tracing::warn!("entity meta table was none");
+            return false;
+        };
+
+        let old_table = unsafe { &mut *table.as_ptr() };
+
+        let mut combined_signature = signature.clone();
+        combined_signature.union(&old_table.signature);
+
+        let new_table = if let Some(table) = self.get_by_signature_mut(&signature) {
+            table
+        } else {
+            let table = unsafe { B::new_joined_table(old_table, signature) };
+            self.tables.push(Box::new(table));
+            self.lookup_array.push(combined_signature.clone());
+            self.lookup
+                .insert(combined_signature, self.tables.len() - 1);
+
+            self.tables.last_mut().unwrap()
+        };
+
+        new_table.entities.push(entity.handle);
+        new_table
+            .entity_lookup
+            .insert(entity.handle, TableRow(new_table.entities.len() - 1));
+
+        // Copy over all old data
+        for column in &old_table.columns {}
+
+        // Remove data from old table
+        old_table.remove(entities, entity);
+
+        // Update metadata reference to current table.
+        entities.set_meta(
+            entity.handle.index(),
+            EntityMeta {
+                handle: entity.handle,
+                row: TableRow(new_table.columns[0].len()),
+                table: Some(table),
+            },
+        );
+
+        // Insert new data
+        components.insert_into(new_table, current_tick);
+
+        // Verify that all columns now have the same length
+        debug_assert!(
+            new_table
+                .columns
+                .windows(2)
+                .all(|a| a[0].len() == a[1].len()),
+            "not all columns have the same length after move archetypes"
+        );
+
+        true
     }
 
     /// Removes the components of the specified entity.
@@ -249,6 +320,24 @@ impl Archetypes {
         &self.tables[index]
     }
 
+    /// Returns a table at a specific index.
+    ///
+    /// Use [`get_by_archetype_mut`] or [`get_by_signature_mut`] if the index is unknown.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the index is out of bounds.
+    ///
+    /// [`get_by_archetype_mut`]: Self::get_by_archetype_mut
+    /// [`get_by_signature_mut`]: Self::get_by_signature_mut
+    #[inline]
+    pub fn get_by_index_mut(&mut self, index: usize) -> &mut Table {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
+        &mut self.tables[index]
+    }
+
     /// Returns a table with a specific archetype
     ///
     /// This function returns `None` if the exact archetype was not found.
@@ -268,6 +357,25 @@ impl Archetypes {
         self.get_by_signature(&bitset)
     }
 
+    /// Returns a table with a specific archetype
+    ///
+    /// This function returns `None` if the exact archetype was not found.
+    /// It only fetches exactly matching archetypes.
+    /// If a table has these components but also includes additional ones, it will return `None`.
+    ///
+    /// Alternatives: [`get_by_signature_mut`], [`get_by_index_mut`].
+    ///
+    /// [`get_by_signature_mut`]: Self::get_by_signature_mut
+    /// [`get_by_index_mut`]: Self::get_by_index_mut
+    #[inline]
+    pub fn get_by_archetype_mut<T: ComponentBundle>(&mut self) -> Option<&mut Table> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        let bitset = T::try_get_signature(&self.component_registry)?;
+        self.get_by_signature_mut(&bitset)
+    }
+
     /// Fetches a table by its archetype signature.
     ///
     /// This function returns `None` if the exact archetype was not found.
@@ -285,5 +393,24 @@ impl Archetypes {
 
         let index = self.lookup.get(signature)?;
         Some(self.get_by_index(*index))
+    }
+
+    /// Fetches a table by its archetype signature.
+    ///
+    /// This function returns `None` if the exact archetype was not found.
+    /// It only fetches exactly matching archetypes.
+    /// If a table has these components but also includes additional ones, it will return `None`.
+    ///
+    /// Alternatives: [`get_by_archetype_mut`], [`get_by_index_mut`].
+    ///
+    /// [`get_by_archetype_mut`]: Self::get_by_archetype_mut
+    /// [`get_by_index_mut`]: Self::get_by_index_mut
+    #[inline]
+    pub fn get_by_signature_mut(&mut self, signature: &Signature) -> Option<&mut Table> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        let index = self.lookup.get(signature)?;
+        Some(self.get_by_index_mut(*index))
     }
 }

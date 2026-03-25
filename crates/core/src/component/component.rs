@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 
@@ -73,10 +74,23 @@ pub trait ComponentBundle: 'static + Send {
     ///
     /// The given `signature` must be the exact signature of `Self`. This signature should be obtained using
     /// [`try_get_signature`] or [`get_or_assign_signature`].
-    unsafe fn into_table(signature: Signature) -> Table;
+    ///
+    /// [`try_get_signature`]: ComponentBundle::try_get_signature
+    /// [`get_or_assign_signature`]: ComponentBundle::get_or_assign_signature
+    unsafe fn new_table(signature: Signature) -> Table;
+
+    /// Creates a new table by joining these components to an existing table.
+    ///
+    /// `base` is the table to add these columns to and `sig` is the signature of `Self`.
+    ///
+    /// # Safety
+    ///
+    /// The given `self_signature` must be the exact signature of `Self` _combined_ with the signature
+    /// from the `base` table.
+    unsafe fn new_joined_table(base: &Table, self_signature: Signature) -> Table;
 
     /// Insert this bundle into an existing table.
-    fn insert_into(self, storage: &mut [Column], current_tick: u32);
+    fn insert_into(self, table: &mut Table, current_tick: u32);
 }
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
@@ -107,10 +121,10 @@ macro_rules! impl_component_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
-                    tracing::instrument(name = "ComponentBundle::into_table", fields(bundle = std::any::type_name::<Self>()), skip_all)
+                    tracing::instrument(name = "ComponentBundle::new_table", fields(bundle = std::any::type_name::<Self>()), skip_all)
                 )]
                 #[allow(unused)]
-                unsafe fn into_table(signature: Signature) -> Table {
+                unsafe fn new_table(signature: Signature) -> Table {
                     let mut lookup = FxHashMap::with_capacity_and_hasher(Self::LEN, FxBuildHasher::default());
                     let mut counter = 0;
                     $(
@@ -133,15 +147,58 @@ macro_rules! impl_component_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
+                    tracing::instrument(name = "ComponentBundle::new_joined_table")
+                )]
+                unsafe fn new_joined_table(base: &Table, mut signature: Signature) -> Table {
+                    // Check whether the original table and this bundle are disjoint.
+                    if !base.signature.is_disjoint(&signature) {
+                        todo!("table and bundle are not disjoint");
+                    }
+
+                    // Combine the signature of the table with `Self`'s signature.
+                    signature.union(&base.signature);
+
+                    let old_col_count = base.columns.len();
+                    let new_col_count = old_col_count + Self::LEN;
+
+                    tracing::debug!("Column count: {old_col_count} -> {new_col_count}");
+
+                    let mut columns = Vec::with_capacity(new_col_count);
+
+                    // Copy over base column metadata
+                    columns.extend(base.columns.iter().map(|c| c.clone_empty()));
+
+                    // Add new columns
+                    $(
+                        columns.push(Column::new::<$gen>());
+                    )*
+
+                    let mut lookup = base.lookup.clone();
+                    let mut counter = lookup.len();
+                    $(
+                        lookup.insert(TypeId::of::<$gen>(), counter);
+                        counter += 1;
+                    )*
+
+                    Table {
+                        signature,
+                        entities: Vec::new(),
+                        entity_lookup: FxHashMap::default(),
+                        lookup,
+                        columns
+                    }
+                }
+
+                #[cfg_attr(
+                    feature = "tracing",
                     tracing::instrument(name = "ComponentBundle::insert_into", fields(bundle = std::any::type_name::<Self>()), skip_all)
                 )]
                 #[allow(unused)]
-                fn insert_into(self, storage: &mut [Column], current_tick: u32) {
+                fn insert_into(self, storage: &mut Table, current_tick: u32) {
                     let ($([<$gen:lower>]),*) = self;
-                    let mut counter = 0;
                     $(
-                        storage[counter].push([<$gen:lower>], current_tick);
-                        counter += 1;
+                        let column_idx = *storage.lookup.get(&TypeId::of::<$gen>()).expect("attempt to insert data into wrong archetype table");
+                        storage.columns[column_idx].push([<$gen:lower>], current_tick);
                     )*
                 }
             }

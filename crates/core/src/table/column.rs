@@ -1,5 +1,7 @@
 use std::alloc::Layout;
 use std::any::TypeId;
+#[cfg(debug_assertions)]
+use std::borrow::Borrow;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
@@ -64,6 +66,26 @@ pub struct Column {
 }
 
 impl Column {
+    /// Create an empty copy of self.
+    pub fn clone_empty(&self) -> Self {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        Self {
+            #[cfg(debug_assertions)]
+            enforcer: BorrowEnforcer::new(),
+
+            tracker: UnsafeCell::new(ChangeTracker::new()),
+
+            layout: self.layout,
+            ty: self.ty,
+            len: 0,
+            cap: 0,
+            data: None,
+            drop_fn: self.drop_fn,
+        }
+    }
+
     /// Creates a new Column for the type `T`.
     #[cfg_attr(
         feature = "tracing",

@@ -97,7 +97,15 @@ pub struct InsertCommand<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Command for InsertCommand<T> {
     fn apply(self: Box<Self>, world: &mut World) {
-        todo!()
+        match self.entity {
+            EntityCommandsHandle::Spawned(handle) => {
+                world
+                    .get_entity_mut(handle)
+                    .expect("spawned entity not found")
+                    .insert(self.components);
+            }
+            EntityCommandsHandle::Deferred(_handle) => todo!(),
+        }
     }
 }
 

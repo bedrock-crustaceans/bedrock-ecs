@@ -119,6 +119,16 @@ impl Entities {
         ))
     }
 
+    pub fn set_meta(&mut self, entity: EntityIndex, meta: EntityMeta) -> Option<EntityMeta> {
+        let dense_idx = *self.sparse.get(entity.0 as usize)?;
+        if dense_idx == EntityIndex::TOMBSTONE.0 {
+            // Entity was dead
+            return None;
+        }
+
+        Some(std::mem::replace(&mut self.dense[dense_idx as usize], meta))
+    }
+
     #[inline]
     pub fn alive_count(&self) -> usize {
         self.sparse.len()
