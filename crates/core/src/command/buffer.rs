@@ -6,6 +6,22 @@ use crate::command::Command;
 use crate::entity::EntityIndex;
 use crate::world::World;
 
+/// Rounds the pointer up to the nearest alignment of type `T`.
+fn align_ptr<T>(ptr: NonNull<u8>) -> NonNull<u8> {
+    let align = std::mem::align_of::<T>();
+    let offset = ptr.align_offset(align);
+
+    let aligned = unsafe { ptr.add(offset) };
+
+    debug_assert!(
+        aligned.cast::<T>().is_aligned(),
+        "pointer returned from `align_ptr` was not actually aligned"
+    );
+
+    aligned
+}
+
+#[derive(Debug)]
 struct CommandVTable {
     /// The amount of offset until the next command.
     stride: usize,
@@ -46,13 +62,25 @@ impl CommandVTable {
 type ApplyFn = unsafe fn(cmd_ptr: NonNull<u8>, world: &mut World);
 type DropFn = unsafe fn(cmd_ptr: NonNull<u8>);
 
+#[repr(C)]
+struct CommandContainer<C: Command> {
+    vtable: CommandVTable,
+    cmd: C,
+}
+
 /// Applies the command to the given world
 ///
 /// # Safety
 ///
 /// The given pointer must point to a valid object of type `C`.
 unsafe fn apply_command<C: Command>(cmd_ptr: NonNull<u8>, world: &mut World) {
-    let command: C = unsafe { std::ptr::read(cmd_ptr.cast::<C>().as_ptr().cast_const()) };
+    let cmd_ptr = cmd_ptr.cast::<C>();
+    debug_assert!(
+        cmd_ptr.is_aligned(),
+        "command pointer not aligned during apply"
+    );
+
+    let command: C = unsafe { std::ptr::read(cmd_ptr.as_ptr().cast_const()) };
     command.apply(world);
 }
 
@@ -64,22 +92,38 @@ unsafe fn apply_command<C: Command>(cmd_ptr: NonNull<u8>, world: &mut World) {
 /// An applied command should not be dropped by this wrapper since the command application already drops
 /// the command.
 unsafe fn drop_fn<C: Command>(cmd_ptr: NonNull<u8>) {
+    let cmd_ptr = cmd_ptr.cast::<C>();
+    debug_assert!(
+        cmd_ptr.is_aligned(),
+        "command pointer not aligned during drop"
+    );
+
     // Ensure that it does need to be dropped
     if std::mem::needs_drop::<C>() {
-        unsafe { std::ptr::drop_in_place(cmd_ptr.cast::<C>().as_ptr()) }
+        unsafe { std::ptr::drop_in_place(cmd_ptr.as_ptr()) }
     }
 }
 
 /// An append-only list of commands for the current thread.
 #[clippy::has_significant_drop]
-#[derive(Default)]
 pub struct LocalCommandBuffer {
     // Deferred entity ID counter.
     next_deferred_id: u32,
+
+    curr_offset: usize,
     pub(crate) commands: Vec<MaybeUninit<u8>>,
 }
 
 impl LocalCommandBuffer {
+    pub fn new() -> LocalCommandBuffer {
+        Self {
+            next_deferred_id: 0,
+            curr_offset: 0,
+            // Allocate some capacity so we already have a pointer to work with.
+            commands: Vec::with_capacity(20),
+        }
+    }
+
     /// Resets this command buffer. Any pushed commands will be dropped without executing.
     pub fn reset(&mut self) {
         self.next_deferred_id = 0;
@@ -103,37 +147,57 @@ impl LocalCommandBuffer {
         self.commands.capacity() - self.commands.len()
     }
 
-    pub fn push<C: Command>(&mut self, command: C) {
-        let tuple_layout = Layout::new::<(CommandVTable, C)>();
-        let tuple_size = tuple_layout.size();
-
-        let meta = CommandVTable {
-            stride: tuple_size,
+    pub fn push<C: Command>(&mut self, cmd: C) {
+        let vtable = CommandVTable {
+            stride: 0,
             apply_fn: apply_command::<C>,
             drop_fn: std::mem::needs_drop::<C>().then_some(drop_fn::<C>),
         };
 
+        let container = CommandContainer { vtable, cmd };
+
+        // Add enough to the total size to cover the alignment. This ensures that after reserving capacity, if the pointer is suddenly at
+        // a location that needs an even larger offset, it is already covered.
+        let size_upper_bound =
+            std::mem::size_of_val(&container) + std::mem::align_of_val(&container);
+
         // Ensure there is enough capacity left
-        if self.spare_capacity_len() < tuple_size {
-            // Allocate more capacity, also reserves some spare capacity we could maybe use for
-            // another command.
-            self.reserve(tuple_size);
+        let spare_cap = self.commands.spare_capacity_mut().len();
+        println!("spare_cap: {spare_cap:?}, total_size: {size_upper_bound}");
+
+        if spare_cap < size_upper_bound {
+            // Clamp to the current capacity to make sure that the capacity doubles every time.
+            // This is similar to the reallocation strategy normally used by Vec.
+            let size = size_upper_bound.clamp(self.commands.capacity(), usize::MAX);
+            self.commands.reserve(size);
         }
 
-        let data = (meta, command);
+        let spare_cap = self.commands.spare_capacity_mut().len();
+        println!("spare_cap: {spare_cap:?}, total_size: {size_upper_bound}");
 
-        let spare_cap = self.commands.spare_capacity_mut().as_mut_ptr();
+        // vec has enough capacity, we can now create a pointer to the data
+        let start_ptr = self.commands.spare_capacity_mut().as_mut_ptr().cast::<u8>();
+        let align_offset = start_ptr.align_offset(std::mem::align_of_val(&container));
+        let actual_size = std::mem::size_of_val(&container) + align_offset;
+
+        debug_assert!(
+            actual_size < size_upper_bound,
+            "actual size was larger than upper bound"
+        );
+
+        let write_ptr = unsafe { start_ptr.add(align_offset).cast::<CommandContainer<C>>() };
+
+        debug_assert!(
+            write_ptr.is_aligned(),
+            "command container write pointer was not aligned"
+        );
+
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                (&raw const data).cast::<u8>(),
-                spare_cap.cast::<u8>(),
-                tuple_size,
-            );
+            std::ptr::write(write_ptr, container);
         }
 
-        std::mem::forget(data);
         unsafe {
-            self.commands.set_len(self.commands.len() + tuple_size);
+            self.commands.set_len(self.commands.len() + actual_size);
         }
     }
 
@@ -168,8 +232,11 @@ impl LocalCommandBuffer {
                     .cast::<u8>()
             };
 
-            let vtable_ptr = start_ptr.cast::<CommandVTable>();
-            let vtable = unsafe { std::ptr::read(vtable_ptr.as_ptr().cast_const()) };
+            let vtable_ptr = align_ptr::<CommandVTable>(start_ptr).cast::<CommandVTable>();
+            debug_assert!(vtable_ptr.is_aligned(), "command vtable not aligned");
+
+            let vtable = unsafe { vtable_ptr.as_ptr().cast_const().as_ref_unchecked() };
+            println!("vtable is: {vtable:?}");
 
             // Skip over the vtable and cast back to raw pointer.
             // Safety:
@@ -225,6 +292,12 @@ impl LocalCommandBuffer {
             // Skip over vtable and data to reach next command.
             offset += vtable.stride;
         }
+    }
+}
+
+impl Default for LocalCommandBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

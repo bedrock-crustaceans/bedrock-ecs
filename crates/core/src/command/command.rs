@@ -74,8 +74,6 @@ impl CommandPool {
             let _guard = cmd.enforcer.write();
             let cmd = cmd.buffer.get_mut();
 
-            // TODO: Create proper scheduler?
-
             cmd.apply_all(world);
         });
     }
