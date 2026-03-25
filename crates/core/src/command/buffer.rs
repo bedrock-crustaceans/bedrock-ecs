@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::io::Write;
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
@@ -175,11 +176,18 @@ impl LocalCommandBuffer {
             // This is similar to the reallocation strategy normally used by Vec.
             let size = size_upper_bound.clamp(self.commands.capacity(), usize::MAX);
             self.commands.reserve(size);
+
+            println!("reserved {size}");
         }
 
         // vec has enough capacity, we can now create a pointer to the data
         let start_ptr = self.commands.spare_capacity_mut().as_mut_ptr().cast::<u8>();
         let align_offset = start_ptr.align_offset(std::mem::align_of::<CommandVTable>());
+        assert!(align_offset < std::mem::align_of::<CommandVTable>());
+        println!(
+            "vtable offset: {align_offset}, size: {}",
+            std::mem::size_of::<CommandVTable>()
+        );
 
         let vtable_size = align_offset + std::mem::size_of::<CommandVTable>();
         let vtable_ptr = unsafe { start_ptr.add(align_offset).cast::<CommandVTable>() };
@@ -203,11 +211,19 @@ impl LocalCommandBuffer {
 
         // Then add padding for alignment
         let align_offset = cmd_ptr.align_offset(std::mem::align_of::<C>());
+        assert!(align_offset < std::mem::align_of::<C>());
 
         let cmd_size = align_offset + std::mem::size_of::<C>();
         let cmd_ptr = unsafe { cmd_ptr.add(align_offset).cast::<C>() };
 
+        println!(
+            "cmd offset: {align_offset}, cmd size: {}",
+            std::mem::size_of::<C>()
+        );
+
         debug_assert!(cmd_ptr.is_aligned(), "command write pointer is not aligned");
+        debug_assert!(self.commands.len() + cmd_size <= self.commands.capacity());
+
         unsafe {
             std::ptr::write(cmd_ptr, cmd);
             self.commands.set_len(self.commands.len() + cmd_size);
@@ -218,6 +234,7 @@ impl LocalCommandBuffer {
 
         vtable.stride = stride;
         vtable.padding = align_offset + std::mem::size_of::<CommandVTable>();
+        println!("vtable: {vtable:?}");
     }
 
     #[expect(
@@ -227,24 +244,32 @@ impl LocalCommandBuffer {
     pub fn apply_all(&mut self, world: &mut World) {
         tracing::trace!("applying all commands");
 
-        let mut curr_ptr =
-            unsafe { NonNull::new_unchecked(self.commands.as_mut_ptr().cast::<u8>()) };
+        let len = self.commands.len();
+        unsafe { self.commands.set_len(0) };
 
-        loop {
+        let mut offset = 0;
+        while offset < len {
+            let mut curr_ptr = unsafe {
+                NonNull::new_unchecked(self.commands.as_mut_ptr().add(offset)).cast::<u8>()
+            };
             let align_offset = curr_ptr.align_offset(std::mem::align_of::<CommandVTable>());
+            println!("vtable align: {align_offset}");
+            assert!(align_offset < std::mem::align_of::<CommandVTable>());
 
-            let vtable_ptr = unsafe { curr_ptr.add(align_offset) };
-            let vtable = unsafe { &*vtable_ptr.cast::<CommandVTable>().as_ptr() };
+            curr_ptr = unsafe { curr_ptr.add(align_offset) };
+            let vtable = unsafe { &*curr_ptr.cast::<CommandVTable>().as_ptr() };
+
+            println!("vtable: {vtable:?}");
 
             let apply_fn = vtable.apply_fn;
-
             let cmd_ptr = unsafe { curr_ptr.add(vtable.padding) };
 
             unsafe {
                 apply_fn(cmd_ptr, world);
             }
 
-            curr_ptr = unsafe { curr_ptr.add(vtable.stride) };
+            offset += vtable.stride;
+            println!("offset is now {offset}");
         }
     }
 
@@ -253,7 +278,7 @@ impl LocalCommandBuffer {
 
         assert!(
             buffer_len < isize::MAX as usize,
-            "Command buffer length exceeds `isize::MAX`"
+            "command buffer length exceeds `isize::MAX`"
         );
 
         // Set length to 0 immediately to ensure that no uninit memory is read in case of a panic.

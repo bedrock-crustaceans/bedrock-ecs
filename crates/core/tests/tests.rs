@@ -69,7 +69,7 @@ struct Killed {
 
 fn test_system(
     query: Query<
-        (Entity, &Name, Has<Example2>),
+        (Entity, &Name, Has<Example3>),
         Or<(
             Not<(With<Example1>, With<Example2>)>,
             Xor<(With<Example1>, With<Example2>)>,
