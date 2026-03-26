@@ -92,14 +92,18 @@ impl Entities {
 
         tracing::trace!("despawning id {id}, gen {generation}");
 
-        if self.generations[id as usize] != generation || self.sparse[id as usize].is_none() {
+        if self.generations[id as usize] != generation {
             // This is an old entity, ignore it
-            tracing::trace!("entity is dead, ignoring");
+            tracing::error!(
+                "entity {id} is already dead, generation outdated ({} vs. {})",
+                self.generations[id as usize],
+                generation
+            );
             return None;
         }
 
         let Some(dense_idx) = self.sparse[id as usize].take() else {
-            tracing::error!("cannot despawn dead entity: {entity:?}");
+            tracing::error!("entity is dead, index {id} points to tombstone");
             return None;
         };
 
@@ -109,10 +113,15 @@ impl Entities {
         if dense_idx.get() as usize != self.dense.len() {
             // If it's the last element, `swap_remove` just decreases the len.
             // Because nothing moves we don't have to do anything.
-
             let swapped_idx = self.dense[dense_idx.get() as usize].handle.index().0;
             self.sparse[swapped_idx as usize] = Some(dense_idx);
         }
+
+        tracing::trace!(
+            "entities alive now: {}. {} in freelist",
+            self.dense.len(),
+            self.freelist.len()
+        );
 
         Some(meta)
     }
@@ -122,7 +131,7 @@ impl Entities {
     /// This method assumes the entity is up to date and does not check generations.
     pub(crate) fn set_row_meta(&mut self, entity: EntityIndex, row: TableRow) -> Option<TableRow> {
         let Some(dense_idx) = *self.sparse.get(entity.0 as usize)? else {
-            tracing::error!("cannot update table row of dead entity");
+            tracing::error!("cannot update table row of dead entity {}", entity.0);
             return None;
         };
 

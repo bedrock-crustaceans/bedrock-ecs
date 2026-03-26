@@ -78,15 +78,16 @@ fn test_system(
     mut commands: Commands,
 ) {
     for ent in &query {
-        commands.entity(ent).insert(Example2 {
-            hello: "world".to_owned(),
-        });
+        // commands.entity(ent).insert(Example2 {
+        //     hello: "world".to_owned(),
+        // });
+        commands.entity(ent).despawn();
         println!("adding example2 component");
     }
 
     for (ent, ex) in &query2 {
         commands.entity(ent).despawn();
-        println!("queued despawn");
+        println!("queued despawn of {ent:?}");
     }
 }
 
@@ -102,13 +103,16 @@ struct Label3;
 #[test]
 fn stress_test() {
     tracing_subscriber::fmt()
-        .with_thread_names(true)
         .with_max_level(Level::TRACE)
+        .with_target(false)
+        .with_file(true)
+        .with_line_number(true)
         .compact()
         .init();
 
     let mut world = World::new();
 
+    world.spawn(Example1);
     world.spawn(Example1);
 
     let schedule = world
@@ -125,4 +129,5 @@ fn stress_test() {
     world.apply_commands();
     println!("third run");
     world.run(&schedule);
+    world.apply_commands();
 }

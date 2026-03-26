@@ -464,7 +464,7 @@ impl Column {
     ///
     /// This function panics if the index is out of bounds.
     pub fn swap_remove(&mut self, idx: usize, should_drop: bool) {
-        tracing::trace!("Swap removing row {idx}");
+        tracing::trace!("swap removing row {idx}");
 
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
@@ -502,7 +502,7 @@ impl Column {
         }
 
         if idx != self.len - 1 {
-            let src_offset = self.layout.pad_to_align().size() * (self.len() - 1);
+            let src_offset = self.layout.pad_to_align().size() * (self.len - 1);
             assert!(
                 isize::try_from(src_offset).is_ok(),
                 "pointer offset overflow in Column::swap_remove src pointer"

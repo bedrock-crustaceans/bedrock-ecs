@@ -81,9 +81,24 @@ impl Table {
         if let Some(row) = self.entity_lookup.remove(&meta.handle) {
             // Update metadata of the entity that will be moved into the current index.
             let last_index = self.entities.len() - 1;
+            tracing::trace!("update meta of entity {last_index}");
+
+            todo!(
+                "This call fails because we despawn the entity before removing the components in this function"
+            );
             entities.set_row_meta(meta.handle.index(), TableRow(last_index));
 
             // Remove entity data
+
+            todo!(
+                "This call fails when we have two entities with out of bounds access (index is 1, len is 1)"
+            );
+            // I think this is because we delete entity 0 and then somehow entity 1's row is not updated to be 0.
+            // This happens because once again, we despawn the entity before removing these components in
+            // world.rs:67.
+
+            tracing::trace!("entity is in row {}", row.0);
+
             self.entities.swap_remove(row.0);
             self.columns
                 .iter_mut()

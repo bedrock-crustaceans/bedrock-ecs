@@ -69,6 +69,8 @@ impl World {
             return;
         };
 
+        tracing::trace!("despawned entity, now removing components");
+
         // Remove from table
         self.archetypes.despawn(&mut self.entities, meta);
     }
