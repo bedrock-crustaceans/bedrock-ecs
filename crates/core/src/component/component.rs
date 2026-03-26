@@ -147,7 +147,7 @@ macro_rules! impl_component_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
-                    tracing::instrument(name = "ComponentBundle::new_joined_table")
+                    tracing::instrument(name = "ComponentBundle::new_joined_table", skip_all)
                 )]
                 unsafe fn new_joined_table(base: &Table, mut signature: Signature) -> Table {
                     // Check whether the original table and this bundle are disjoint.

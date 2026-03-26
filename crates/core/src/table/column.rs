@@ -1,7 +1,5 @@
 use std::alloc::Layout;
 use std::any::TypeId;
-#[cfg(debug_assertions)]
-use std::borrow::Borrow;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
@@ -47,7 +45,7 @@ pub struct Column {
     tracker: UnsafeCell<ChangeTracker>,
     /// Which components in this
     /// The type ID of the item contained in this Column.
-    ty: TypeId,
+    pub(crate) ty: TypeId,
     /// The layout of the component type.
     layout: Layout,
     /// The amount of items contained in this Column.
@@ -66,6 +64,42 @@ pub struct Column {
 }
 
 impl Column {
+    /// Copies the specific component from `self` to `other` without dropping the old component.
+    pub fn copy_component(&mut self, other: &mut Column, row: usize, current_tick: u32) {
+        debug_assert_eq!(self.ty, other.ty);
+        debug_assert_eq!(self.layout, other.layout);
+
+        unsafe { other.push_from_ptr(self.get_erased_ptr(row).unwrap(), current_tick) };
+    }
+
+    pub unsafe fn push_from_ptr(&mut self, ptr: NonNull<u8>, current_tick: u32) {
+        if self.layout.size() == 0 {
+            self.len += 1;
+            return;
+        }
+
+        if self.cap <= self.len {
+            let new_slots = self.cap.clamp(4, usize::MAX);
+            self.reserve(new_slots);
+        }
+
+        let offset = self.layout.pad_to_align().size() * self.len;
+        assert!(
+            isize::try_from(offset).is_ok(),
+            "pointer offset overflow in Column::push"
+        );
+
+        let column_ptr = unsafe { self.data.unwrap().add(offset) };
+
+        let size = self.layout.size();
+        unsafe {
+            std::ptr::copy_nonoverlapping(ptr.as_ptr(), column_ptr.as_ptr(), size);
+        }
+
+        self.len += 1;
+        self.tracker.get_mut().resize(self.len, current_tick);
+    }
+
     /// Create an empty copy of self.
     pub fn clone_empty(&self) -> Self {
         #[cfg(debug_assertions)]
@@ -313,6 +347,11 @@ impl Column {
             "Column::push called with mismatched types"
         );
 
+        if self.layout.size() == 0 {
+            self.len += 1;
+            return;
+        }
+
         if self.cap <= self.len {
             // Reserve at least 4 slots to reduce allocations at the start.
             let new_slots = self.cap.clamp(4, usize::MAX);
@@ -345,6 +384,30 @@ impl Column {
         self.tracker.get_mut().resize(self.len, current_tick);
     }
 
+    pub fn get_erased_ptr(&mut self, index: usize) -> Option<NonNull<u8>> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        if index >= self.len {
+            return None;
+        }
+
+        let offset = self.layout.size() * index;
+        assert!(
+            isize::try_from(offset).is_ok(),
+            "pointer offset overflow in Column::get"
+        );
+
+        // Safety:
+        //
+        // This call to `NonNull::add` is safe because the offset does not overflow `isize` by the assertion
+        // above. Additionally, the pointer `self.data` is a valid allocation. Lastly, due to the check
+        // above we know that `index < self.len` and the offset result is within this allocation.
+        //
+        // By the assertion we also know that the pointer is pointing to some type `T`.
+        Some(unsafe { self.data.unwrap().add(offset) })
+    }
+
     /// Obtains a pointer to the given entry in the Column.
     ///
     /// This function returns `None` if the index did not exist.
@@ -373,6 +436,10 @@ impl Column {
             return None;
         }
 
+        if self.layout.size() == 0 {
+            return Some(NonNull::dangling());
+        }
+
         let offset = self.layout.size() * index;
         assert!(
             isize::try_from(offset).is_ok(),
@@ -391,10 +458,14 @@ impl Column {
 
     /// Removes the item at index and moves the last item in the Column to the, now empty, slot.
     ///
+    /// The component is dropped if it needs to be.
+    ///
     /// # Panics
     ///
     /// This function panics if the index is out of bounds.
-    pub fn swap_remove(&mut self, idx: usize) {
+    pub fn swap_remove(&mut self, idx: usize, should_drop: bool) {
+        tracing::trace!("Swap removing row {idx}");
+
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
@@ -417,7 +488,7 @@ impl Column {
         let dst_ptr = unsafe { data_ptr.add(dst_offset) };
 
         // Drop the item if necessary
-        self.drop_fn.inspect(|f| {
+        if should_drop && let Some(drop_fn) = self.drop_fn {
             // Safety:
             //
             // This call is safe because `dst_ptr` is guaranteed to point to a valid memory block of type `T`,
@@ -426,9 +497,9 @@ impl Column {
             //
             // Lastly this is a valid function pointer since it is only set in `Column::new`.
             unsafe {
-                f(dst_ptr, 1);
+                drop_fn(dst_ptr, 1);
             }
-        });
+        }
 
         if idx != self.len - 1 {
             let src_offset = self.layout.pad_to_align().size() * (self.len() - 1);

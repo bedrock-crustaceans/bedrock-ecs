@@ -145,7 +145,7 @@ impl Archetypes {
         clippy::missing_panics_doc,
         reason = "this function does not panic since an item is inserted before unwrapping"
     )]
-    pub fn spawn<B: ComponentBundle>(
+    pub(crate) fn spawn<B: ComponentBundle>(
         &mut self,
         handle: Entity,
         bundle: B,
@@ -184,7 +184,7 @@ impl Archetypes {
         }
     }
 
-    pub fn insert<B: ComponentBundle>(
+    pub(crate) fn insert<B: ComponentBundle>(
         &mut self,
         current_tick: u32,
         entities: &mut Entities,
@@ -211,6 +211,10 @@ impl Archetypes {
             table
         } else {
             let table = unsafe { B::new_joined_table(old_table, signature) };
+
+            // Update generation to refresh query caches
+            self.generation += 1;
+
             self.tables.push(Box::new(table));
             self.lookup_array.push(combined_signature.clone());
             self.lookup
@@ -219,16 +223,23 @@ impl Archetypes {
             self.tables.last_mut().unwrap()
         };
 
+        debug_assert_eq!(new_table.columns.len(), old_table.columns.len() + B::LEN);
+
         new_table.entities.push(entity.handle);
         new_table
             .entity_lookup
             .insert(entity.handle, TableRow(new_table.entities.len() - 1));
 
         // Copy over all old data
-        for column in &old_table.columns {}
+        for column in &mut old_table.columns {
+            let new_column_idx = *new_table.lookup.get(&column.ty).unwrap();
+            let new_column = &mut new_table.columns[new_column_idx];
+
+            column.copy_component(new_column, entity.row.0, current_tick);
+        }
 
         // Remove data from old table
-        old_table.remove(entities, entity);
+        old_table.remove(entities, entity, false);
 
         // Update metadata reference to current table.
         entities.set_meta(
@@ -266,7 +277,7 @@ impl Archetypes {
         // Safety: This is safe because the caller should have given a valid pointer and since
         // this function receives a mutable self, we have unique access to this table.
         let table = unsafe { meta.table.unwrap().as_ptr().as_mut_unchecked() };
-        table.remove(entities, meta);
+        table.remove(entities, meta, true);
     }
 
     /// Returns the amount of archetypes currently contained in this container.

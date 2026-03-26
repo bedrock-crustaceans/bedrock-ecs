@@ -42,6 +42,16 @@ impl EntityMut<'_> {
         );
     }
 
+    pub fn remove<T: ComponentBundle>(&mut self) -> Option<T> {
+        let meta = self
+            .world
+            .entities
+            .get_meta(self.handle)
+            .expect("`EntityMut` entity died");
+
+        todo!("remove components from entity");
+    }
+
     #[inline]
     pub fn despawn(self) {
         self.world.despawn(self.handle);

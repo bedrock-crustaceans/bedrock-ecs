@@ -1,3 +1,5 @@
+use nonmax::NonMaxU32;
+
 use crate::{
     entity::{Entity, EntityGeneration, EntityIndex, EntityMeta},
     table::TableRow,
@@ -9,7 +11,7 @@ pub struct Entities {
     freelist: Vec<u32>,
     generations: Vec<u32>,
     dense: Vec<EntityMeta>,
-    sparse: Vec<u32>,
+    sparse: Vec<Option<NonMaxU32>>,
 }
 
 impl Entities {
@@ -51,21 +53,31 @@ impl Entities {
             return None;
         }
 
-        // Safety: `generations` and `sparse` have the same length.
-        let dense_idx = *self.sparse.get(index as usize)?;
-        self.dense.get(dense_idx as usize).copied()
+        let Some(dense_idx) = self.sparse.get(index as usize)? else {
+            tracing::error!("`Entities::get_meta` failed on dead entity: {entity:?}");
+            return None;
+        };
+
+        self.dense.get(dense_idx.get() as usize).copied()
     }
 
     /// Inserts the given entity metadata into the registry.
     pub(crate) fn spawn(&mut self, meta: EntityMeta) {
+        tracing::trace!(
+            "spawning entity with ID {}, gen {}",
+            meta.handle.index().0,
+            meta.handle.generation().0
+        );
+
         let index = meta.handle.index().0 as usize;
 
         self.dense.push(meta);
 
         if index >= self.sparse.len() {
-            self.sparse.resize(index + 1, EntityIndex::TOMBSTONE.0);
+            self.sparse.resize(index + 1, None);
         }
-        self.sparse[index] = self.dense.len() as u32 - 1;
+
+        self.sparse[index] = NonMaxU32::new(self.dense.len() as u32 - 1);
     }
 
     #[inline]
@@ -78,26 +90,29 @@ impl Entities {
         let id = entity.index().0;
         let generation = entity.generation().0;
 
-        if self.generations[id as usize] != generation {
+        tracing::trace!("despawning id {id}, gen {generation}");
+
+        if self.generations[id as usize] != generation || self.sparse[id as usize].is_none() {
             // This is an old entity, ignore it
-            tracing::trace!("attempt to despawn dead entity");
+            tracing::trace!("entity is dead, ignoring");
             return None;
         }
 
-        let dense_idx = std::mem::replace(&mut self.sparse[id as usize], EntityIndex::TOMBSTONE.0);
-        println!("dense_idx = {dense_idx}");
+        let Some(dense_idx) = self.sparse[id as usize].take() else {
+            tracing::error!("cannot despawn dead entity: {entity:?}");
+            return None;
+        };
+
         self.freelist.push(id);
 
-        let meta = self.dense.swap_remove(dense_idx as usize);
-        if dense_idx as usize != self.dense.len() {
+        let meta = self.dense.swap_remove(dense_idx.get() as usize);
+        if dense_idx.get() as usize != self.dense.len() {
             // If it's the last element, `swap_remove` just decreases the len.
             // Because nothing moves we don't have to do anything.
 
-            let swapped_idx = self.dense[dense_idx as usize].handle.index().0;
-            self.sparse[swapped_idx as usize] = dense_idx;
+            let swapped_idx = self.dense[dense_idx.get() as usize].handle.index().0;
+            self.sparse[swapped_idx as usize] = Some(dense_idx);
         }
-
-        println!("sparse: {:?}", self.sparse);
 
         Some(meta)
     }
@@ -106,27 +121,44 @@ impl Entities {
     ///
     /// This method assumes the entity is up to date and does not check generations.
     pub(crate) fn set_row_meta(&mut self, entity: EntityIndex, row: TableRow) -> Option<TableRow> {
-        let dense_idx = *self.sparse.get(entity.0 as usize)?;
-        if dense_idx == EntityIndex::TOMBSTONE.0 {
-            tracing::warn!("Attempted to despawn entity that was already dead");
-            // Entity is already dead
+        let Some(dense_idx) = *self.sparse.get(entity.0 as usize)? else {
+            tracing::error!("cannot update table row of dead entity");
             return None;
-        }
+        };
 
-        Some(std::mem::replace(
-            &mut self.dense[dense_idx as usize].row,
+        let old = Some(std::mem::replace(
+            &mut self.dense[dense_idx.get() as usize].row,
             row,
-        ))
+        ));
+
+        tracing::trace!(
+            "update entity {} row from {} to {}",
+            entity.0,
+            old.unwrap().0,
+            row.0
+        );
+
+        old
     }
 
-    pub fn set_meta(&mut self, entity: EntityIndex, meta: EntityMeta) -> Option<EntityMeta> {
-        let dense_idx = *self.sparse.get(entity.0 as usize)?;
-        if dense_idx == EntityIndex::TOMBSTONE.0 {
-            // Entity was dead
+    pub(crate) fn set_meta(&mut self, entity: EntityIndex, meta: EntityMeta) -> Option<EntityMeta> {
+        let Some(dense_idx) = *self.sparse.get(entity.0 as usize)? else {
+            tracing::error!("cannot set meta of dead entity");
             return None;
-        }
+        };
 
-        Some(std::mem::replace(&mut self.dense[dense_idx as usize], meta))
+        let old = Some(std::mem::replace(
+            &mut self.dense[dense_idx.get() as usize],
+            meta,
+        ));
+
+        tracing::trace!(
+            "update fall entity {} from {:?} to {meta:?}",
+            entity.0,
+            old.unwrap()
+        );
+
+        old
     }
 
     #[inline]
@@ -139,7 +171,6 @@ impl Entities {
         let generation = entity.generation().0;
 
         // Check whether index is in the sparse list and verify generation
-        self.sparse[id as usize] != EntityIndex::TOMBSTONE.0
-            && self.generations[id as usize] == generation
+        self.sparse[id as usize].is_some() && self.generations[id as usize] == generation
     }
 }

@@ -67,13 +67,17 @@ impl Table {
             .insert(entity, TableRow(self.entities.len() - 1));
 
         components.insert_into(self, current_tick);
+        tracing::trace!("inserted bundle into row {row}");
 
         TableRow(row)
     }
 
     /// Removes the entity's data from this table and updates the entities metadata table to reflect this
     /// change.
-    pub(crate) fn remove(&mut self, entities: &mut Entities, meta: EntityMeta) {
+    pub(crate) fn remove(&mut self, entities: &mut Entities, meta: EntityMeta, should_drop: bool) {
+        tracing::trace!("dropping entity from table");
+        tracing::debug!("table length is {}", self.columns[0].len());
+
         if let Some(row) = self.entity_lookup.remove(&meta.handle) {
             // Update metadata of the entity that will be moved into the current index.
             let last_index = self.entities.len() - 1;
@@ -81,8 +85,12 @@ impl Table {
 
             // Remove entity data
             self.entities.swap_remove(row.0);
-            self.columns.iter_mut().for_each(|c| c.swap_remove(row.0));
+            self.columns
+                .iter_mut()
+                .for_each(|c| c.swap_remove(row.0, should_drop));
         }
+
+        tracing::debug!("table length is now {}", self.columns[0].len());
     }
 
     /// Returns a list of all columns in this table.

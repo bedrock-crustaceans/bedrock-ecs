@@ -116,7 +116,12 @@ pub struct SpawnCommand<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Command for SpawnCommand<T> {
     #[inline]
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "SpawnCommand::apply", fields(self), skip_all)
+    )]
     fn apply(self: Box<Self>, world: &mut World) {
+        tracing::trace!("applying spawn command, target: {:?}", self.handle);
         world.spawn(self.components);
     }
 }
@@ -128,18 +133,16 @@ pub struct DespawnCommand {
 
 impl Command for DespawnCommand {
     #[inline]
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "DespawnCommand::apply", fields(self), skip_all)
+    )]
     fn apply(self: Box<Self>, world: &mut World) {
-        println!("Despawning {:?}", self.handle);
+        tracing::trace!("applying despawn command, target: {:?}", self.handle);
 
         match self.handle {
             EntityCommandsHandle::Spawned(handle) => world.despawn(handle),
             _ => todo!(),
         }
-    }
-}
-
-impl Drop for DespawnCommand {
-    fn drop(&mut self) {
-        println!("dropping despawn");
     }
 }

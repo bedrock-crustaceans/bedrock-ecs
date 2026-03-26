@@ -18,10 +18,15 @@ struct Health(f32);
 struct Example1;
 
 #[derive(Component)]
-struct Example2;
+struct Example2 {
+    hello: String,
+}
 
 #[derive(Component)]
 struct Example3;
+
+#[derive(Component)]
+struct AddedComp;
 
 #[derive(Message, Debug, Clone)]
 struct Killed {
@@ -68,29 +73,20 @@ struct Killed {
 // }
 
 fn test_system(
-    query: Query<
-        (Entity, &Name, Has<Example2>),
-        Or<(
-            Not<(With<Example1>, With<Example2>)>,
-            Xor<(With<Example1>, With<Example2>)>,
-        )>,
-    >,
+    query: Query<Entity, Without<Example2>>,
+    query2: Query<(Entity, &Example2)>,
     mut commands: Commands,
 ) {
-    let handle = Entity::from_index_and_generation(
-        EntityIndex::from_bits(1),
-        EntityGeneration::from_bits(0),
-    );
+    for ent in &query {
+        commands.entity(ent).insert(Example2 {
+            hello: "world".to_owned(),
+        });
+        println!("adding example2 component");
+    }
 
-    println!("{:?}", query.get(handle));
-
-    for (entity, name, has) in &query {
-        if has {
-            println!("test: despawn {entity:?}");
-            commands.entity(entity).despawn();
-        }
-
-        tracing::error!("found {}, has: {has}, handle: {:?}", name.0, entity);
+    for (ent, ex) in &query2 {
+        commands.entity(ent).despawn();
+        println!("queued despawn");
     }
 }
 
@@ -113,10 +109,7 @@ fn stress_test() {
 
     let mut world = World::new();
 
-    world.spawn(Name("none"));
-    world.spawn((Name("example3"), Example3));
-    world.spawn((Name("example1+2"), Example1, Example2));
-    world.spawn((Name("example2"), Example2));
+    world.spawn(Example1);
 
     let schedule = world
         .build_schedule()
@@ -124,6 +117,12 @@ fn stress_test() {
         .add(Label1, test_system)
         .schedule();
 
+    println!("first run");
     world.run(&schedule);
     world.apply_commands();
+    println!("second run");
+    world.run(&schedule);
+    world.apply_commands();
+    println!("third run");
+    world.run(&schedule);
 }
