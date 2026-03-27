@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, Filter};
-use crate::table::{ChangeTracker, ChangeTrackerIter, Mut, Ref, Table, TableRow};
+use crate::table::{ChangeTrackerIter, Mut, Ref};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
@@ -156,6 +156,8 @@ impl<'a, T, F: Filter> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T
 
 pub struct EntityIter<'w> {
     pub(crate) iter: std::slice::Iter<'w, Entity>,
+
+    pub(crate) _guard: Option<ReadGuard>,
 }
 
 impl Iterator for EntityIter<'_> {
@@ -183,13 +185,21 @@ impl FusedIterator for EntityIter<'_> {}
 
 impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
     fn empty(_world: &'w World) -> EntityIter<'w> {
-        EntityIter { iter: [].iter() }
+        EntityIter {
+            iter: [].iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: None,
+        }
     }
 }
 
 pub struct EntityRefIter<'w> {
     pub(crate) world: &'w World,
     pub(crate) iter: std::slice::Iter<'w, Entity>,
+
+    #[cfg(debug_assertions)]
+    pub(crate) _guard: Option<ReadGuard>,
 }
 
 impl<'w> Iterator for EntityRefIter<'w> {
@@ -224,6 +234,9 @@ impl<'w> EmptyableIterator<'w, EntityRef<'w>> for EntityRefIter<'w> {
         EntityRefIter {
             world,
             iter: [].iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: None,
         }
     }
 }

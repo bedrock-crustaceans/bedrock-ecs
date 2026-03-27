@@ -7,6 +7,9 @@ use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMeta};
 use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
+#[cfg(debug_assertions)]
+use crate::util::debug::BorrowEnforcer;
+use crate::util::debug::{ReadGuard, WriteGuard};
 use crate::world::World;
 
 /// A table is the main storage container for entity components. It is made for a specific archetype only
@@ -20,6 +23,9 @@ use crate::world::World;
 /// Tables are always to read from during a tick since entities will only be summoned in between ticks.
 #[derive(Debug)]
 pub struct Table {
+    #[cfg(debug_assertions)]
+    pub(crate) enforcer: BorrowEnforcer,
+
     /// The signature of this table. This is by queries to quickly scan for their components
     /// through the entire component database.
     pub(crate) signature: Signature,
@@ -51,7 +57,22 @@ impl Table {
 
     /// Returns the archetype of this table.
     pub fn archetype(&self) -> &Signature {
+        // While the signature will never be written to, this function still takes a reference
+        // to the entire table, hence we must uphold aliasing for the entire table.
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         &self.signature
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn lock_read(&self) -> ReadGuard {
+        self.enforcer.read()
+    }
+
+    #[cfg(debug_assertions)]
+    pub(crate) fn lock_write(&self) -> WriteGuard {
+        self.enforcer.write()
     }
 
     /// Inserts a set of components into this table and returns the row it was inserted at
@@ -61,6 +82,9 @@ impl Table {
         components: impl ComponentBundle,
         current_tick: u32,
     ) -> TableRow {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         let row = self.entities.len();
         self.entities.push(entity);
         self.entity_lookup
@@ -75,6 +99,9 @@ impl Table {
     /// Removes the entity's data from this table and updates the entities metadata table to reflect this
     /// change.
     pub(crate) fn remove(&mut self, entities: &mut Entities, meta: EntityMeta, should_drop: bool) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write();
+
         tracing::trace!("dropping entity from table");
         tracing::debug!("table length is {}", self.columns[0].len());
 
@@ -120,26 +147,44 @@ impl Table {
 
     #[inline]
     pub fn get_entity(&self, index: usize) -> Option<Entity> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         self.entities.get(index).copied()
     }
 
     /// Creates an iterator over all the entities in this table.
     pub fn iter_entity_refs<'w>(&'w self, world: &'w World) -> EntityRefIter<'w> {
+        #[cfg(debug_assertions)]
+        let guard = self.enforcer.read();
+
         EntityRefIter {
             world,
             iter: self.entities.iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: Some(guard),
         }
     }
 
     pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
+        #[cfg(debug_assertions)]
+        let guard = self.enforcer.read();
+
         EntityIter {
             iter: self.entities.iter(),
+
+            #[cfg(debug_assertions)]
+            _guard: Some(guard),
         }
     }
 
     /// Returns the amount of entities stored in this table.
     #[inline]
     pub fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
         self.entities.len()
     }
 

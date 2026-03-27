@@ -1,5 +1,32 @@
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
+
+#[proc_macro_derive(Reflect)]
+pub fn derive_reflect(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    let syn::DeriveInput { vis, ident, .. } = input;
+    let reflect_ident = syn::Ident::new(&format!("{ident}Reflect"), Span::call_site());
+
+    let expanded = quote! {
+        #vis struct #reflect_ident {
+
+        }
+
+        impl ::reflect::Reflect for #ident {
+            fn name(&self) -> &'static str {
+                stringify!(#ident)
+            }
+
+            fn methods(&self, reg: &::reflect::ReflectRegistry) -> &dyn ::reflect::FunctionTable {
+                let ty_reflect = reg.
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
 
 #[proc_macro_derive(Component)]
 pub fn derive_component(input: TokenStream) -> TokenStream {

@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 
+#[cfg(debug_assertions)]
+use crate::util::debug::BorrowEnforcer;
+
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::archetype::Signature;
@@ -141,7 +144,10 @@ macro_rules! impl_component_bundle {
                             $(
                                 Column::new::<$gen>()
                             ),*
-                        ]
+                        ],
+
+                        #[cfg(debug_assertions)]
+                        enforcer: BorrowEnforcer::new()
                     }
                 }
 
@@ -185,7 +191,10 @@ macro_rules! impl_component_bundle {
                         entities: Vec::new(),
                         entity_lookup: FxHashMap::default(),
                         lookup,
-                        columns
+                        columns,
+
+                        #[cfg(debug_assertions)]
+                        enforcer: BorrowEnforcer::new()
                     }
                 }
 

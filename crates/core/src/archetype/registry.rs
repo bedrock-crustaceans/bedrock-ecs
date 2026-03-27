@@ -193,6 +193,9 @@ impl Archetypes {
         entity: EntityMeta,
         components: B,
     ) -> bool {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.write(); // This function potentially creates a new table.
+
         // Check whether entity is alive.
         if !entities.is_alive(entity.handle) {
             return false;
@@ -268,14 +271,19 @@ impl Archetypes {
         true
     }
 
+    pub(crate) fn remove<B: ComponentBundle>(&mut self, entity: Entity) -> Option<B> {
+        todo!()
+    }
+
     /// Removes the components of the specified entity.
     ///
     /// # Safety
     ///
-    /// Not sure whether this function should be marked unsafe but I'll do it just to be sure.
-    ///
     /// This function requires that the `table` field of `meta` points to a valid table inside this archetypes container.
-    pub(crate) fn despawn(&mut self, entities: &mut Entities, meta: EntityMeta) {
+    pub(crate) unsafe fn despawn(&mut self, entities: &mut Entities, meta: EntityMeta) {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read(); // Archetypes remain unchanged, tables only change internally.
+
         // Safety: This is safe because the caller should have given a valid pointer and since
         // this function receives a mutable self, we have unique access to this table.
         let table = unsafe { meta.table.unwrap().as_ptr().as_mut_unchecked() };

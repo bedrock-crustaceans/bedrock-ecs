@@ -69,7 +69,7 @@ impl World {
         };
 
         // Remove from table
-        self.archetypes.despawn(&mut self.entities, meta);
+        unsafe { self.archetypes.despawn(&mut self.entities, meta) };
 
         // Remove from alive list.
         self.entities.despawn_meta(entity);
