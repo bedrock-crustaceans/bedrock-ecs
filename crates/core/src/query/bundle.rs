@@ -41,7 +41,8 @@ pub unsafe trait QueryBundle: Sized {
     /// The amount of resources that this query accesses.
     type AccessCount: ArrayLength + Add + Debug;
 
-    /// The item that the query outputs. This is what is actually given to the system when ran.
+    /// The tuple that is produced by this bundle. This is the type that iterators using
+    /// this query will return.
     type Output<'a>
     where
         Self: 'a;
@@ -49,6 +50,8 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
+    ///
+    /// The `F` generic is the filter that should be applied to the iterators.
     type Iter<'a, F: Filter>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
@@ -60,12 +63,19 @@ pub unsafe trait QueryBundle: Sized {
     where
         Self: 'a;
 
-    /// The amount of items in this bundle.
+    /// The size of the tuple.
     const LEN: usize;
 
     /// Returns the signature of this query. This signature does not include possible filters.
     fn signature(reg: &mut ComponentRegistry) -> Signature;
 
+    /// Attempts to fetch a single entity from the query.
+    ///
+    /// `F` is the filter that should be applied to this operation. If the entity
+    /// did not contain the components in this query bundle or the filter did not match,
+    /// `None` will be returned.
+    ///
+    /// This uses a lookup table internally and can be significantly faster than iterating over the query to find the entity.
     fn get<'t, F: Filter>(
         world: &'t World,
         state: &'t QueryState<Self, F>,
@@ -83,12 +93,14 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// Finds all required columns from a lookup table.
     ///
-    /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
-    /// It however is not aware of the columns. This function then figures out which columns are useful
-    /// and in which order they should be queried.
-    fn cache_columns(
-        lookup: &FxHashMap<TypeId, usize>,
-    ) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount>;
+    /// The query is able to figure out which tables it should iterate over by itself.
+    /// After finding a matching table, this function is then called to map the components in the query bundle directly to their
+    /// corresponding columns in the table.
+    ///
+    /// Internally this function calls [`map_column`] on each item in the bundle.
+    ///
+    /// [`map_column`]: QueryData::map_column
+    fn map_columns(table: &Table) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount>;
 
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
@@ -159,14 +171,19 @@ pub unsafe trait QueryData {
     /// This function panics when `Self` is an entity since entities do not have a component ID.
     fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
 
-    /// Returns column index that `Self` is contained in.
+    /// Finds the index of the column that contains this type, in the given table.
     ///
     /// # Panics
     ///
     /// This function panics when `Self` is an entity since entities are not stored in columns.
     /// It also panics if the column is not found.
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize;
+    fn map_column(table: &Table) -> NonMaxUsize;
 
+    /// Attempts to fetch the component of type `Self` that is contained in the given table, column and row.
+    ///
+    /// This is used by [`Query::get`] to fetch a single entity.
+    ///
+    /// [`Query::get`]: crate::query::Query::get
     fn get<'w, Q: QueryBundle, F: Filter>(
         world: &'w World,
         state: &'w QueryState<Q, F>,
@@ -187,14 +204,20 @@ pub unsafe trait QueryData {
     ) -> Self::Iter<'w, F>;
 }
 
+/// The type of the query data. This is used inside of queries to figure out what the query should
+/// fetch.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum QueryType {
     Component,
     Entity,
-    EntityRef,
     Has,
 }
 
+/// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
+/// inside of other components to be used later.
+///
+/// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
+/// only entities with the specified components will be returned.
 unsafe impl QueryData for Entity {
     type Unref = Entity;
     type Output<'w> = Entity;
@@ -214,7 +237,7 @@ unsafe impl QueryData for Entity {
         unimplemented!("cannot call `component_id` on `Entity`")
     }
 
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+    fn map_column(_table: &Table) -> NonMaxUsize {
         unimplemented!("cannot call `cache_column` on `Entity`")
     }
 
@@ -250,58 +273,16 @@ unsafe impl QueryData for Entity {
     }
 }
 
-unsafe impl QueryData for EntityRef<'_> {
-    type Unref = EntityRef<'static>;
-    type Output<'w> = EntityRef<'w>;
-    type Iter<'t, F: Filter> = EntityRefIter<'t>;
-
-    const TY: QueryType = QueryType::EntityRef;
-
-    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
-        AccessDesc {
-            ty: AccessType::World,
-            exclusive: false,
-        }
-    }
-
-    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-        unreachable!("attempt to lookup component ID of entity");
-    }
-
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
-        unreachable!("attempt to lookup column index of entity");
-    }
-
-    fn get<'w, Q: QueryBundle, F: Filter>(
-        world: &'w World,
-        _state: &'w QueryState<Q, F>,
-        table: &'w Table,
-        row: TableRow,
-        col: Option<NonMaxUsize>,
-    ) -> Option<Self::Output<'w>> {
-        debug_assert!(col.is_none(), "column index passed to entity ref iterator");
-
-        let entity = table.get_entity(row.0)?;
-        Some(EntityRef {
-            world,
-            handle: entity,
-        })
-    }
-
-    fn iter<'w, F: Filter>(
-        world: &'w World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        _last_tick: u32,
-        _current_tick: u32,
-    ) -> Self::Iter<'w, F> {
-        debug_assert!(col.is_none(), "column index passed to entity ref iterator");
-
-        let table = world.archetypes.get_by_index(table);
-        table.iter_entity_refs(world)
-    }
-}
-
+/// Requests immutable access to a component of type `T`.
+///
+/// Rather than returning `&T` directly, queries will give the `Ref<T>` type which automatically
+/// dereferences to `T`.
+///
+/// # Access
+///
+/// Components also follow Rust's aliasing rules. Systems that request immutable access to components
+/// can be scheduled in parallel with other systems requesting an immutable reference to same components. Any systems
+/// that request a mutable reference will be given exclusive access to the component.
 unsafe impl<T: Component> QueryData for &T {
     type Unref = T;
     type Output<'w> = Ref<'w, T>;
@@ -322,8 +303,10 @@ unsafe impl<T: Component> QueryData for &T {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
-        map.get(&TypeId::of::<T>())
+    fn map_column(table: &Table) -> NonMaxUsize {
+        table
+            .lookup
+            .get(&TypeId::of::<T>())
             .copied()
             .map(NonMaxUsize::new)
             .flatten()
@@ -371,6 +354,17 @@ unsafe impl<T: Component> QueryData for &T {
     }
 }
 
+/// Requests mutable access to a component of type `T`.
+///
+/// Queries will return the [`Mut`] type, which automatically dereferences to `T`,
+/// instead of returning the reference directly. This is used
+/// by the change tracking system to trigger change events. Instead of `&mut T`, `Mut<T>` can also be used
+/// in the queries. They are both equivalent.
+///
+/// # Access
+///
+/// Components also follow Rust's aliasing model. Using a mutable component reference will force the scheduler
+/// to give this system exclusive access to `T` for the duration of the system.
 unsafe impl<T: Component> QueryData for &mut T {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
@@ -391,8 +385,10 @@ unsafe impl<T: Component> QueryData for &mut T {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
-        map.get(&TypeId::of::<T>())
+    fn map_column(table: &Table) -> NonMaxUsize {
+        table
+            .lookup
+            .get(&TypeId::of::<T>())
             .copied()
             .map(NonMaxUsize::new)
             .flatten()
@@ -405,7 +401,7 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
-        world: &'w World,
+        _world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
         row: TableRow,
@@ -464,8 +460,10 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
-        map.get(&TypeId::of::<T>())
+    fn map_column(table: &Table) -> NonMaxUsize {
+        table
+            .lookup
+            .get(&TypeId::of::<T>())
             .copied()
             .map(NonMaxUsize::new)
             .flatten()
@@ -533,8 +531,10 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
         reg.get_or_assign::<T>()
     }
 
-    fn cache_column(map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
-        map.get(&TypeId::of::<T>())
+    fn map_column(table: &Table) -> NonMaxUsize {
+        table
+            .lookup
+            .get(&TypeId::of::<T>())
             .copied()
             .map(NonMaxUsize::new)
             .flatten()

@@ -11,6 +11,13 @@ use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
 /// A query is used to retrieve components from the components database.
+///
+/// It consists of a data and a filter part.
+///
+/// See the [`QueryData`] and [`Filter`] traits for all types that can be used for data and filtering respectively.
+///
+/// [`QueryData`]: crate::query::QueryData
+/// [`Filter`]: crate::query::Filter
 pub struct Query<'w, Q: QueryBundle, F: Filter = ()> {
     /// The world that this query was created in.
     world: &'w World,

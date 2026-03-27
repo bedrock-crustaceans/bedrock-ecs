@@ -293,7 +293,7 @@ macro_rules! impl_bundle {
                     Some(($(
                         {
                             let col = match $gen::TY {
-                                QueryType::Component => Some($gen::cache_column(&table.lookup)),
+                                QueryType::Component => Some($gen::map_column(&table)),
                                 _ => None
                             };
 
@@ -324,12 +324,12 @@ macro_rules! impl_bundle {
                     feature = "tracing",
                     tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
                 )]
-                fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount> {
+                fn map_columns(table: &Table) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount> {
                     GenericArray::from(
                         ($(
                             (match $gen::TY {
-                                QueryType::Component => Some($gen::cache_column(lookup)),
-                                QueryType::Entity | QueryType::EntityRef | QueryType::Has => None,
+                                QueryType::Component => Some($gen::map_column(table)),
+                                QueryType::Entity | QueryType::Has => None,
                             }),
                         )*)
                     )
@@ -465,7 +465,7 @@ macro_rules! impl_bundle {
                     feature = "tracing",
                     tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
                 )]
-                fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> SmallVec<[usize; param::INLINE_SIZE]> {
+                fn cache_columns(table: &Table) -> SmallVec<[usize; param::INLINE_SIZE]> {
                     const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
                     let mut cache = SmallVec::with_capacity(COUNT);

@@ -13,10 +13,13 @@ use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 use crate::world::World;
 
+/// Simple container around the state of a [`Local`].
 pub struct LocalState<T: Default + Send + 'static>(T);
 
 /// A piece of data local to the system. This is useful to store data that persists between
 /// ticks but is only used by one system.
+///
+/// This does not overlap with any other data, and can therefore be scheduled in parallel with any other system.
 pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
 unsafe impl<T: Default + Send> Param for Local<'_, T> {

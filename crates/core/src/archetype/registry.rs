@@ -113,7 +113,7 @@ impl Archetypes {
 
                     // Found match
                     let table = &self.tables[table_index];
-                    let cols = Q::cache_columns(&table.lookup);
+                    let cols = Q::map_columns(&table);
 
                     return Some(TableCache {
                         table: table_index,

@@ -20,7 +20,20 @@ use crate::{
     world::World,
 };
 
-/// Whether the entity has the given set of components.
+/// Determines whether the entity has the given component.
+///
+/// Unlike the [`With`] filter, the query will also return entities that do not have
+/// this component.
+///
+/// It can be added to the data section of the query like so: `Query<(Entity, Has<Player>)>`. This example
+/// query would return a tuple `(Entity, bool)` where the boolean is `true` if the entity has the `Player` tag
+/// and `false` otherwise.
+///
+/// # Access
+///
+/// This type does not require access to any data and can therefore run in parallel with any other system.
+///
+/// [`With`]: crate::query::With
 pub struct Has<T: ComponentBundle> {
     _marker: PhantomData<T>,
 }
@@ -44,7 +57,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         unimplemented!()
     }
 
-    fn cache_column(_map: &FxHashMap<TypeId, usize>) -> NonMaxUsize {
+    fn map_column(_table: &Table) -> NonMaxUsize {
         unimplemented!()
     }
 
