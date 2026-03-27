@@ -2,5 +2,5 @@
 members = [
     "crates/core",
     "crates/derive"
-]
+, "crates/reflect"]
 resolver = "2"

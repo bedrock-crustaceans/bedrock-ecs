@@ -8,10 +8,12 @@ use crate::archetype::{ArchetypeGraph, Signature};
 use crate::component::ComponentRegistry;
 use crate::entity::{Entities, Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
+
 #[cfg(feature = "generics")]
 use crate::query::TableCache;
+
 use crate::query::{Filter, QueryBundle};
-use crate::table::{Column, Table, TableRow};
+use crate::table::{Table, TableRow};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -80,7 +82,7 @@ impl Archetypes {
     ///
     /// This function returns the last table that was scanned.
     ///
-    /// [`Filter`]: crate::filter::Filter
+    /// [`Filter`]: crate::query::Filter
     /// [`CachedTable`]: crate::query::CachedTable
     #[cfg_attr(
         feature = "tracing",

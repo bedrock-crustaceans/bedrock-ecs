@@ -14,14 +14,12 @@ use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, Filter, HoppingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{
-    ColumnIter, ColumnIterMut, EntityIter, EntityRefIter, Mut, Ref, Table, TableRow,
-};
+use crate::table::{ColumnIter, ColumnIterMut, EntityIter, Mut, Ref, Table, TableRow};
 use crate::world::World;
 
 /// A collection of types that can be queried.
 ///
-/// This is implemented for tuples of types that implement [`ParamRef`].
+/// This is implemented for tuples of types that implement [`QueryData`].
 /// In other words, this represents collection of component references or entities that appear
 /// inside a `Query<...>`.
 ///
@@ -52,6 +50,9 @@ pub unsafe trait QueryBundle: Sized {
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
     ///
     /// The `F` generic is the filter that should be applied to the iterators.
+    ///
+    /// [`IteratorBundle1`]: crate::query::IteratorBundle1
+    /// [`IteratorBundle2`]: crate::query::IteratorBundle2
     type Iter<'a, F: Filter>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
@@ -140,13 +141,17 @@ pub unsafe trait QueryBundle: Sized {
 ///   cache to read the wrong columns, which means data is interpreted with the incorrect type.
 ///
 /// [`Component`]: crate::component::Component
-/// [`Entity`]: crate::entity::EntityRef
+/// [`Entity`]: crate::entity::Entity
 pub unsafe trait QueryData {
     /// The type you would get if you were to remove the reference attached to `Self`.
     type Unref: 'static;
 
-    /// The type that is returned by the query. This is equal to `Self` but with a restricted lifetime
-    /// to ensure that the queried types do not outlive the query and world itself.
+    /// The type returned by the query. This does not have to equal `Self`.
+    ///
+    /// For components this is used to bound the lifetime to the query while other exotic types
+    /// like [`Has`] use it to output a completely different type.
+    ///
+    /// [`Has`]: crate::query::Has
     type Output<'w>: 'w;
 
     /// Iterator used to iterate over columns of type `Self`.
@@ -158,7 +163,6 @@ pub unsafe trait QueryData {
     /// TODO: Maybe the `iter` can return an `impl Iterator` in which case we probably don't need this.
     type Iter<'t, F: Filter>: EmptyableIterator<'t, Self::Output<'t>>;
 
-    /// Whether this parameter is an entity.
     const TY: QueryType;
 
     /// Returns the resource that this parameter accessess.

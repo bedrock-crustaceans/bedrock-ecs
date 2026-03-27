@@ -80,25 +80,25 @@ impl Table {
 
         if let Some(row) = self.entity_lookup.remove(&meta.handle) {
             // Update metadata of the entity that will be moved into the current index.
-            let last_index = self.entities.len() - 1;
-            tracing::trace!("update meta of entity {last_index}");
-
-            todo!(
-                "This call fails because we despawn the entity before removing the components in this function"
+            tracing::trace!(
+                "update meta of entity {} (table row {})",
+                meta.handle.index(),
+                row.0
             );
-            entities.set_row_meta(meta.handle.index(), TableRow(last_index));
 
-            // Remove entity data
+            // If there is only entity, there is no need to update row references.
+            if self.entities.len() > 1
+                && let Some(moved_entity) = self.entities.last()
+            {
+                // We swap remove entity A, thus entity B (at the end of the table) will be
+                // moved into A's position. We update the entity meta of B to reflect this.
+                //
+                // If A was the last entity in the table, this code is not called.
+                entities.set_row_meta(moved_entity.index(), row);
+                self.entity_lookup.insert(*moved_entity, row);
+            }
 
-            todo!(
-                "This call fails when we have two entities with out of bounds access (index is 1, len is 1)"
-            );
-            // I think this is because we delete entity 0 and then somehow entity 1's row is not updated to be 0.
-            // This happens because once again, we despawn the entity before removing these components in
-            // world.rs:67.
-
-            tracing::trace!("entity is in row {}", row.0);
-
+            // Now we swap remove.
             self.entities.swap_remove(row.0);
             self.columns
                 .iter_mut()

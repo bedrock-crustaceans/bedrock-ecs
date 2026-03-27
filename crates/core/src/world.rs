@@ -10,7 +10,7 @@ use crate::param;
 use crate::archetype::Archetypes;
 use crate::command::CommandPool;
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, Entity, EntityMeta, EntityMut, EntityRef};
+use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
 use crate::sealed::Sealed;
@@ -63,16 +63,16 @@ impl World {
 
     #[inline]
     pub(crate) fn despawn(&mut self, entity: Entity) {
-        // Remove from alive list.
-        let Some(meta) = self.entities.despawn_meta(entity) else {
-            // Entity was dead already
+        let Some(meta) = self.entities.get_meta(entity) else {
+            tracing::error!("attempt to despawn entity that was already dead");
             return;
         };
 
-        tracing::trace!("despawned entity, now removing components");
-
         // Remove from table
         self.archetypes.despawn(&mut self.entities, meta);
+
+        // Remove from alive list.
+        self.entities.despawn_meta(entity);
     }
 
     #[inline]
