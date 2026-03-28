@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
 use nonmax::NonMaxUsize;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::archetype::{ArchetypeGraph, Signature};
@@ -13,7 +13,7 @@ use crate::prelude::ComponentBundle;
 use crate::query::TableCache;
 
 use crate::query::{Filter, QueryBundle};
-use crate::table::{Table, TableRow};
+use crate::table::{ColumnRow, Table};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -21,6 +21,11 @@ use crate::util::debug::BorrowEnforcer;
 /// Contains all archetype tables.
 ///
 /// An archetype is a unique combination of components.
+///
+/// This registry is append-only, tables cannot be removed once they have been added.
+//
+// Tables cannot be removed because query caching currently relies on tables only being added to skip
+// checking most of the tables.
 #[derive(Default, Debug)]
 pub struct Archetypes {
     #[cfg(debug_assertions)]
@@ -41,8 +46,13 @@ pub struct Archetypes {
     /// already known. Queries cache these indices and access the vector directly
     /// instead of going through the lookup map. The `lookup` table can be used to
     /// find tables in this vector.
-    ///
-    /// Each table is stored in a box to ensure that pointers to the tables remain stable.
+    #[expect(
+        clippy::vec_box,
+        reason = "
+            tables are stored inside boxes to ensure their pointers do not change after reallocation,
+            this makes it safe for entities to store pointers to their tables.
+        "
+    )]
     tables: Vec<Box<Table>>,
     /// An array of signatures where the indices in the array correspond to indices in the table array.
     /// This is faster to iterate over than using the lookup map.
@@ -84,6 +94,10 @@ impl Archetypes {
     ///
     /// [`Filter`]: crate::query::Filter
     /// [`CachedTable`]: crate::query::CachedTable
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "columns should realistically never have `usize::MAX` elements"
+    )]
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(name = "Archetypes::cache_tables", skip_all)
@@ -115,7 +129,7 @@ impl Archetypes {
 
                     // Found match
                     let table = &self.tables[table_index];
-                    let cols = Q::map_columns(&table);
+                    let cols = Q::map_columns(table);
 
                     return Some(TableCache {
                         table: table_index,
@@ -228,7 +242,7 @@ impl Archetypes {
         new_table.entities.push(entity.handle);
         new_table
             .entity_lookup
-            .insert(entity.handle, TableRow(new_table.entities.len() - 1));
+            .insert(entity.handle, ColumnRow(new_table.entities.len() - 1));
 
         // Copy over all old data
         for column in &mut old_table.columns {
@@ -243,14 +257,14 @@ impl Archetypes {
 
         // Safety: This is safe because the nonnull is constructed from a reference, which cannot be
         // null.
-        let table_ptr = unsafe { NonNull::new_unchecked(new_table as *mut Table) };
+        let table_ptr = unsafe { NonNull::new_unchecked(std::ptr::from_mut(new_table)) };
 
         // Update metadata reference to current table.
         entities.set_meta(
             entity.handle.index(),
             EntityMeta {
                 handle: entity.handle,
-                row: TableRow(new_table.columns[0].len()),
+                row: ColumnRow(new_table.columns[0].len()),
                 table: table_ptr,
             },
         );

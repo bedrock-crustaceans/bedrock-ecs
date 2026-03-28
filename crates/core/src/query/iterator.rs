@@ -13,7 +13,7 @@ use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
 use crate::query::{Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
-use crate::table::{Table, TableRow};
+use crate::table::{ColumnRow, Table};
 use crate::world::World;
 
 /// Implements all query iteration traits but cannot be instantiated.
@@ -57,7 +57,7 @@ pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
     // /// This is used to implement [`Query::get`].
     // ///
     // /// [`Query::get`]: crate::query::Query::get
-    // fn once(table: &'t Table, row: TableRow) -> Self;
+    // fn once(table: &'t Table, row: ColumnRow) -> Self;
 
     /// Creates a new iterator over the given cache.
     fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
@@ -289,7 +289,7 @@ macro_rules! impl_bundle {
                     sig
                 }
 
-                fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: TableRow) -> Option<Self::Output<'t>> where Self: 't {
+                fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: ColumnRow) -> Option<Self::Output<'t>> where Self: 't {
                     Some(($(
                         {
                             let col = match $gen::TY {

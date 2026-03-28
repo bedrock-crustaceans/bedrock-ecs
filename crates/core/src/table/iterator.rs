@@ -10,6 +10,7 @@ use crate::world::World;
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
+/// An immutable iterator over a column.
 pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: ChangeTrackerIter<'a>,
@@ -17,6 +18,7 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) curr: Option<NonNull<T>>,
     /// Remaining elements
     pub(crate) remaining: usize,
+    /// Ensures that the components and filters live at least as long as the column.
     pub(crate) _marker: PhantomData<(&'a T, F)>,
 
     #[cfg(debug_assertions)]
@@ -37,7 +39,7 @@ impl<'a, T, F: Filter> Iterator for ColumnIter<'a, T, F> {
         }
 
         let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe { &*ptr.as_ptr().cast_const() };
+        let item = unsafe { ptr.as_ptr().cast_const().as_ref_unchecked() };
 
         self.remaining -= 1;
 
@@ -77,6 +79,7 @@ impl<'a, T, F: Filter> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F
     }
 }
 
+/// A mutable iterator over a column.
 pub struct ColumnIterMut<'a, T, F: Filter> {
     pub(crate) changes: ChangeTrackerIter<'a>,
     pub(crate) last_tick: u32,

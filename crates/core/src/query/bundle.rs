@@ -14,7 +14,7 @@ use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{EmptyableIterator, Filter, HoppingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnIter, ColumnIterMut, EntityIter, Mut, Ref, Table, TableRow};
+use crate::table::{ColumnIter, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -81,7 +81,7 @@ pub unsafe trait QueryBundle: Sized {
         world: &'t World,
         state: &'t QueryState<Self, F>,
         table: &'t Table,
-        row: TableRow,
+        row: ColumnRow,
     ) -> Option<Self::Output<'t>>
     where
         Self: 't;
@@ -192,20 +192,20 @@ pub unsafe trait QueryData {
         world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>>;
 
     /// Returns an iterator over the column in the given table.
     ///
     /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<'w, F: Filter>(
-        world: &'w World,
+    fn iter<F: Filter>(
+        world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
-    ) -> Self::Iter<'w, F>;
+    ) -> Self::Iter<'_, F>;
 }
 
 /// The type of the query data. This is used inside of queries to figure out what the query should
@@ -249,7 +249,7 @@ unsafe impl QueryData for Entity {
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         debug_assert!(
@@ -260,13 +260,13 @@ unsafe impl QueryData for Entity {
         table.get_entity(row.0)
     }
 
-    fn iter<'w, F: Filter>(
-        world: &'w World,
+    fn iter<F: Filter>(
+        world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
         _last_tick: u32,
         _current_tick: u32,
-    ) -> Self::Iter<'w, F> {
+    ) -> Self::Iter<'_, F> {
         debug_assert!(
             col.is_none(),
             "column index passed to entity handle iterator",
@@ -307,13 +307,16 @@ unsafe impl<T: Component> QueryData for &T {
         reg.get_or_assign::<T>()
     }
 
+    /// # Panics
+    ///
+    /// This function panics if the column did not exist in the table. This
+    /// indicates a bug since it should not happen.
     fn map_column(table: &Table) -> NonMaxUsize {
         table
             .lookup
             .get(&TypeId::of::<T>())
             .copied()
-            .map(NonMaxUsize::new)
-            .flatten()
+            .and_then(NonMaxUsize::new)
             .unwrap_or_else(|| {
                 panic!(
                     "table column lookup failed for component {}",
@@ -326,7 +329,7 @@ unsafe impl<T: Component> QueryData for &T {
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         let col = table.column(col.unwrap().get());
@@ -389,13 +392,16 @@ unsafe impl<T: Component> QueryData for &mut T {
         reg.get_or_assign::<T>()
     }
 
+    /// # Panics
+    ///
+    /// This function panics if the column did not exist in the table. This
+    /// indicates a bug since it should not happen.
     fn map_column(table: &Table) -> NonMaxUsize {
         table
             .lookup
             .get(&TypeId::of::<T>())
             .copied()
-            .map(NonMaxUsize::new)
-            .flatten()
+            .and_then(NonMaxUsize::new)
             .unwrap_or_else(|| {
                 panic!(
                     "table column lookup failed for component {}",
@@ -408,7 +414,7 @@ unsafe impl<T: Component> QueryData for &mut T {
         _world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         let col = table.column(col.unwrap().get());
@@ -433,7 +439,7 @@ unsafe impl<T: Component> QueryData for &mut T {
         col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
-    ) -> ColumnIterMut<'_, T, F> {
+    ) -> Self::Iter<'_, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();
@@ -464,13 +470,16 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
         reg.get_or_assign::<T>()
     }
 
+    /// # Panics
+    ///
+    /// This function panics if the column did not exist in the table. This
+    /// indicates a bug since it should not happen.
     fn map_column(table: &Table) -> NonMaxUsize {
         table
             .lookup
             .get(&TypeId::of::<T>())
             .copied()
-            .map(NonMaxUsize::new)
-            .flatten()
+            .and_then(NonMaxUsize::new)
             .unwrap_or_else(|| {
                 panic!(
                     "table column lookup failed for component {}",
@@ -483,7 +492,7 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         let col = table.column(col.unwrap().get());
@@ -497,13 +506,13 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
         Some(Ref { inner: item })
     }
 
-    fn iter<'w, F: Filter>(
-        world: &'w World,
+    fn iter<F: Filter>(
+        world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         _current_tick: u32,
-    ) -> ColumnIter<'w, T, F> {
+    ) -> Self::Iter<'_, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();
@@ -535,13 +544,16 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
         reg.get_or_assign::<T>()
     }
 
+    /// # Panics
+    ///
+    /// This function panics if the column did not exist in the table. This
+    /// indicates a bug since it should not happen.
     fn map_column(table: &Table) -> NonMaxUsize {
         table
             .lookup
             .get(&TypeId::of::<T>())
             .copied()
-            .map(NonMaxUsize::new)
-            .flatten()
+            .and_then(NonMaxUsize::new)
             .unwrap_or_else(|| {
                 panic!(
                     "table column lookup failed for component {}",
@@ -554,7 +566,7 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
         _world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
-        row: TableRow,
+        row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         let col = table.column(col.unwrap().get());
@@ -573,13 +585,13 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
         })
     }
 
-    fn iter<'w, F: Filter>(
-        world: &'w World,
+    fn iter<F: Filter>(
+        world: &World,
         table: usize,
         col: Option<NonMaxUsize>,
         last_tick: u32,
         current_tick: u32,
-    ) -> ColumnIterMut<'w, T, F> {
+    ) -> Self::Iter<'_, F> {
         let col_index = col
             .expect("no column index given to query data iterator")
             .get();

@@ -16,7 +16,7 @@ use crate::{
         TableCache,
     },
     scheduler::{AccessDesc, AccessType},
-    table::{Table, TableRow},
+    table::{ColumnRow, Table},
     world::World,
 };
 
@@ -65,7 +65,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
-        _row: TableRow,
+        _row: ColumnRow,
         _col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>> {
         let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();

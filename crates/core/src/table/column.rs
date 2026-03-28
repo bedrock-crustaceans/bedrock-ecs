@@ -23,18 +23,24 @@ type DropFn = unsafe fn(ptr: *mut u8, len: usize);
 /// This function must only be called when the following conditions are met:
 /// - `ptr` is a valid pointer to an array of objects of type `T`.
 /// - `len` is less than or equal to the amount of objects contained in the array starting at `ptr`.
+///
+/// Each individual element in the array must also satisfy the conditions of [`drop_in_place`].
+///
+/// [`drop_in_place`]: std::ptr::drop_in_place
 unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
     let ptr = ptr.cast::<T>();
     for i in 0..len {
+        // Safety: This is safe by conditions that the caller must uphold.
         unsafe {
             std::ptr::drop_in_place(ptr.add(i));
         }
     }
 }
 
+/// A row within a column.
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableRow(pub(crate) usize);
+pub struct ColumnRow(pub(crate) usize);
 
 /// Stores a collection of a single component type.
 #[derive(Debug)]
@@ -65,6 +71,10 @@ pub struct Column {
 
 impl Column {
     /// Copies the specific component from `self` to `other` without dropping the old component.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `row` is not contained in the given column.
     pub fn copy_component(&mut self, other: &mut Column, row: usize, current_tick: u32) {
         debug_assert_eq!(self.ty, other.ty);
         debug_assert_eq!(self.layout, other.layout);
@@ -72,8 +82,21 @@ impl Column {
         unsafe { other.push_from_ptr(self.get_erased_ptr(row).unwrap(), current_tick) };
     }
 
+    /// Copies the element from the given `ptr` into the current column.
+    ///
+    /// # Safety
+    ///
+    /// - The given `ptr` must point to a single valid component of the type that this column
+    ///   contains.
+    ///
+    /// - The given `ptr` must not overlap with the first slot in the unused capacity of this column.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "this should realistically never happen and only exists for safety reasons"
+    )]
     pub unsafe fn push_from_ptr(&mut self, ptr: NonNull<u8>, current_tick: u32) {
         if self.layout.size() == 0 {
+            // ZSTs do not need to be copied.
             self.len += 1;
             return;
         }
@@ -89,18 +112,26 @@ impl Column {
             "pointer offset overflow in Column::push"
         );
 
-        let column_ptr = unsafe { self.data.unwrap().add(offset) };
+        // Safety: This is safe since the offset does not overflow `isize` by the assert above
+        // and the resulting pointer is within the current allocation by the capacity check above.
+        let col_ptr = unsafe { self.data.unwrap().add(offset) };
 
         let size = self.layout.size();
+
+        // Safety: `ptr` is properly aligned and does not overlap with `col_ptr` as required in the safety
+        // conditions of this function. `col_ptr` is also a valid and aligned pointer by the code above.
         unsafe {
-            std::ptr::copy_nonoverlapping(ptr.as_ptr(), column_ptr.as_ptr(), size);
+            std::ptr::copy_nonoverlapping(ptr.as_ptr(), col_ptr.as_ptr(), size);
         }
 
         self.len += 1;
+
+        // Add space for this new row in the change tracker.
         self.tracker.get_mut().resize(self.len, current_tick);
     }
 
     /// Create an empty copy of self.
+    #[must_use]
     pub fn clone_empty(&self) -> Self {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
@@ -120,13 +151,14 @@ impl Column {
         }
     }
 
-    /// Creates a new Column for the type `T`.
+    /// Creates a new column for the type `T`. No memory is allocated until the first push.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(name = "Column::new", skip_all)
     )]
     pub fn new<T: 'static>() -> Column {
-        // The static requirement on `T` ensures that the type does not contain any references.
+        // The static requirement on `T` ensures that the type does not contain any references,
+        // which could allow the column to outlive the component.
 
         let drop_fn = if std::mem::needs_drop::<T>() {
             Some(drop_wrapper::<T> as DropFn)
@@ -136,13 +168,17 @@ impl Column {
 
         let layout = Layout::new::<T>();
         if std::mem::size_of::<T>() == 0 {
+            // The allocator does not support "allocating" zero-sized types so we
+            // handle them separately here by creating a dangling pointer and just increasing
+            // the length of the column any time a ZST is pushed.
+
             tracing::trace!(
                 "created new column for ZST `{}`, needs drop: {}",
                 std::any::type_name::<T>(),
                 std::mem::needs_drop::<T>()
             );
 
-            // Produce a valid non-null pointer for the ZST even though we will never use it.
+            // Produce a valid non-null, aligned pointer for the ZST.
             let ptr = NonNull::<T>::dangling().cast::<u8>();
 
             Column {
@@ -247,10 +283,14 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
+        // Safety: This is safe because we are guaranteed to have unique access to this entire column.
+        let tracker = unsafe { &*self.tracker.get().cast_const() };
+        let changes = ChangeTrackerIter::new(tracker);
+
         if let Some(start_ptr) = self.data {
             ColumnIterMut {
                 index: 0,
-                changes: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
+                changes,
                 last_tick,
                 current_tick,
 
@@ -264,7 +304,7 @@ impl Column {
         } else {
             ColumnIterMut {
                 index: 0,
-                changes: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
+                changes,
                 last_tick,
                 current_tick,
 
@@ -384,6 +424,14 @@ impl Column {
         self.tracker.get_mut().resize(self.len, current_tick);
     }
 
+    /// Obtains a pointer to a row in the column, without being aware of the underlying component type.
+    ///
+    /// This is used to copy components to another column, since columns are only aware of the size of
+    /// the data.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "this should realistically never panic"
+    )]
     pub fn get_erased_ptr(&mut self, index: usize) -> Option<NonNull<u8>> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();

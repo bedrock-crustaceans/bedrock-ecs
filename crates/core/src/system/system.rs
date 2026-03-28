@@ -45,7 +45,11 @@ pub trait System: Sync {
     fn name(&self) -> &'static str;
     /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
-    /// Runs the system.
+    /// Executes the system.
+    ///
+    /// # Safety
+    ///
+    /// The caller must manually uphold Rust's aliasing guarantees in regards to system resource access.
     unsafe fn call(&self, world: &World);
 }
 

@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::component::ComponentBundle;
-use crate::table::{ChangeTracker, Changes};
+use crate::table::Changes;
 
 /// The possible methods of filtering used by queries.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -54,10 +54,7 @@ impl FilterMethod {
     /// This is not implement using [`From`] since traits cannot have const functions.
     #[inline]
     pub const fn from_bool(v: bool) -> Self {
-        match v {
-            false => Self::Coarse,
-            true => Self::Dynamic,
-        }
+        if v { Self::Dynamic } else { Self::Coarse }
     }
 }
 
@@ -269,7 +266,7 @@ impl<B: FilterBundle> Filter for Xor<B> {
         if B::METHOD.is_dynamic() {
             // Only apply dynamic filters if at least one of the contained filters is dynamic.
             let out = B::apply_dynamic(changes, last_tick);
-            let truthy = out.iter().map(|b| b as u8).sum::<u8>();
+            let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
             truthy % 2 == 1
         } else {
             // Explicitly return true. This makes it easier for the compiler to see this code can be compiled away,
@@ -282,7 +279,7 @@ impl<B: FilterBundle> Filter for Xor<B> {
     #[inline]
     fn apply_coarse(&self, archetypes: &Signature) -> bool {
         let out = self.0.apply_coarse(archetypes);
-        let truthy = out.iter().map(|b| b as u8).sum::<u8>();
+        let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
         truthy % 2 == 1
     }
 }

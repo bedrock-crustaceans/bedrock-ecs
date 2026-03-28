@@ -37,12 +37,16 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         Query { world, state }
     }
 
+    /// Attempts to fetch the specified `entity` using this query.
+    ///
+    /// # Returns
+    ///
+    /// This function returns `None` if the entity did not have the requested data or
+    /// was excluded by the query's filters.
     pub fn get(&self, entity: Entity) -> Option<Q::Output<'_>> {
         let meta = self.world.entities.get_meta(entity)?;
-        println!("meta: {meta:?}");
-
         let table = unsafe { meta.table.as_ptr().cast_const().as_ref_unchecked() };
-        Q::get::<F>(self.world, &self.state, table, meta.row)
+        Q::get::<F>(self.world, self.state, table, meta.row)
     }
 
     /// Returns the metadata associated with this query.

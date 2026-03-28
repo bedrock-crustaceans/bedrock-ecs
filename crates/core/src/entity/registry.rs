@@ -2,7 +2,7 @@ use nonmax::NonMaxU32;
 
 use crate::{
     entity::{Entity, EntityGeneration, EntityIndex, EntityMeta},
-    table::TableRow,
+    table::ColumnRow,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -129,25 +129,21 @@ impl Entities {
     /// Updates the `row` metadata of the specified entity.
     ///
     /// This method assumes the entity is up to date and does not check generations.
-    pub(crate) fn set_row_meta(&mut self, entity: EntityIndex, row: TableRow) -> Option<TableRow> {
+    pub(crate) fn set_row_meta(
+        &mut self,
+        entity: EntityIndex,
+        row: ColumnRow,
+    ) -> Option<ColumnRow> {
         let Some(dense_idx) = *self.sparse.get(entity.0 as usize)? else {
             tracing::error!("cannot update table row of dead entity {}", entity.0);
             return None;
         };
 
-        let old = Some(std::mem::replace(
-            &mut self.dense[dense_idx.get() as usize].row,
-            row,
-        ));
+        let old = std::mem::replace(&mut self.dense[dense_idx.get() as usize].row, row);
 
-        tracing::trace!(
-            "update entity {} row from {} to {}",
-            entity.0,
-            old.unwrap().0,
-            row.0
-        );
+        tracing::trace!("update entity {} row from {} to {}", entity.0, old.0, row.0);
 
-        old
+        Some(old)
     }
 
     pub(crate) fn set_meta(&mut self, entity: EntityIndex, meta: EntityMeta) -> Option<EntityMeta> {
@@ -156,18 +152,11 @@ impl Entities {
             return None;
         };
 
-        let old = Some(std::mem::replace(
-            &mut self.dense[dense_idx.get() as usize],
-            meta,
-        ));
+        let old = std::mem::replace(&mut self.dense[dense_idx.get() as usize], meta);
 
-        tracing::trace!(
-            "update fall entity {} from {:?} to {meta:?}",
-            entity.0,
-            old.unwrap()
-        );
+        tracing::trace!("update fall entity {} from {:?} to {meta:?}", entity.0, old);
 
-        old
+        Some(old)
     }
 
     #[inline]

@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMeta};
-use crate::table::{Column, EntityIter, EntityRefIter, TableRow};
+use crate::table::{Column, ColumnRow, EntityIter, EntityRefIter};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 use crate::util::debug::{ReadGuard, WriteGuard};
@@ -34,7 +34,7 @@ pub struct Table {
     // 5 in the `columns` field.
     pub(crate) entities: Vec<Entity>,
 
-    pub(crate) entity_lookup: FxHashMap<Entity, TableRow>,
+    pub(crate) entity_lookup: FxHashMap<Entity, ColumnRow>,
     /// A lookup table that maps component type IDs to columns.
     pub(crate) lookup: FxHashMap<TypeId, usize>,
     /// All columns that this table contains. Most users will know exactly which column they want.
@@ -87,19 +87,19 @@ impl Table {
         entity: Entity,
         components: impl ComponentBundle,
         current_tick: u32,
-    ) -> TableRow {
+    ) -> ColumnRow {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
         let row = self.entities.len();
         self.entities.push(entity);
         self.entity_lookup
-            .insert(entity, TableRow(self.entities.len() - 1));
+            .insert(entity, ColumnRow(self.entities.len() - 1));
 
         components.insert_into(self, current_tick);
         tracing::trace!("inserted bundle into row {row}");
 
-        TableRow(row)
+        ColumnRow(row)
     }
 
     /// Removes the entity's data from this table and updates the entities metadata table to reflect this

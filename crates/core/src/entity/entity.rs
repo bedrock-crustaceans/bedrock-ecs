@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use crate::component::ComponentBundle;
 use crate::entity::{Entity, EntityGeneration, EntityIndex};
-use crate::table::{Table, TableRow};
+use crate::table::{ColumnRow, Table};
 use crate::world::World;
 
 /// Having an instance of this entity means you have exclusive access to the entire world.
@@ -27,12 +27,16 @@ impl EntityMut<'_> {
         self.handle.generation()
     }
 
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "it is not possible for the entity to be despawned while this type exists"
+    )]
     pub fn insert(&mut self, bundle: impl ComponentBundle) {
         let meta = self
             .world
             .entities
             .get_meta(self.handle)
-            .expect("`EntityMut` entity died");
+            .expect("`EntityMut` entity died, this is impossible");
 
         self.world.archetypes.insert(
             self.world.current_tick,
@@ -42,14 +46,9 @@ impl EntityMut<'_> {
         );
     }
 
+    #[inline]
     pub fn remove<T: ComponentBundle>(&mut self) -> Option<T> {
-        let meta = self
-            .world
-            .entities
-            .get_meta(self.handle)
-            .expect("`EntityMut` entity died");
-
-        todo!("remove components from entity");
+        self.world.archetypes.remove(self.handle)
     }
 
     #[inline]
@@ -90,7 +89,7 @@ pub struct EntityMeta {
     /// Pointer to the table this entity is currently located in.
     pub table: NonNull<Table>,
     /// Row inside the `table` that stores this entity's components.
-    pub row: TableRow,
+    pub row: ColumnRow,
 }
 
 unsafe impl Send for EntityMeta {}
