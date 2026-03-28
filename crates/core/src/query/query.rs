@@ -41,9 +41,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         let meta = self.world.entities.get_meta(entity)?;
         println!("meta: {meta:?}");
 
-        let table_ptr = meta.table?;
-
-        let table = unsafe { table_ptr.as_ptr().cast_const().as_ref_unchecked() };
+        let table = unsafe { meta.table.as_ptr().cast_const().as_ref_unchecked() };
         Q::get::<F>(self.world, &self.state, table, meta.row)
     }
 

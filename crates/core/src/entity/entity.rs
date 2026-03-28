@@ -79,10 +79,17 @@ impl EntityRef<'_> {
     }
 }
 
+/// Describes where an entity's data is located.
+///
+/// This is an unstable reference and should only be used internally. Entity references
+/// exposed to the user should make use of [`Entity`] instead, which provides a stable reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct EntityMeta {
+pub struct EntityMeta {
+    /// The index and generation of this entity.
     pub handle: Entity,
-    pub table: Option<NonNull<Table>>,
+    /// Pointer to the table this entity is currently located in.
+    pub table: NonNull<Table>,
+    /// Row inside the `table` that stores this entity's components.
     pub row: TableRow,
 }
 

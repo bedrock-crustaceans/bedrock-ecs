@@ -181,8 +181,8 @@ impl Archetypes {
         EntityMeta {
             handle,
             row,
-            // Safety: This is safe because a the pointer inside of a `Box<Table>` is guaranteed to be non-null.
-            table: Some(unsafe { NonNull::new_unchecked(table_ptr) }),
+            // Safety: This is safe. The pointer inside of a `Box<Table>` is guaranteed to be non-null.
+            table: unsafe { NonNull::new_unchecked(table_ptr) },
         }
     }
 
@@ -202,12 +202,7 @@ impl Archetypes {
         }
 
         let signature = B::get_or_assign_signature(&mut self.component_registry);
-        let Some(table) = entity.table else {
-            tracing::warn!("entity meta table was none");
-            return false;
-        };
-
-        let old_table = unsafe { &mut *table.as_ptr() };
+        let old_table = unsafe { &mut *entity.table.as_ptr() };
 
         let mut combined_signature = signature.clone();
         combined_signature.union(&old_table.signature);
@@ -246,13 +241,17 @@ impl Archetypes {
         // Remove data from old table
         old_table.remove(entities, entity, false);
 
+        // Safety: This is safe because the nonnull is constructed from a reference, which cannot be
+        // null.
+        let table_ptr = unsafe { NonNull::new_unchecked(new_table as *mut Table) };
+
         // Update metadata reference to current table.
         entities.set_meta(
             entity.handle.index(),
             EntityMeta {
                 handle: entity.handle,
                 row: TableRow(new_table.columns[0].len()),
-                table: Some(table),
+                table: table_ptr,
             },
         );
 
@@ -286,7 +285,7 @@ impl Archetypes {
 
         // Safety: This is safe because the caller should have given a valid pointer and since
         // this function receives a mutable self, we have unique access to this table.
-        let table = unsafe { meta.table.unwrap().as_ptr().as_mut_unchecked() };
+        let table = unsafe { meta.table.as_ptr().as_mut_unchecked() };
         table.remove(entities, meta, true);
     }
 

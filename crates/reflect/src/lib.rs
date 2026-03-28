@@ -20,9 +20,8 @@ impl ReflectRegistry {
 
     pub fn register<T: Reflect + 'static>(&mut self) {
         let ty_id = TypeId::of::<T>();
-        let reflect = Box::new()
 
-        self.types.insert(ty_id, );
+        todo!()
     }
 }
 

@@ -65,11 +65,17 @@ impl Table {
         &self.signature
     }
 
+    /// Returns a read guard that gives permission to read from this table.
+    ///
+    /// Columns make use of interior mutability and are therefore locked separately.
     #[cfg(debug_assertions)]
     pub(crate) fn lock_read(&self) -> ReadGuard {
         self.enforcer.read()
     }
 
+    /// Returns a write guard that allows writing to this table.
+    ///
+    /// Columns make use of interior mutability and are therefore locked separately.
     #[cfg(debug_assertions)]
     pub(crate) fn lock_write(&self) -> WriteGuard {
         self.enforcer.write()
@@ -98,7 +104,7 @@ impl Table {
 
     /// Removes the entity's data from this table and updates the entities metadata table to reflect this
     /// change.
-    pub(crate) fn remove(&mut self, entities: &mut Entities, meta: EntityMeta, should_drop: bool) {
+    pub fn remove(&mut self, entities: &mut Entities, meta: EntityMeta, should_drop: bool) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
