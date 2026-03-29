@@ -39,6 +39,14 @@ impl Signature {
             .for_each(|(a, b)| *a |= b);
     }
 
+    /// Removes the bits of `other` from `Self`.
+    pub fn remove(&mut self, other: &Self) {
+        self.words
+            .iter_mut()
+            .zip(other.words.iter())
+            .for_each(|(a, b)| *a &= !b);
+    }
+
     /// Whether this bitset is empty.
     ///
     /// Empty can mean that it either has no words or all bits are set to 0.

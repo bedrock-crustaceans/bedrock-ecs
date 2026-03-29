@@ -87,7 +87,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
 
         let matches = table.signature.contains(&signature);
         HasIter {
-            remaining: table.len(),
+            remaining: table.entity_len(),
             matches,
             _marker: PhantomData,
         }

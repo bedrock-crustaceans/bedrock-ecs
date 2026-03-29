@@ -31,8 +31,6 @@ pub struct Archetypes {
     #[cfg(debug_assertions)]
     enforcer: BorrowEnforcer,
 
-    graph: ArchetypeGraph,
-
     /// The current archetype generation.
     /// This is used by the query cache to figure out when the cache should be updated.
     /// It is only increased when an archetype table is added or removed, not when an entity is added
@@ -69,11 +67,26 @@ impl Archetypes {
     }
 
     /// Returns the current generation of the archetypes.
+    #[inline]
     pub fn generation(&self) -> u64 {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
         self.generation
+    }
+
+    /// Inserts a new table and returns a mutable reference to it.
+    ///
+    /// Tables are boxed to ensure they have a stable address on the heap.
+    pub fn insert_table(&mut self, table: Box<Table>) -> &mut Table {
+        self.generation += 1;
+
+        self.lookup
+            .insert(table.signature.clone(), self.tables.len());
+        self.lookup_array.push(table.signature.clone());
+        self.tables.push(table);
+
+        self.tables.last_mut().unwrap()
     }
 
     /// Caches the table and column locations for a specific archetype. This is used by the
@@ -177,20 +190,11 @@ impl Archetypes {
         let table = if let Some(index) = lookup {
             &mut self.tables[*index]
         } else {
-            self.generation += 1;
-
-            self.lookup_array.push(sig.clone());
-            self.lookup.insert(sig.clone(), self.tables.len());
-
-            // Safety: This is safe because `sig` is derived from `B`.
-            let table = Box::new(unsafe { Table::new::<B>(sig) });
-
-            self.tables.push(table);
-            self.tables.last_mut().unwrap()
+            self.insert_table(Box::new(unsafe { Table::new::<B>(sig) }))
         };
 
         let row = table.insert(handle, bundle, current_tick);
-        let table_ptr: *mut Table = table.as_mut();
+        let table_ptr = std::ptr::from_mut(table);
 
         EntityMeta {
             handle,
@@ -246,10 +250,10 @@ impl Archetypes {
 
         // Copy over all old data
         for column in &mut old_table.columns {
-            let new_column_idx = *new_table.lookup.get(&column.ty).unwrap();
+            let new_column_idx = *new_table.lookup.get(&column.ty_id()).unwrap();
             let new_column = &mut new_table.columns[new_column_idx];
 
-            column.copy_component(new_column, entity.row.0, current_tick);
+            unsafe { column.copy_component(new_column, entity.row.0, current_tick) };
         }
 
         // Remove data from old table
@@ -284,8 +288,47 @@ impl Archetypes {
         true
     }
 
-    pub(crate) fn remove<B: ComponentBundle>(&mut self, entity: Entity) -> Option<B> {
-        todo!()
+    pub(crate) fn remove<B: ComponentBundle>(
+        &mut self,
+        current_tick: u32,
+        entities: &mut Entities,
+        meta: EntityMeta,
+    ) -> Option<B> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        let removal_signature = B::get_or_assign_signature(&mut self.component_registry);
+
+        // Find new table
+        let src_table = unsafe { meta.table.as_ptr().as_mut_unchecked() };
+
+        let mut dst_signature = src_table.signature.clone();
+        dst_signature.remove(&removal_signature);
+
+        let dst_table = if let Some(dst_table) = self.get_by_signature_mut(&dst_signature) {
+            dst_table
+        } else {
+            // Table not found, create new table
+            let new_table = src_table.new_subset::<B>(removal_signature);
+            self.insert_table(Box::new(new_table))
+        };
+
+        // Copy non-removed data to new table...
+        for column in &mut dst_table.columns {
+            let ty_id = column.ty_id();
+            let src_column = src_table
+                .get_column_by_type(&ty_id)
+                .expect("table was missing one of its required columns");
+
+            unsafe { src_column.copy_component(column, meta.row.0, current_tick) };
+        }
+
+        // ...and remove the components from the remaining columns to return them.
+        let removed = unsafe { B::copy_from(src_table, meta.row) };
+
+        src_table.remove(entities, meta, false);
+
+        Some(removed)
     }
 
     /// Removes the components of the specified entity.

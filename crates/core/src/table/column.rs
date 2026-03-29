@@ -70,12 +70,19 @@ pub struct Column {
 }
 
 impl Column {
+    #[inline]
+    pub fn ty_id(&self) -> TypeId {
+        self.ty
+    }
+
     /// Copies the specific component from `self` to `other` without dropping the old component.
+    ///
+    /// # Safety
     ///
     /// # Panics
     ///
     /// Panics if `row` is not contained in the given column.
-    pub fn copy_component(&mut self, other: &mut Column, row: usize, current_tick: u32) {
+    pub unsafe fn copy_component(&self, other: &mut Column, row: usize, current_tick: u32) {
         debug_assert_eq!(self.ty, other.ty);
         debug_assert_eq!(self.layout, other.layout);
 
@@ -86,10 +93,13 @@ impl Column {
     ///
     /// # Safety
     ///
-    /// - The given `ptr` must point to a single valid component of the type that this column
+    /// - `ptr` must point to a single valid component of the type that this column
     ///   contains.
     ///
-    /// - The given `ptr` must not overlap with the first slot in the unused capacity of this column.
+    /// - This function takes ownership of data pointed to by `ptr`, therefore the data should not
+    ///   be used anymore.
+    ///
+    /// - `ptr` must not overlap with the first slot in the unused capacity of this column.
     #[expect(
         clippy::missing_panics_doc,
         reason = "this should realistically never happen and only exists for safety reasons"
@@ -432,7 +442,7 @@ impl Column {
         clippy::missing_panics_doc,
         reason = "this should realistically never panic"
     )]
-    pub fn get_erased_ptr(&mut self, index: usize) -> Option<NonNull<u8>> {
+    pub fn get_erased_ptr(&self, index: usize) -> Option<NonNull<u8>> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 

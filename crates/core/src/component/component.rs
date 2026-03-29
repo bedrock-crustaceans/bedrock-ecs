@@ -10,7 +10,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::archetype::Signature;
 use crate::component::ComponentRegistry;
-use crate::table::{Column, Table};
+use crate::table::{Column, ColumnRow, Table};
 
 /// A component ID.
 ///
@@ -53,6 +53,9 @@ pub trait Component: 'static + Send {
 pub trait ComponentBundle: 'static + Send {
     const LEN: usize;
 
+    /// Whether this bundle contains the given type ID.
+    fn contains(ty_id: TypeId) -> bool;
+
     /// Converts this bundle to a signature to compare against archetype tables. If a component had not been
     /// registered, this method will register it.
     ///
@@ -94,6 +97,11 @@ pub trait ComponentBundle: 'static + Send {
 
     /// Insert this bundle into an existing table.
     fn insert_into(self, table: &mut Table, current_tick: u32);
+
+    /// Removes the components listed in `Self` from the given table.
+    ///
+    /// This function does not drop the components.
+    unsafe fn copy_from(table: &mut Table, row: ColumnRow) -> Self;
 }
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
@@ -103,6 +111,10 @@ macro_rules! impl_component_bundle {
             #[allow(unused)]
             impl<$($gen:Component),*> ComponentBundle for ($($gen),*) {
                 const LEN: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
+
+                fn contains(ty_id: TypeId) -> bool {
+                    $(TypeId::of::<$gen>() == ty_id)||*
+                }
 
                 fn get_or_assign_signature(reg: &mut ComponentRegistry) -> Signature {
                     let mut set = Signature::new();
@@ -210,12 +222,22 @@ macro_rules! impl_component_bundle {
                         storage.columns[column_idx].push([<$gen:lower>], current_tick);
                     )*
                 }
+
+                unsafe fn copy_from(table: &mut Table, row: ColumnRow) -> Self {
+                    ($(
+                        {
+                            let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have requested component");
+                            let ptr = col.get_erased_ptr(row.0).expect("requested row was not found in column");
+
+                            unsafe { std::ptr::read(ptr.cast::<$gen>().as_ptr()) }
+                        }
+                    ),*)
+                }
             }
         }
     }
 }
 
-impl_component_bundle!();
 impl_component_bundle!(A);
 impl_component_bundle!(A, B);
 impl_component_bundle!(A, B, C);

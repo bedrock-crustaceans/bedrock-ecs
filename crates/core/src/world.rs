@@ -51,18 +51,18 @@ impl World {
     // Entities
     // ======================================================================================
     pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityMut<'_> {
-        let id = self.entities.allocate();
-        let meta = self.archetypes.spawn(id, bundle, self.current_tick);
+        let handle = self.entities.allocate();
+        let meta = self.archetypes.spawn(handle, bundle, self.current_tick);
         self.entities.spawn(meta);
 
         EntityMut {
-            handle: id,
+            handle,
             world: self,
         }
     }
 
     #[inline]
-    pub(crate) fn despawn(&mut self, entity: Entity) {
+    pub fn despawn(&mut self, entity: Entity) {
         let Some(meta) = self.entities.get_meta(entity) else {
             tracing::error!("attempt to despawn entity that was already dead");
             return;

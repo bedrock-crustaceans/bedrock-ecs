@@ -92,19 +92,6 @@ pub struct Commands<'state> {
 }
 
 impl<'s> Commands<'s> {
-    pub fn spawn_empty(&mut self) -> EntityCommands<'_, 's> {
-        let index = self.buffer.allocate_deferred_index();
-        self.buffer.push(SpawnCommand {
-            handle: EntityCommandsHandle::Deferred(index),
-            components: (),
-        });
-
-        EntityCommands {
-            entity: EntityCommandsHandle::Deferred(index),
-            commands: self,
-        }
-    }
-
     pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityCommands<'_, 's> {
         let index = self.buffer.allocate_deferred_index();
         self.buffer.push(SpawnCommand {

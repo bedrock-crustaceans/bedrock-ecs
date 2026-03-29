@@ -1,7 +1,7 @@
 use std::any::TypeId;
 use std::ptr::NonNull;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
@@ -18,9 +18,7 @@ use crate::world::World;
 /// Consider the archetype `(Health, Transform)` then its corresponding table contains
 /// two columns: one for `Health` and another for `Transform`.
 ///
-/// # Safety
-///
-/// Tables are always to read from during a tick since entities will only be summoned in between ticks.
+/// Table structure is immutable, i.e. once a table exists, no columns can be added to or removed from it.
 #[derive(Debug)]
 pub struct Table {
     #[cfg(debug_assertions)]
@@ -33,7 +31,6 @@ pub struct Table {
     // an entity at index 5 in `entities` will have its components stored at row
     // 5 in the `columns` field.
     pub(crate) entities: Vec<Entity>,
-
     pub(crate) entity_lookup: FxHashMap<Entity, ColumnRow>,
     /// A lookup table that maps component type IDs to columns.
     pub(crate) lookup: FxHashMap<TypeId, usize>,
@@ -44,6 +41,51 @@ pub struct Table {
 }
 
 impl Table {
+    /// Creates a new table with the columns of the components in `B` removed.
+    ///
+    /// # Panic
+    ///
+    /// This function panics if the components in bundle `B` are not all contained in this table.
+    pub fn new_subset<B: ComponentBundle>(&self, signature: Signature) -> Self {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        assert!(
+            self.signature.contains(&signature),
+            "signature for `Table::new_subset` was not a subset"
+        );
+
+        let mut new_signature = self.signature.clone();
+        new_signature.remove(&signature);
+
+        let new_column_len = self.columns.len() - B::LEN;
+        let mut columns = Vec::with_capacity(new_column_len);
+
+        // Find the subset of columns that the new table needs.
+        columns.extend(
+            self.columns
+                .iter()
+                .filter_map(|c| B::contains(c.ty_id()).then(|| c.clone_empty())),
+        );
+
+        // Then create the lookup table for these columns.
+        let mut lookup =
+            FxHashMap::with_capacity_and_hasher(new_column_len, FxBuildHasher::default());
+
+        lookup.extend(columns.iter().enumerate().map(|(i, c)| (c.ty_id(), i)));
+
+        Self {
+            #[cfg(debug_assertions)]
+            enforcer: BorrowEnforcer::new(),
+
+            signature: new_signature,
+            entities: Vec::new(),
+            entity_lookup: FxHashMap::default(),
+            columns,
+            lookup,
+        }
+    }
+
     /// Creates a new table for the given collection of components and inserts those components into the
     /// table.
     ///
@@ -51,7 +93,7 @@ impl Table {
     ///
     /// `signature` must be the actual signature of the component bundle in generic `B`.
     #[inline]
-    pub unsafe fn new<B: ComponentBundle>(signature: Signature) -> Table {
+    pub unsafe fn new<B: ComponentBundle>(signature: Signature) -> Self {
         unsafe { B::new_table(signature) }
     }
 
@@ -142,21 +184,45 @@ impl Table {
     }
 
     /// Returns a list of all columns in this table.
+    #[inline]
     pub fn columns(&self) -> &[Column] {
         &self.columns
     }
 
+    #[inline]
+    pub fn columns_mut(&mut self) -> &mut [Column] {
+        &mut self.columns
+    }
+
     /// Returns the specified column from this table.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the index is out of range.
+    #[inline]
     pub fn column(&self, index: usize) -> &Column {
         &self.columns[index]
     }
 
+    /// Fetches the specific entity from this table.
+    ///
+    /// This fetches based on index within the table, *not* entity index.
     #[inline]
     pub fn get_entity(&self, index: usize) -> Option<Entity> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
         self.entities.get(index).copied()
+    }
+
+    /// Retrieves a column by its component's type ID.
+    #[inline]
+    pub fn get_column_by_type(&self, ty_id: &TypeId) -> Option<&Column> {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        let idx = *self.lookup.get(&ty_id)?;
+        Some(&self.columns[idx])
     }
 
     /// Creates an iterator over all the entities in this table.
@@ -173,6 +239,7 @@ impl Table {
         }
     }
 
+    /// Creates an iterator over all entities in this table.
     pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
@@ -185,9 +252,17 @@ impl Table {
         }
     }
 
-    /// Returns the amount of entities stored in this table.
     #[inline]
     pub fn len(&self) -> usize {
+        #[cfg(debug_assertions)]
+        let _guard = self.enforcer.read();
+
+        self.columns.len()
+    }
+
+    /// The amount of entities that this table contains.
+    #[inline]
+    pub fn entity_len(&self) -> usize {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
@@ -196,6 +271,6 @@ impl Table {
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.entity_len() == 0
     }
 }

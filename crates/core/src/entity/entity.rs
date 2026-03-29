@@ -32,6 +32,7 @@ impl EntityMut<'_> {
         reason = "it is not possible for the entity to be despawned while this type exists"
     )]
     pub fn insert(&mut self, bundle: impl ComponentBundle) {
+        // meta is not stored inside of the entity since it could change while `self` is alive.
         let meta = self
             .world
             .entities
@@ -47,8 +48,17 @@ impl EntityMut<'_> {
     }
 
     #[inline]
-    pub fn remove<T: ComponentBundle>(&mut self) -> Option<T> {
-        self.world.archetypes.remove(self.handle)
+    pub fn remove<B: ComponentBundle>(&mut self) -> Option<B> {
+        // meta is not stored inside of the entity since it could change while `self` is alive.
+        let meta = self
+            .world
+            .entities
+            .get_meta(self.handle)
+            .expect("`EntityMut` entity died, this is impossible");
+
+        self.world
+            .archetypes
+            .remove::<B>(self.world.current_tick, &mut self.world.entities, meta)
     }
 
     #[inline]
