@@ -194,13 +194,12 @@ impl Archetypes {
         };
 
         let row = table.insert(handle, bundle, current_tick);
-        let table_ptr = std::ptr::from_mut(table);
 
         EntityMeta {
             handle,
             row,
             // Safety: This is safe. The pointer inside of a `Box<Table>` is guaranteed to be non-null.
-            table: unsafe { NonNull::new_unchecked(table_ptr) },
+            table: NonNull::from_mut(table),
         }
     }
 
@@ -259,9 +258,7 @@ impl Archetypes {
         // Remove data from old table
         old_table.remove(entities, entity, false);
 
-        // Safety: This is safe because the nonnull is constructed from a reference, which cannot be
-        // null.
-        let table_ptr = unsafe { NonNull::new_unchecked(std::ptr::from_mut(new_table)) };
+        let table_ptr = NonNull::from_mut(new_table);
 
         // Update metadata reference to current table.
         entities.set_meta(
@@ -313,6 +310,31 @@ impl Archetypes {
             self.insert_table(Box::new(new_table))
         };
 
+        // Update entity metadata in destination table.
+        dst_table.entities.push(meta.handle);
+
+        let dst_row = dst_table.entities.len() - 1;
+
+        dst_table
+            .entity_lookup
+            .insert(meta.handle, ColumnRow(dst_row));
+
+        // and update entity's own metadata
+        entities.set_meta(
+            meta.handle.index(),
+            EntityMeta {
+                handle: meta.handle,
+                row: ColumnRow(dst_row),
+                table: NonNull::from_mut(dst_table),
+            },
+        );
+
+        tracing::trace!(
+            "copying over {} components and returning {}",
+            dst_table.columns.len(),
+            B::LEN
+        );
+
         // Copy non-removed data to new table...
         for column in &mut dst_table.columns {
             let ty_id = column.ty_id();
@@ -320,6 +342,7 @@ impl Archetypes {
                 .get_column_by_type(&ty_id)
                 .expect("table was missing one of its required columns");
 
+            todo!("Call below seems to attempt to copy a row that does not exist?");
             unsafe { src_column.copy_component(column, meta.row.0, current_tick) };
         }
 
@@ -391,9 +414,6 @@ impl Archetypes {
     /// [`get_by_signature`]: Self::get_by_signature
     #[inline]
     pub fn get_by_index(&self, index: usize) -> &Table {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
         &self.tables[index]
     }
 
@@ -409,9 +429,6 @@ impl Archetypes {
     /// [`get_by_signature_mut`]: Self::get_by_signature_mut
     #[inline]
     pub fn get_by_index_mut(&mut self, index: usize) -> &mut Table {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.write();
-
         &mut self.tables[index]
     }
 
@@ -427,9 +444,6 @@ impl Archetypes {
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_archetype<T: ComponentBundle>(&self) -> Option<&Table> {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
         let bitset = T::try_get_signature(&self.component_registry)?;
         self.get_by_signature(&bitset)
     }
@@ -446,9 +460,6 @@ impl Archetypes {
     /// [`get_by_index_mut`]: Self::get_by_index_mut
     #[inline]
     pub fn get_by_archetype_mut<T: ComponentBundle>(&mut self) -> Option<&mut Table> {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
         let bitset = T::try_get_signature(&self.component_registry)?;
         self.get_by_signature_mut(&bitset)
     }
@@ -465,9 +476,6 @@ impl Archetypes {
     /// [`get_by_index`]: Self::get_by_index
     #[inline]
     pub fn get_by_signature(&self, signature: &Signature) -> Option<&Table> {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
         let index = self.lookup.get(signature)?;
         Some(self.get_by_index(*index))
     }
@@ -484,9 +492,6 @@ impl Archetypes {
     /// [`get_by_index_mut`]: Self::get_by_index_mut
     #[inline]
     pub fn get_by_signature_mut(&mut self, signature: &Signature) -> Option<&mut Table> {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.read();
-
         let index = self.lookup.get(signature)?;
         Some(self.get_by_index_mut(*index))
     }

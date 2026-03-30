@@ -77,8 +77,6 @@ impl Column {
 
     /// Copies the specific component from `self` to `other` without dropping the old component.
     ///
-    /// # Safety
-    ///
     /// # Panics
     ///
     /// Panics if `row` is not contained in the given column.
@@ -86,7 +84,8 @@ impl Column {
         debug_assert_eq!(self.ty, other.ty);
         debug_assert_eq!(self.layout, other.layout);
 
-        unsafe { other.push_from_ptr(self.get_erased_ptr(row).unwrap(), current_tick) };
+        let src_ptr = self.get_erased_ptr(row).unwrap();
+        unsafe { other.push_from_ptr(src_ptr, current_tick) };
     }
 
     /// Copies the element from the given `ptr` into the current column.
