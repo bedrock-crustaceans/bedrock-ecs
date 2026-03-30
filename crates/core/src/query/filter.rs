@@ -76,6 +76,14 @@ pub trait Filter {
     /// [`apply_dynamic`]: Filter::apply_dynamic
     const METHOD: FilterMethod;
 
+    /// Whether this filter always returns `true`. This is used to detect when the `()` filter is being used in queries,
+    /// since specialisation is unstable.
+    ///
+    /// This should only be set to true for the `()` type.
+    // The main use of this currently is specialising the `size_hint` implementation. If the filter is `()` we can return the exact
+    // size as lower and upper bound, while for nontrivial filters we give a lower bound of 0 instead.
+    const TRIVIAL: bool = false;
+
     /// Initialises the filter state.
     ///
     /// With most filters this just creates a bitset used to match with the archetype tables.
@@ -136,6 +144,7 @@ impl<const N: usize> FilterIterable for [bool; N] {
 /// This is simply an empty filter that matches everything. It is the default filter used by queries.
 impl Filter for () {
     const METHOD: FilterMethod = FilterMethod::Coarse;
+    const TRIVIAL: bool = true;
 
     fn init(_archetypes: &mut Archetypes) {}
 

@@ -25,6 +25,13 @@ pub struct Query<'w, Q: QueryBundle, F: Filter = ()> {
     state: &'w mut QueryState<Q, F>,
 }
 
+impl<'w, Q: QueryBundle> Query<'w, Q, ()> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len_upper_bound()
+    }
+}
+
 impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
     /// Creates a new query.
     ///
@@ -35,6 +42,23 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         state.update(&world.archetypes);
 
         Query { world, state }
+    }
+
+    pub fn size_hint(&self) -> (usize, Option<usize>) {
+        let upper_bound = self.len_upper_bound();
+        if F::TRIVIAL {
+            (upper_bound, Some(upper_bound))
+        } else {
+            (0, Some(upper_bound))
+        }
+    }
+
+    fn len_upper_bound(&self) -> usize {
+        self.state
+            .cache
+            .iter()
+            .map(|c| self.world.archetypes.get_by_index(c.table).len())
+            .sum::<usize>()
     }
 
     /// Attempts to fetch the specified `entity` using this query.

@@ -232,6 +232,9 @@ fn test_system(
     query2: Query<(Entity, &Mass)>,
     mut commands: Commands,
 ) {
+    println!("query1 matches {:?} items", query1.size_hint());
+    println!("query2 matches {} items", query2.iter().len());
+
     for entity in &query1 {
         println!(
             "adding mass {} to entity {}",

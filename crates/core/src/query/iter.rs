@@ -74,7 +74,7 @@ pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
     ///
     /// A hopping iterator jumps between tables and this function returns the remaining
     /// components in the current table, *not* the total amount of components.
-    fn current_len(&self) -> usize;
+    fn local_len(&self) -> usize;
 }
 
 /// An iterator that can jump from table to table.
@@ -93,7 +93,7 @@ pub trait HoppingIterator<'t>: Sized {
     // /// future tables and compute their lengths. Therefore, this method has a performance cost.
     // fn estimate_len(&self) -> usize;
 
-    /// Returns the length of the iterator of the *current* table.
+    /// Returns the length of the iterator of the *current* table *without* filters.
     ///
     /// A hopping iterator jumps between tables and this function returns the remaining
     /// components in the current table, *not* the total amount of components.
@@ -143,6 +143,17 @@ macro_rules! impl_bundle {
                         _marker: PhantomData
                     }
                 }
+
+                /// The length of the full iterator if it were unfiltered.
+                fn unfiltered_len(&self) -> usize {
+                    let cache = self.cache.as_slice();
+
+                    // Compute lengths of all remaining tables...
+                    let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
+
+                    // and add the remaining length of the current table.
+                    full + self.local_len()
+                }
             }
 
             impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
@@ -187,7 +198,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[allow(unused, non_snake_case)]
-                fn current_len(&self) -> usize {
+                fn local_len(&self) -> usize {
                     let ($($gen),*) = &self.iters;
                     iter_len!($($gen),*)
                 }
@@ -260,6 +271,26 @@ macro_rules! impl_bundle {
 
                         Some(($($gen?),*))
                     }
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    let upper_bound = self.unfiltered_len();
+
+                    if FA::TRIVIAL {
+                        // If this query performs no filtering, we know the exact size.
+                        (upper_bound, Some(upper_bound))
+                    } else {
+                        // Otherwise it has a size ranging from zero to the maximum of the query.
+                        (0, Some(upper_bound))
+                    }
+                }
+            }
+
+            impl<'t, Q: QueryBundle, $($gen: QueryData),*> ExactSizeIterator for [< IteratorBundle $count >]<'t, Q, (), $($gen),*> {
+                #[inline]
+                fn len(&self) -> usize {
+                    self.unfiltered_len()
                 }
             }
 
