@@ -12,7 +12,7 @@ use crate::command::CommandPool;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
-use crate::scheduler::{AccessDesc, AccessType, Schedule, ScheduleBuilder};
+use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 
@@ -131,48 +131,48 @@ impl World {
         self.resources.contains::<R>()
     }
 
-    #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
-    pub fn run(&mut self, schedule: &Schedule) {
-        for set in &schedule.sets {
-            // for id in set {
-            //     schedule.systems.get(id).unwrap().call(&self);
-            // }
+    // #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
+    // pub fn run(&mut self, schedule: &Schedule) {
+    //     for set in &schedule.sets {
+    //         // for id in set {
+    //         //     schedule.systems.get(id).unwrap().call(&self);
+    //         // }
 
-            #[cfg(not(miri))]
-            rayon::scope(|s| {
-                for id in set {
-                    s.spawn(|_| {
-                        unsafe { schedule.systems.get(id).unwrap().call(self) };
-                    });
-                }
-            });
+    //         #[cfg(not(miri))]
+    //         rayon::scope(|s| {
+    //             for id in set {
+    //                 s.spawn(|_| {
+    //                     unsafe { schedule.systems.get(id).unwrap().call(self) };
+    //                 });
+    //             }
+    //         });
 
-            #[cfg(miri)] // Miri is not very happy about rayon.
-            std::thread::scope(|s| {
-                // for system in schedule.systems.values() {
-                //     s.spawn(|| {
-                //         unsafe { system.call(self) };
-                //     });
-                // }
+    //         #[cfg(miri)] // Miri is not very happy about rayon.
+    //         std::thread::scope(|s| {
+    //             // for system in schedule.systems.values() {
+    //             //     s.spawn(|| {
+    //             //         unsafe { system.call(self) };
+    //             //     });
+    //             // }
 
-                for id in set {
-                    s.spawn(|| {
-                        unsafe { schedule.systems.get(id).unwrap().call(self) };
-                    });
-                }
-            })
+    //             for id in set {
+    //                 s.spawn(|| {
+    //                     unsafe { schedule.systems.get(id).unwrap().call(self) };
+    //                 });
+    //             }
+    //         })
 
-            // tracing::info!("Running next set");
-            // rayon::scope(|s| {
-            //     for id in set {
-            //         s.spawn(|_| {
-            //             schedule.systems.get(id).unwrap().call(&self);
-            //         });
-            //     }
-            // });
-        }
-        self.current_tick += 1;
-    }
+    //         // tracing::info!("Running next set");
+    //         // rayon::scope(|s| {
+    //         //     for id in set {
+    //         //         s.spawn(|_| {
+    //         //             schedule.systems.get(id).unwrap().call(&self);
+    //         //         });
+    //         //     }
+    //         // });
+    //     }
+    //     self.current_tick += 1;
+    // }
 
     #[inline]
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
@@ -220,37 +220,6 @@ unsafe impl Param for &World {
 
     fn init(_world: &mut World, _meta: &SystemMeta) {
         unimplemented!("A world cannot initialise another world");
-    }
-}
-
-unsafe impl Param for &mut World {
-    #[cfg(feature = "generics")]
-    type AccessCount = U1;
-
-    type State = ();
-
-    type Output<'w> = &'w mut World;
-
-    #[cfg(feature = "generics")]
-    fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
-        GenericArray::from((AccessDesc {
-            ty: AccessType::World,
-            exclusive: true,
-        },))
-    }
-
-    #[cfg(not(feature = "generics"))]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-        smallvec![AccessDesc {
-            ty: AccessType::World,
-            exclusive: true
-        }]
-    }
-
-    fn init(_world: &mut World, _meta: &SystemMeta) {}
-
-    fn fetch<'w, S: Sealed>(_world: &'w World, _state: &'w mut ()) -> &'w mut World {
-        todo!()
     }
 }
 

@@ -41,10 +41,10 @@ impl SystemMeta {
 
 // `System` must implement `Sync` such that rayon can run them on other threads.
 pub trait System: Sync {
-    /// Attempts to determine the name of this system.
-    fn name(&self) -> &'static str;
     /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
+
+    fn meta(&self) -> &SystemMeta;
     /// Executes the system.
     ///
     /// # Safety
@@ -123,8 +123,8 @@ macro_rules! impl_system {
             Sys: ParametrizedSystem<($($gen),*)>
         {
             #[inline]
-            fn name(&self) -> &'static str {
-                unsafe { &*self.meta.get().cast_const() }.name
+            fn meta(&self) -> &SystemMeta {
+                unsafe { &*self.meta.get().cast_const() }
             }
 
             fn access(&self) -> &[AccessDesc] {
@@ -190,8 +190,8 @@ where
     F: ParametrizedSystem<P>,
 {
     #[inline]
-    fn name(&self) -> &'static str {
-        unsafe { &*self.meta.get().cast_const() }.name
+    fn meta(&self) -> &SystemMeta {
+        unsafe { &*self.meta.get().cast_const() }
     }
 
     fn access(&self) -> &[AccessDesc] {

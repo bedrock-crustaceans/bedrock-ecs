@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use rustc_hash::FxHashMap;
 
-use crate::scheduler::{GraphNode, Schedule, ScheduleGraph};
+use crate::scheduler::{AccessType, ScheduleGraph, ScheduleNode};
 use crate::system::{IntoSystem, ParamBundle, System, SystemId};
 use crate::world::World;
 
@@ -33,9 +33,6 @@ macro_rules! impl_bundle {
                         let sid = SystemId::of::<$gen, [<$gen Fun>]>();
                         let boxed = [<$gen:lower>].into_system(schedule.world, sid);
 
-                        schedule.graph.add_node(GraphNode {
-                            sid, access: boxed.access().into()
-                        });
                         schedule.systems.insert(sid, boxed);
                     )*
                 }
@@ -64,7 +61,6 @@ pub struct SystemLabelId(pub(crate) TypeId);
 
 pub struct ScheduleBuilder<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) graph: ScheduleGraph,
     pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
 }
 
@@ -72,7 +68,6 @@ impl<'w> ScheduleBuilder<'w> {
     pub fn new(world: &'w mut World) -> ScheduleBuilder<'w> {
         ScheduleBuilder {
             world,
-            graph: ScheduleGraph::new(),
             systems: FxHashMap::default(),
         }
     }
@@ -88,8 +83,46 @@ impl<'w> ScheduleBuilder<'w> {
         self
     }
 
-    pub fn schedule(mut self) -> Schedule {
-        tracing::info!("Rendered: {}", self.graph.render(&self.systems));
-        self.graph.sort(self.systems)
+    pub fn schedule(mut self) -> ScheduleGraph {
+        // Build the dependency graph
+        let mut graph = ScheduleGraph::new();
+
+        let mut writers = FxHashMap::<AccessType, usize>::default();
+        let mut readers = FxHashMap::<AccessType, Vec<usize>>::default();
+
+        graph.nodes.reserve(self.systems.len());
+        for (i, sys) in self.systems.values().enumerate() {
+            graph.nodes.push(ScheduleNode {
+                id: sys.meta().id(),
+            });
+
+            let access = sys.access();
+            for desc in access {
+                if desc.exclusive {
+                    // If there exist writers or readers, create an edge
+                    if let Some(prev_writer) = writers.insert(desc.ty, i) {
+                        graph.edges.push((prev_writer, i));
+                    }
+
+                    if let Some(prev_readers) = readers.get_mut(&desc.ty) {
+                        for reader in prev_readers.iter() {
+                            graph.edges.push((*reader, i));
+                        }
+                        prev_readers.clear();
+                    }
+                } else {
+                    if let Some(prev_writer) = writers.remove(&desc.ty) {
+                        graph.edges.push((prev_writer, i));
+                    }
+
+                    readers.entry(desc.ty).or_insert_with(Vec::new).push(i);
+                }
+            }
+        }
+
+        let render = graph.render(&self.systems);
+        println!("{render}");
+
+        todo!()
     }
 }
