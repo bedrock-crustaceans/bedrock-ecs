@@ -265,7 +265,7 @@ impl Archetypes {
             entity.handle.index(),
             EntityMeta {
                 handle: entity.handle,
-                row: ColumnRow(new_table.columns[0].len()),
+                row: ColumnRow(new_table.columns[0].len() - 1),
                 table: table_ptr,
             },
         );
@@ -303,12 +303,17 @@ impl Archetypes {
         dst_signature.remove(&removal_signature);
 
         let dst_table = if let Some(dst_table) = self.get_by_signature_mut(&dst_signature) {
+            tracing::trace!("existing table found after component removal");
             dst_table
         } else {
+            tracing::trace!("creating new table after component removal");
+
             // Table not found, create new table
             let new_table = src_table.new_subset::<B>(removal_signature);
             self.insert_table(Box::new(new_table))
         };
+
+        println!("src table: {src_table:?}, dst table: {dst_table:?}");
 
         // Update entity metadata in destination table.
         dst_table.entities.push(meta.handle);
@@ -342,7 +347,12 @@ impl Archetypes {
                 .get_column_by_type(&ty_id)
                 .expect("table was missing one of its required columns");
 
-            todo!("Call below seems to attempt to copy a row that does not exist?");
+            println!(
+                "column has {} rows, accessing row {}",
+                src_column.len(),
+                meta.row.0
+            );
+
             unsafe { src_column.copy_component(column, meta.row.0, current_tick) };
         }
 

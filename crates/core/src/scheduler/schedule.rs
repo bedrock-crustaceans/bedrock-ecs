@@ -83,7 +83,7 @@ impl<'w> ScheduleBuilder<'w> {
         self
     }
 
-    pub fn schedule(mut self) -> ScheduleGraph {
+    pub fn schedule(self) -> ScheduleGraph {
         // Build the dependency graph
         let mut graph = ScheduleGraph::new();
 
@@ -120,9 +120,7 @@ impl<'w> ScheduleBuilder<'w> {
             }
         }
 
-        let render = graph.render(&self.systems);
-        println!("{render}");
-
-        todo!()
+        graph.systems = self.systems;
+        graph
     }
 }

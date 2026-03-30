@@ -37,10 +37,11 @@ pub struct ScheduleNode {
     pub id: SystemId,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct ScheduleGraph {
-    pub nodes: Vec<ScheduleNode>,
-    pub edges: Vec<(usize, usize)>,
+    pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
+    pub(crate) nodes: Vec<ScheduleNode>,
+    pub(crate) edges: Vec<(usize, usize)>,
 }
 
 impl ScheduleGraph {

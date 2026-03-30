@@ -154,8 +154,16 @@ impl Column {
             layout: self.layout,
             ty: self.ty,
             len: 0,
-            cap: 0,
-            data: None,
+            cap: if self.layout.size() == 0 {
+                usize::MAX
+            } else {
+                0
+            },
+            data: if self.layout.size() == 0 {
+                self.data
+            } else {
+                None
+            },
             drop_fn: self.drop_fn,
         }
     }
@@ -454,6 +462,8 @@ impl Column {
             isize::try_from(offset).is_ok(),
             "pointer offset overflow in Column::get"
         );
+
+        println!("column size is {} {:?}", self.len, self.data);
 
         // Safety:
         //

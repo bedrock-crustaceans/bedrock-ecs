@@ -154,7 +154,7 @@ impl Entities {
 
         let old = std::mem::replace(&mut self.dense[dense_idx.get() as usize], meta);
 
-        tracing::trace!("update fall entity {} from {:?} to {meta:?}", entity.0, old);
+        tracing::trace!("update full entity {} from {:?} to {meta:?}", entity.0, old);
 
         Some(old)
     }

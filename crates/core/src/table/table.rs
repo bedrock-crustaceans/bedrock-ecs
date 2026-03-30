@@ -107,22 +107,6 @@ impl Table {
         &self.signature
     }
 
-    /// Returns a read guard that gives permission to read from this table.
-    ///
-    /// Columns make use of interior mutability and are therefore locked separately.
-    #[cfg(debug_assertions)]
-    pub(crate) fn lock_read(&self) -> ReadGuard {
-        self.enforcer.read()
-    }
-
-    /// Returns a write guard that allows writing to this table.
-    ///
-    /// Columns make use of interior mutability and are therefore locked separately.
-    #[cfg(debug_assertions)]
-    pub(crate) fn lock_write(&self) -> WriteGuard {
-        self.enforcer.write()
-    }
-
     /// Inserts a set of components into this table and returns the row it was inserted at
     pub fn insert(
         &mut self,

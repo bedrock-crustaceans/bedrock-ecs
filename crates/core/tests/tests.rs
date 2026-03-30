@@ -1,4 +1,7 @@
+use bedrock_ecs::command::Commands;
 use bedrock_ecs::entity::Entity;
+use bedrock_ecs::entity::EntityGeneration;
+use bedrock_ecs::entity::EntityIndex;
 use bedrock_ecs::query::Query;
 use bedrock_ecs::query::Without;
 use bedrock_ecs::scheduler::{ScheduleBuilder, ScheduleLabel, SystemBundle};
@@ -224,6 +227,27 @@ fn bulk_up_system(query: Query<(&Stamina, &mut Mass)>) { /* ... */
 fn chaos_debug_system(query: Query<(&mut Target, &mut Position)>) { /* ... */
 }
 
+fn test_system(
+    query1: Query<Entity, Without<Mass>>,
+    query2: Query<(Entity, &Mass)>,
+    mut commands: Commands,
+) {
+    for entity in &query1 {
+        println!(
+            "adding mass {} to entity {}",
+            entity.index(),
+            entity.index()
+        );
+        commands
+            .entity(entity)
+            .insert(Mass(42.0 + entity.index().to_bits() as f32));
+    }
+
+    for (entity, mass) in &query2 {
+        println!("entity {} has mass {}", entity.index(), mass.0);
+    }
+}
+
 struct Physics;
 
 impl ScheduleLabel for Physics {
@@ -250,6 +274,11 @@ impl ScheduleLabel for Visuals {
 
 #[test]
 fn stress_test() {
+    tracing_subscriber::FmtSubscriber::builder()
+        .with_max_level(tracing::Level::TRACE)
+        .compact()
+        .init();
+
     let mut world = World::new();
 
     // // Spawn 1000 entities to ensure the loop actually takes time
@@ -271,54 +300,72 @@ fn stress_test() {
     //     ));
     // }
 
+    // let schedule = ScheduleBuilder::new(&mut world)
+    //     // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
+    //     .add(
+    //         Physics,
+    //         (
+    //             // physics_step_system,      // Write: Position, Read: Velocity
+    //             gravity_apply_system,      // Write: Velocity, Read: Mass
+    //             air_resistance_system,     // Write: Velocity, Read: Position
+    //             map_bounds_system,         // Write: Velocity, Read: Position
+    //             static_marker_sync_system, // Write: Velocity, Read: Static
+    //         ),
+    //     )
+    //     // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
+    //     .add(
+    //         Logic,
+    //         (
+    //             ai_perception_system,   // Write: Target, Read: Position, Faction
+    //             target_tracking_system, // Write: Velocity, Read: Target, Position
+    //             vampiric_drain_system,  // Write: Health, Stamina, Read: Target
+    //             chaos_debug_system,     // Write: Target, Position
+    //             bulk_up_system,         // Write: Mass, Read: Stamina
+    //         ),
+    //     )
+    //     // --- PHASE 3: Vitality & Combat (Health/Stamina Updates) ---
+    //     .add(
+    //         Combat,
+    //         (
+    //             health_regen_system,     // Write: Health, Read: Velocity, Stamina
+    //             stamina_drain_system,    // Write: Stamina, Read: Velocity
+    //             stamina_recovery_system, // Write: Stamina, Read: Health
+    //             poison_aura_system,      // Write: Health, Read: Position, Faction
+    //             impact_physics_system,   // Write: Velocity, Read: Mass, Health
+    //         ),
+    //     )
+    //     // --- PHASE 4: Visuals & Feedback (Sprite/UI/Audio) ---
+    //     .add(
+    //         Visuals,
+    //         (
+    //             death_cleanup_system,    // Write: Sprite, Read: Health
+    //             sprite_transform_system, // Write: Sprite, Read: Position
+    //             low_health_vfx_system,   // Write: Sprite, Read: Health
+    //             ui_health_bar_system,    // Read: Health, Position
+    //             footstep_audio_system,   // Write: Sprite, Read: Velocity, Position
+    //         ),
+    //     )
+    //     .schedule();
+
+    world.spawn(Static);
+
     let schedule = ScheduleBuilder::new(&mut world)
-        // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
-        .add(
-            Physics,
-            (
-                // physics_step_system,      // Write: Position, Read: Velocity
-                gravity_apply_system,      // Write: Velocity, Read: Mass
-                air_resistance_system,     // Write: Velocity, Read: Position
-                map_bounds_system,         // Write: Velocity, Read: Position
-                static_marker_sync_system, // Write: Velocity, Read: Static
-            ),
-        )
-        // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
-        .add(
-            Logic,
-            (
-                ai_perception_system,   // Write: Target, Read: Position, Faction
-                target_tracking_system, // Write: Velocity, Read: Target, Position
-                vampiric_drain_system,  // Write: Health, Stamina, Read: Target
-                chaos_debug_system,     // Write: Target, Position
-                bulk_up_system,         // Write: Mass, Read: Stamina
-            ),
-        )
-        // --- PHASE 3: Vitality & Combat (Health/Stamina Updates) ---
-        .add(
-            Combat,
-            (
-                health_regen_system,     // Write: Health, Read: Velocity, Stamina
-                stamina_drain_system,    // Write: Stamina, Read: Velocity
-                stamina_recovery_system, // Write: Stamina, Read: Health
-                poison_aura_system,      // Write: Health, Read: Position, Faction
-                impact_physics_system,   // Write: Velocity, Read: Mass, Health
-            ),
-        )
-        // --- PHASE 4: Visuals & Feedback (Sprite/UI/Audio) ---
-        .add(
-            Visuals,
-            (
-                death_cleanup_system,    // Write: Sprite, Read: Health
-                sprite_transform_system, // Write: Sprite, Read: Position
-                low_health_vfx_system,   // Write: Sprite, Read: Health
-                ui_health_bar_system,    // Read: Health, Position
-                footstep_audio_system,   // Write: Sprite, Read: Velocity, Position
-            ),
-        )
+        .add(Logic, test_system)
         .schedule();
 
-    // world.run(&schedule);
+    world.run(&schedule);
+    world.apply_commands();
+    world.run(&schedule);
+
+    let mut entity = world
+        .get_entity_mut(Entity::from_index_and_generation(
+            EntityIndex::from_bits(0),
+            EntityGeneration::from_bits(0),
+        ))
+        .unwrap();
+
+    let mass = entity.remove::<Mass>();
+    println!("mass is: {mass:?}");
 
     // // Execute loop
     // for _ in 0..100 {

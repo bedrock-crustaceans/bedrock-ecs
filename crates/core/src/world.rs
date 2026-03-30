@@ -12,7 +12,7 @@ use crate::command::CommandPool;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
-use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
+use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder, ScheduleGraph};
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
 
@@ -131,48 +131,18 @@ impl World {
         self.resources.contains::<R>()
     }
 
-    // #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
-    // pub fn run(&mut self, schedule: &Schedule) {
-    //     for set in &schedule.sets {
-    //         // for id in set {
-    //         //     schedule.systems.get(id).unwrap().call(&self);
-    //         // }
+    #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
+    pub fn run(&mut self, schedule: &ScheduleGraph) {
+        // TODO: Implement multithreaded scheduler.
 
-    //         #[cfg(not(miri))]
-    //         rayon::scope(|s| {
-    //             for id in set {
-    //                 s.spawn(|_| {
-    //                     unsafe { schedule.systems.get(id).unwrap().call(self) };
-    //                 });
-    //             }
-    //         });
-
-    //         #[cfg(miri)] // Miri is not very happy about rayon.
-    //         std::thread::scope(|s| {
-    //             // for system in schedule.systems.values() {
-    //             //     s.spawn(|| {
-    //             //         unsafe { system.call(self) };
-    //             //     });
-    //             // }
-
-    //             for id in set {
-    //                 s.spawn(|| {
-    //                     unsafe { schedule.systems.get(id).unwrap().call(self) };
-    //                 });
-    //             }
-    //         })
-
-    //         // tracing::info!("Running next set");
-    //         // rayon::scope(|s| {
-    //         //     for id in set {
-    //         //         s.spawn(|_| {
-    //         //             schedule.systems.get(id).unwrap().call(&self);
-    //         //         });
-    //         //     }
-    //         // });
-    //     }
-    //     self.current_tick += 1;
-    // }
+        for node in &schedule.nodes {
+            let system = schedule.systems.get(&node.id).unwrap();
+            unsafe {
+                system.call(self);
+            }
+        }
+        self.current_tick += 1;
+    }
 
     #[inline]
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
