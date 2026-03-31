@@ -133,6 +133,7 @@ impl<'w> ScheduleBuilder<'w> {
             in_degrees: Vec::with_capacity(self.systems.len()),
             systems: self.systems,
             graph,
+            ..Default::default()
         };
 
         scheduler.build_static_in_degrees();
