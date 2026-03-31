@@ -1,6 +1,7 @@
 use std::fmt::Write;
+use std::hash::{Hash, Hasher};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 
 use crate::component::ComponentId;
@@ -37,6 +38,12 @@ pub struct ScheduleNode {
     pub id: SystemId,
 }
 
+fn hash_system_id(id: SystemId) -> u64 {
+    let mut hasher = FxHasher::with_seed(0);
+    id.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Default)]
 pub struct ScheduleGraph {
     pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
@@ -49,22 +56,46 @@ impl ScheduleGraph {
         Self::default()
     }
 
-    pub fn render(&self, systems: &FxHashMap<SystemId, Box<dyn System>>) -> String {
-        let mut output = String::from("digraph {");
-
+    /// Returns HTML of a graph of the schedule.
+    pub fn render(&self) -> String {
+        let mut nodes = String::new();
         for node in &self.nodes {
-            let name = systems.get(&node.id).unwrap().meta().name();
-            output.push_str(&format!("{name};"));
+            let sys = self.systems.get(&node.id).unwrap();
+            let id = hash_system_id(node.id);
+            let name = sys.meta().name();
+
+            nodes += &format!("{id}[{name}]\n");
         }
 
-        for (from, to) in &self.edges {
-            let from_name = systems.get(&self.nodes[*from].id).unwrap().meta().name();
-            let to_name = systems.get(&self.nodes[*to].id).unwrap().meta().name();
+        let mut edges = String::new();
+        for &(edge1, edge2) in &self.edges {
+            let from = hash_system_id(self.nodes[edge1].id);
+            let to = hash_system_id(self.nodes[edge2].id);
 
-            output.push_str(&format!("{from_name} -> {to_name};"));
+            edges += &format!("{from} --> {to}\n");
         }
 
-        output.push('}');
-        output
+        format!(
+            r#"
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <title>Bedrock ECS scheduler graph</title>
+                </head>
+                <body>
+                    <script type="module">
+                        import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+                        mermaid.initialize({{ startOnLoad: true }});
+                    </script>
+
+                    <pre class="mermaid">
+                        graph LR
+                        {nodes}
+                        {edges}
+                    </pre>
+                </body>
+            </html>
+        "#
+        )
     }
 }

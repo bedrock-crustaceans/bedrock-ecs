@@ -1,6 +1,7 @@
 /.idea
 /target
 /Cargo.lock
+/crates/core/schedule.html
 expand.rs
 profile.kernel.etl
 profile.json.gz

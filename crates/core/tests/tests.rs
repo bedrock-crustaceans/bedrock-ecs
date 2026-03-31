@@ -370,6 +370,13 @@ fn stress_test() {
     let mass = entity.remove::<Mass>();
     println!("mass is: {mass:?}");
 
+    let schedule_render = schedule.render();
+
+    std::fs::write("schedule.html", schedule_render)
+        .expect("failed to write schedule render to file");
+
+    open::that("schedule.html").unwrap();
+
     // // Execute loop
     // for _ in 0..100 {
     //     schedule.run(&mut world);
