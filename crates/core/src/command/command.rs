@@ -1,7 +1,9 @@
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 
-use crate::command::{EntityCommands, EntityCommandsHandle, LocalCommandQueue, SpawnCommand};
+use crate::command::{
+    DeferredEntity, EntityCommands, EntityCommandsHandle, LocalCommandQueue, SpawnCommand,
+};
 use crate::entity::{Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
@@ -12,6 +14,7 @@ use crate::util::debug::{BorrowEnforcer, ReadGuard, WriteGuard};
 use crate::world::World;
 use generic_array::GenericArray;
 use generic_array::typenum::U0;
+use rustc_hash::FxHashMap;
 use thread_local::ThreadLocal;
 
 /// A command must have an alignment of at most 8.
@@ -95,12 +98,12 @@ impl<'s> Commands<'s> {
     pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityCommands<'_, 's> {
         let index = self.buffer.allocate_deferred_index();
         self.buffer.push(SpawnCommand {
-            handle: EntityCommandsHandle::Deferred(index),
+            handle: DeferredEntity(index.0),
             components: bundle,
         });
 
         EntityCommands {
-            entity: EntityCommandsHandle::Deferred(index),
+            entity: EntityCommandsHandle::Deferred(DeferredEntity(index.0)),
             commands: self,
         }
     }

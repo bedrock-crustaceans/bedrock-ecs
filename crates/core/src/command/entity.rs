@@ -5,6 +5,10 @@ use crate::entity::{Entity, EntityIndex};
 use crate::prelude::ComponentBundle;
 use crate::world::World;
 
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DeferredEntity(pub(crate) u32);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntityCommandsHandle {
     /// The commands will be applied to an existing entity
@@ -12,7 +16,7 @@ pub enum EntityCommandsHandle {
     /// The commands will be applied to an entity that still needs to be spawned.
     /// This happens when a system spawns an entity and then also modifies it within the same
     /// tick.
-    Deferred(EntityIndex),
+    Deferred(DeferredEntity),
 }
 
 impl EntityCommandsHandle {
@@ -86,7 +90,25 @@ pub struct RemoveCommand<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Command for RemoveCommand<T> {
     fn apply(self: Box<Self>, world: &mut World) {
-        todo!()
+        match self.entity {
+            EntityCommandsHandle::Spawned(handle) => {
+                world
+                    .get_entity_mut(handle)
+                    .expect("entity did not exist")
+                    .remove::<T>();
+            }
+            EntityCommandsHandle::Deferred(handle) => {
+                let entity = *world
+                    .deferred_entities
+                    .get(&handle)
+                    .expect("entity did not exist");
+
+                world
+                    .get_entity_mut(entity)
+                    .expect("entity did not exist")
+                    .remove::<T>();
+            }
+        }
     }
 }
 
@@ -104,13 +126,26 @@ impl<T: ComponentBundle> Command for InsertCommand<T> {
                     .expect("spawned entity not found")
                     .insert(self.components);
             }
-            EntityCommandsHandle::Deferred(_handle) => todo!(),
+            EntityCommandsHandle::Deferred(handle) => {
+                // Get real entity ID.
+                let entity = *world
+                    .deferred_entities
+                    .get(&handle)
+                    .expect("entity did not exist");
+
+                println!("inserting into deferred {handle:?} (real {entity:?})");
+
+                world
+                    .get_entity_mut(entity)
+                    .expect("entity did not exist")
+                    .insert(self.components);
+            }
         }
     }
 }
 
 pub struct SpawnCommand<T: ComponentBundle> {
-    pub(crate) handle: EntityCommandsHandle,
+    pub(crate) handle: DeferredEntity,
     pub(crate) components: T,
 }
 
@@ -122,7 +157,10 @@ impl<T: ComponentBundle> Command for SpawnCommand<T> {
     )]
     fn apply(self: Box<Self>, world: &mut World) {
         tracing::trace!("applying spawn command, target: {:?}", self.handle);
-        world.spawn(self.components);
+        let entity = world.spawn(self.components).handle();
+
+        println!("spawned {:?} as {entity:?}", self.handle);
+        world.deferred_entities.insert(self.handle, entity);
     }
 }
 

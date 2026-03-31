@@ -1,6 +1,7 @@
 use generic_array::GenericArray;
 #[cfg(feature = "generics")]
 use generic_array::typenum::U1;
+use rustc_hash::FxHashMap;
 #[cfg(not(feature = "generics"))]
 use smallvec::{SmallVec, smallvec};
 
@@ -8,9 +9,9 @@ use smallvec::{SmallVec, smallvec};
 use crate::param;
 
 use crate::archetype::Archetypes;
-use crate::command::CommandPool;
+use crate::command::{CommandPool, DeferredEntity};
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, Entity, EntityMut, EntityRef};
+use crate::entity::{Entities, Entity, EntityIndex, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder, ScheduleGraph};
 use crate::sealed::Sealed;
@@ -21,6 +22,7 @@ pub struct World {
     pub(crate) entities: Entities,
     pub(crate) resources: Resources,
     pub(crate) commands: Option<CommandPool>,
+    pub(crate) deferred_entities: FxHashMap<DeferredEntity, Entity>,
 
     pub(crate) current_tick: u32,
 }
@@ -34,6 +36,7 @@ impl World {
             entities: Entities::new(),
             resources: Resources::new(),
             commands: Some(CommandPool::new()),
+            deferred_entities: FxHashMap::default(),
 
             current_tick: 0,
         }
@@ -46,6 +49,7 @@ impl World {
         unsafe { commands.apply_all(self) };
 
         self.commands = Some(commands);
+        self.deferred_entities.clear();
     }
 
     // Entities

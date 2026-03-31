@@ -279,9 +279,9 @@ fn test_system(
             entity.index(),
             entity.index()
         );
-        commands
-            .entity(entity)
-            .insert(Mass(42.0 + entity.index().to_bits() as f32));
+
+        let mut cmds = commands.spawn(Static);
+        cmds.insert(Mass(42.0 + entity.index().to_bits() as f32));
     }
 
     for (entity, mass) in &query2 {
@@ -351,6 +351,7 @@ fn stress_test() {
                 air_resistance_system,     // Write: Velocity, Read: Position
                 map_bounds_system,         // Write: Velocity, Read: Position
                 static_marker_sync_system, // Write: Velocity, Read: Static
+                test_system,
             ),
         )
         // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
@@ -395,7 +396,7 @@ fn stress_test() {
     //     .schedule();
 
     schedule.run(&world);
-    // world.apply_commands();
+    world.apply_commands();
     // world.run(&schedule);
 
     let mut entity = world
