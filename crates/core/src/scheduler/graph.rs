@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
-use rustc_hash::{FxHashMap, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use smallvec::SmallVec;
 
 use crate::component::ComponentId;
@@ -48,7 +49,7 @@ fn hash_system_id(id: SystemId) -> u64 {
 pub struct ScheduleGraph {
     pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
     pub(crate) nodes: Vec<ScheduleNode>,
-    pub(crate) edges: Vec<(usize, usize)>,
+    pub(crate) edges: FxHashSet<(usize, usize)>,
 }
 
 impl ScheduleGraph {
@@ -64,7 +65,7 @@ impl ScheduleGraph {
             let id = hash_system_id(node.id);
             let name = sys.meta().name();
 
-            nodes += &format!("{id}[{name}]\n");
+            nodes += &format!("{id}(\"{name}\");");
         }
 
         let mut edges = String::new();
@@ -72,30 +73,36 @@ impl ScheduleGraph {
             let from = hash_system_id(self.nodes[edge1].id);
             let to = hash_system_id(self.nodes[edge2].id);
 
-            edges += &format!("{from} --> {to}\n");
+            edges += &format!("{from} --> {to};");
         }
 
         format!(
             r#"
-            <!DOCTYPE html>
-            <html>
-                <head>
-                    <title>Bedrock ECS scheduler graph</title>
-                </head>
-                <body>
-                    <script type="module">
-                        import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-                        mermaid.initialize({{ startOnLoad: true }});
-                    </script>
+                <!DOCTYPE html>
+                <html>
+                    <head>
+                        <title>Bedrock ECS scheduler graph</title>
+                    </head>
+                    <body>
+                        <script type="module">
+                            import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+                            mermaid.initialize({{ startOnLoad: true }});
+                        </script>
 
-                    <pre class="mermaid">
-                        graph LR
-                        {nodes}
-                        {edges}
-                    </pre>
-                </body>
-            </html>
-        "#
+                        <pre class="mermaid">
+                            ---
+                            title: Bedrock ECS Scheduler Graph
+                            config:
+                                theme: neutral
+                                look: handDrawn
+                            ---
+                            flowchart TD
+                                {nodes}
+                                {edges}
+                        </pre>
+                    </body>
+                </html>
+            "#
         )
     }
 }

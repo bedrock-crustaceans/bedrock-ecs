@@ -101,18 +101,18 @@ impl<'w> ScheduleBuilder<'w> {
                 if desc.exclusive {
                     // If there exist writers or readers, create an edge
                     if let Some(prev_writer) = writers.insert(desc.ty, i) {
-                        graph.edges.push((prev_writer, i));
+                        graph.edges.insert((prev_writer, i));
                     }
 
                     if let Some(prev_readers) = readers.get_mut(&desc.ty) {
                         for reader in prev_readers.iter() {
-                            graph.edges.push((*reader, i));
+                            graph.edges.insert((*reader, i));
                         }
                         prev_readers.clear();
                     }
                 } else {
-                    if let Some(prev_writer) = writers.remove(&desc.ty) {
-                        graph.edges.push((prev_writer, i));
+                    if let Some(&prev_writer) = writers.get(&desc.ty) {
+                        graph.edges.insert((prev_writer, i));
                     }
 
                     readers.entry(desc.ty).or_insert_with(Vec::new).push(i);

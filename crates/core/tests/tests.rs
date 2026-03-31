@@ -303,58 +303,58 @@ fn stress_test() {
     //     ));
     // }
 
-    // let schedule = ScheduleBuilder::new(&mut world)
-    //     // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
-    //     .add(
-    //         Physics,
-    //         (
-    //             // physics_step_system,      // Write: Position, Read: Velocity
-    //             gravity_apply_system,      // Write: Velocity, Read: Mass
-    //             air_resistance_system,     // Write: Velocity, Read: Position
-    //             map_bounds_system,         // Write: Velocity, Read: Position
-    //             static_marker_sync_system, // Write: Velocity, Read: Static
-    //         ),
-    //     )
-    //     // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
-    //     .add(
-    //         Logic,
-    //         (
-    //             ai_perception_system,   // Write: Target, Read: Position, Faction
-    //             target_tracking_system, // Write: Velocity, Read: Target, Position
-    //             vampiric_drain_system,  // Write: Health, Stamina, Read: Target
-    //             chaos_debug_system,     // Write: Target, Position
-    //             bulk_up_system,         // Write: Mass, Read: Stamina
-    //         ),
-    //     )
-    //     // --- PHASE 3: Vitality & Combat (Health/Stamina Updates) ---
-    //     .add(
-    //         Combat,
-    //         (
-    //             health_regen_system,     // Write: Health, Read: Velocity, Stamina
-    //             stamina_drain_system,    // Write: Stamina, Read: Velocity
-    //             stamina_recovery_system, // Write: Stamina, Read: Health
-    //             poison_aura_system,      // Write: Health, Read: Position, Faction
-    //             impact_physics_system,   // Write: Velocity, Read: Mass, Health
-    //         ),
-    //     )
-    //     // --- PHASE 4: Visuals & Feedback (Sprite/UI/Audio) ---
-    //     .add(
-    //         Visuals,
-    //         (
-    //             death_cleanup_system,    // Write: Sprite, Read: Health
-    //             sprite_transform_system, // Write: Sprite, Read: Position
-    //             low_health_vfx_system,   // Write: Sprite, Read: Health
-    //             ui_health_bar_system,    // Read: Health, Position
-    //             footstep_audio_system,   // Write: Sprite, Read: Velocity, Position
-    //         ),
-    //     )
-    //     .schedule();
+    let schedule = ScheduleBuilder::new(&mut world)
+        // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
+        .add(
+            Physics,
+            (
+                // physics_step_system,      // Write: Position, Read: Velocity
+                gravity_apply_system,      // Write: Velocity, Read: Mass
+                air_resistance_system,     // Write: Velocity, Read: Position
+                map_bounds_system,         // Write: Velocity, Read: Position
+                static_marker_sync_system, // Write: Velocity, Read: Static
+            ),
+        )
+        // --- PHASE 2: Intelligence & Strategy (Target/Faction Logic) ---
+        .add(
+            Logic,
+            (
+                ai_perception_system,   // Write: Target, Read: Position, Faction
+                target_tracking_system, // Write: Velocity, Read: Target, Position
+                vampiric_drain_system,  // Write: Health, Stamina, Read: Target
+                chaos_debug_system,     // Write: Target, Position
+                bulk_up_system,         // Write: Mass, Read: Stamina
+            ),
+        )
+        // --- PHASE 3: Vitality & Combat (Health/Stamina Updates) ---
+        .add(
+            Combat,
+            (
+                health_regen_system,     // Write: Health, Read: Velocity, Stamina
+                stamina_drain_system,    // Write: Stamina, Read: Velocity
+                stamina_recovery_system, // Write: Stamina, Read: Health
+                poison_aura_system,      // Write: Health, Read: Position, Faction
+                impact_physics_system,   // Write: Velocity, Read: Mass, Health
+            ),
+        )
+        // --- PHASE 4: Visuals & Feedback (Sprite/UI/Audio) ---
+        .add(
+            Visuals,
+            (
+                death_cleanup_system,    // Write: Sprite, Read: Health
+                sprite_transform_system, // Write: Sprite, Read: Position
+                low_health_vfx_system,   // Write: Sprite, Read: Health
+                ui_health_bar_system,    // Read: Health, Position
+                footstep_audio_system,   // Write: Sprite, Read: Velocity, Position
+            ),
+        )
+        .schedule();
 
     world.spawn(Static);
 
-    let schedule = ScheduleBuilder::new(&mut world)
-        .add(Logic, test_system)
-        .schedule();
+    // let schedule = ScheduleBuilder::new(&mut world)
+    //     .add(Logic, test_system)
+    //     .schedule();
 
     world.run(&schedule);
     world.apply_commands();
@@ -367,8 +367,9 @@ fn stress_test() {
         ))
         .unwrap();
 
+    // FIXME: This crashes when the entity does not have the component.
     let mass = entity.remove::<Mass>();
-    println!("mass is: {mass:?}");
+    // println!("mass is: {mass:?}");
 
     let schedule_render = schedule.render();
 

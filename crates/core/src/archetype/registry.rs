@@ -296,8 +296,12 @@ impl Archetypes {
 
         let removal_signature = B::get_or_assign_signature(&mut self.component_registry);
 
-        // Find new table
         let src_table = unsafe { meta.table.as_ptr().as_mut_unchecked() };
+
+        // Ensure that the entity actually has all these components
+        if !src_table.signature.contains(&removal_signature) {
+            return None;
+        }
 
         let mut dst_signature = src_table.signature.clone();
         dst_signature.remove(&removal_signature);
