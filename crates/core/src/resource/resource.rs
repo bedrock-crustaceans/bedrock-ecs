@@ -181,7 +181,7 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
         GenericArray::from((AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<R>()),
-            exclusive: false,
+            exclusive: true,
         },))
     }
 

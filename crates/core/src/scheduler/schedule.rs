@@ -102,6 +102,30 @@ impl<'w> ScheduleBuilder<'w> {
         for (i, sys) in self.systems.iter().enumerate() {
             let access = sys.access();
             for desc in access {
+                // If there is an active world system, create an edge
+                if let Some(&prev_writer) = writers.get(&AccessType::World) {
+                    graph.edges[prev_writer].push(i);
+                }
+
+                if desc.ty == AccessType::World {
+                    // Create edge with every current reader and writer
+                    for writer in writers.values() {
+                        graph.edges[*writer].push(i);
+                    }
+
+                    for vec in readers.values() {
+                        for reader in vec {
+                            graph.edges[*reader].push(i);
+                        }
+                    }
+
+                    writers.clear();
+                    readers.clear();
+                    writers.insert(desc.ty, i);
+
+                    continue;
+                }
+
                 if desc.exclusive {
                     // If there exist writers or readers, create an edge
                     if let Some(prev_writer) = writers.insert(desc.ty, i) {

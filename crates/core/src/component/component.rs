@@ -243,3 +243,8 @@ impl_component_bundle!(A, B);
 impl_component_bundle!(A, B, C);
 impl_component_bundle!(A, B, C, D);
 impl_component_bundle!(A, B, C, D, E);
+impl_component_bundle!(A, B, C, D, E, F);
+impl_component_bundle!(A, B, C, D, E, F, G);
+impl_component_bundle!(A, B, C, D, E, F, G, H);
+impl_component_bundle!(A, B, C, D, E, F, G, H, I);
+impl_component_bundle!(A, B, C, D, E, F, G, H, I, J);

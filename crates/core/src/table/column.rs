@@ -463,8 +463,6 @@ impl Column {
             "pointer offset overflow in Column::get"
         );
 
-        println!("column size is {} {:?}", self.len, self.data);
-
         // Safety:
         //
         // This call to `NonNull::add` is safe because the offset does not overflow `isize` by the assertion

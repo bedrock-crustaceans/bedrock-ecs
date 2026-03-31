@@ -1,5 +1,4 @@
 use std::any::TypeId;
-use std::ptr::NonNull;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
@@ -9,6 +8,7 @@ use crate::entity::{Entities, Entity, EntityMeta};
 use crate::table::{Column, ColumnRow, EntityIter, EntityRefIter};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
+#[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 use crate::world::World;
 

@@ -226,8 +226,6 @@ impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
                 self.cache.len()
             );
 
-            tracing::error!("{:?}", self.cache);
-
             self.generation = archetypes.generation();
         }
     }

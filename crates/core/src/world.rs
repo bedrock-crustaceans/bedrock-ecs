@@ -179,9 +179,7 @@ unsafe impl Param for &World {
         world
     }
 
-    fn init(_world: &mut World, _meta: &SystemMeta) {
-        unimplemented!("A world cannot initialise another world");
-    }
+    fn init(_world: &mut World, _meta: &SystemMeta) {}
 }
 
 unsafe impl Send for World {}

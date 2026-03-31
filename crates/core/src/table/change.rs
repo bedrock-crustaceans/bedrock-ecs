@@ -77,7 +77,6 @@ impl<T> Deref for Mut<'_, T> {
 impl<T> DerefMut for Mut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        tracing::error!("CHANGED {}", std::any::type_name::<T>());
         unsafe { self.tracker.set_changed(self.index, self.current_tick) };
         self.inner
     }

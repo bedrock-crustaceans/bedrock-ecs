@@ -94,11 +94,11 @@ impl Scheduler {
             self.curr_in_degrees[id].store(u32::MAX, Ordering::Release);
 
             let system = &self.systems[id];
-            tracing::trace!("calling {}", system.meta().name());
 
             #[cfg(feature = "inspect")]
             let start = Instant::now();
 
+            tracing::trace!("executing system {}", system.meta().name());
             unsafe { system.call(world) };
 
             #[cfg(feature = "inspect")]
@@ -113,11 +113,6 @@ impl Scheduler {
                 };
             }
 
-            #[cfg(feature = "inspect")]
-
-            tracing::trace!("finished {}", system.meta().name());
-
-            tracing::error!("{:?}", self.curr_in_degrees);
             // Then decrease all in degrees of the dependent systems
             for dependent in &self.graph.edges[id] {
                 let now = self.curr_in_degrees[*dependent].fetch_sub(1, Ordering::Relaxed) - 1;
@@ -139,8 +134,6 @@ impl Scheduler {
                 .resize(self.systems.len(), ExecutionInfo::default());
         }
 
-        tracing::error!("schedule is: {:?}", self.in_degrees);
-
         rayon::scope(|s| {
             for id in self
                 .curr_in_degrees
@@ -148,7 +141,6 @@ impl Scheduler {
                 .enumerate()
                 .filter_map(|(i, d)| (d.load(Ordering::Acquire) == 0).then_some(i))
             {
-                tracing::trace!("running {id}");
                 self.run_system(id, world, s);
             }
         });
@@ -156,8 +148,6 @@ impl Scheduler {
 
     #[cfg(feature = "inspect")]
     pub fn render_execution_graph(&self) -> String {
-        println!("{:?}", *self.timing.lock().unwrap());
-
         let mut sections = String::new();
         let lock = self.timing.lock().unwrap();
 
@@ -173,18 +163,26 @@ impl Scheduler {
                     let start_micros = start_elapsed.as_micros();
                     let finish_micros = finish_elapsed.as_micros();
 
-                    curr += &format!(
-                        "{name} :{j}, {:#02}.{:#03}, {:#02}.{:#03}\n",
-                        start_micros / 1000,
-                        start_micros % 1000,
-                        finish_micros / 1000,
+                    let start_fmt = format!(
+                        "{:02}:{:02}.{:03}",
+                        (start_micros / 60_000),        // Minutes
+                        (start_micros % 60_000) / 1000, // Seconds
+                        start_micros % 1000             // Milliseconds
+                    );
+
+                    let finish_fmt = format!(
+                        "{:02}:{:02}.{:03}",
+                        (finish_micros / 60_000),
+                        (finish_micros % 60_000) / 1000,
                         finish_micros % 1000
                     );
+
+                    curr += &format!("    {name} :{j}, {start_fmt}, {finish_fmt}\n");
                 }
             }
 
             if !curr.is_empty() {
-                sections += &format!("section {i}\n{curr}");
+                sections += &format!("section Thread {i}\n{curr}");
             }
         }
 
@@ -204,14 +202,11 @@ impl Scheduler {
                     <pre class="mermaid">
 ---
 title: ECS execution chart
-config:
-    theme: neutral
-    look: handDrawn
 ---
 gantt
     title ECS execution chart
-    dateFormat ss.SSS
-    axisFormat %S.%L
+    dateFormat mm:ss.SSS
+    axisFormat %M:%S.%L
     {sections}
                     </pre>
                 </body>
@@ -242,7 +237,7 @@ gantt
                 <!DOCTYPE html>
                 <html>
                     <head>
-                        <title>Bedrock ECS scheduler graph</title>
+                        <title>ECS dependency graph</title>
                     </head>
                     <body>
                         <script type="module">
@@ -252,10 +247,7 @@ gantt
 
                         <pre class="mermaid">
                             ---
-                            title: Bedrock ECS Scheduler Graph
-                            config:
-                                theme: neutral
-                                look: handDrawn
+                            title: ECS dependency graph
                             ---
                             flowchart TD
                                 {nodes}

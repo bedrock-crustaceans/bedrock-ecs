@@ -160,6 +160,7 @@ impl<'a, T, F: Filter> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T
 pub struct EntityIter<'w> {
     pub(crate) iter: std::slice::Iter<'w, Entity>,
 
+    #[cfg(debug_assertions)]
     pub(crate) _guard: Option<ReadGuard>,
 }
 
