@@ -120,6 +120,8 @@ impl<'w> ScheduleBuilder<'w> {
             }
         }
 
+        // TODO: We should perform transitive reduction to remove redundant edges.
+
         graph.systems = self.systems;
         graph
     }
