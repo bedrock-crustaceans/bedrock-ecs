@@ -152,79 +152,117 @@ struct Target(Option<u32>);
 // fn physics_step_system(query: Query<(&mut Position, &Velocity), Without<Static>>) { /* ... */ }
 
 /// 2. Gravity: Constant downward acceleration.
-fn gravity_apply_system(query: Query<(&mut Velocity, &Mass), Without<Static>>) { /* ... */
+fn gravity_apply_system(query: Query<(&mut Velocity, &Mass), Without<Static>>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 3. Friction: Slows down Velocity over time.
-fn air_resistance_system(query: Query<(&mut Velocity, &Position)>) { /* ... */
+fn air_resistance_system(query: Query<(&mut Velocity, &Position)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 4. Boundary: Bounce Velocity if Position hits edge.
-fn map_bounds_system(query: Query<(&Position, &mut Velocity)>) { /* ... */
+fn map_bounds_system(query: Query<(&Position, &mut Velocity)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 5. Targeting: Scan for nearest Entity of different Faction.
-fn ai_perception_system(query: Query<(Entity, &Position, &Faction, &mut Target)>) { /* ... */
+fn ai_perception_system(query: Query<(Entity, &Position, &Faction, &mut Target)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 6. Homing: Steering Velocity toward Target.
-fn target_tracking_system(query: Query<(&Target, &Position, &mut Velocity)>) { /* ... */
+fn target_tracking_system(query: Query<(&Target, &Position, &mut Velocity)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 7. Health: Natural regeneration if not moving.
-fn health_regen_system(query: Query<(&mut Health, &Velocity, &Stamina)>) { /* ... */
+fn health_regen_system(query: Query<(&mut Health, &Velocity, &Stamina)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 8. Stamina: Deplete Stamina based on Velocity magnitude.
-fn stamina_drain_system(query: Query<(&mut Stamina, &Velocity)>) { /* ... */
+fn stamina_drain_system(query: Query<(&mut Stamina, &Velocity)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 9. Stamina: Slow recovery over time.
-fn stamina_recovery_system(query: Query<(&mut Stamina, &Health)>) { /* ... */
+fn stamina_recovery_system(query: Query<(&mut Stamina, &Health)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 10. Death: Mark Sprite invisible if Health <= 0.
-fn death_cleanup_system(query: Query<(&Health, &mut Sprite)>) { /* ... */
+fn death_cleanup_system(query: Query<(&Health, &mut Sprite)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 11. Visuals: Sync Sprite position to Position.
-fn sprite_transform_system(query: Query<(&Position, &mut Sprite)>) { /* ... */
+fn sprite_transform_system(query: Query<(&Position, &mut Sprite)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 12. Visuals: Flash Sprite if Health is low.
-fn low_health_vfx_system(query: Query<(&Health, &mut Sprite)>) { /* ... */
+fn low_health_vfx_system(query: Query<(&Health, &mut Sprite)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 13. Combat: Poison nearby Factions.
-fn poison_aura_system(query: Query<(&Position, &Faction, &mut Health)>) { /* ... */
+fn poison_aura_system(query: Query<(&Position, &Faction, &mut Health)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 14. Combat: Lifesteal from Target.
-fn vampiric_drain_system(query: Query<(&Target, &mut Health, &mut Stamina)>) { /* ... */
+fn vampiric_drain_system(query: Query<(&Target, &mut Health, &mut Stamina)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 15. Combat: Knockback based on Mass.
-fn impact_physics_system(query: Query<(&mut Velocity, &Mass, &Health)>) { /* ... */
+fn impact_physics_system(query: Query<(&mut Velocity, &Mass, &Health)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 16. Utility: Frozen status for Static entities.
-fn static_marker_sync_system(query: Query<(&mut Velocity, &Static)>) { /* ... */
+fn static_marker_sync_system(query: Query<(&Velocity, &Static)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 17. UI: Update health bars (Reads Health/Position).
-fn ui_health_bar_system(query: Query<(&Health, &Position)>) { /* ... */
+fn ui_health_bar_system(query: Query<(&Health, &Position)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 18. Sound: Play footstep sounds based on Velocity/Position.
-fn footstep_audio_system(query: Query<(&Velocity, &Position, &mut Sprite)>) { /* ... */
+fn footstep_audio_system(query: Query<(&Velocity, &Position, &mut Sprite)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 19. Buffs: Increase Mass if Stamina is high.
-fn bulk_up_system(query: Query<(&Stamina, &mut Mass)>) { /* ... */
+fn bulk_up_system(query: Query<(&Stamina, &mut Mass)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 /// 20. Debug: Teleport Target to random Position.
-fn chaos_debug_system(query: Query<(&mut Target, &mut Position)>) { /* ... */
+fn chaos_debug_system(query: Query<(&mut Target, &mut Position)>) {
+    /* ... */
+    std::thread::sleep(std::time::Duration::from_millis(250));
 }
 
 fn test_system(
@@ -303,7 +341,7 @@ fn stress_test() {
     //     ));
     // }
 
-    let schedule = ScheduleBuilder::new(&mut world)
+    let mut schedule = ScheduleBuilder::new(&mut world)
         // --- PHASE 1: Physics & Movement (High Velocity/Position Contention) ---
         .add(
             Physics,
@@ -356,9 +394,9 @@ fn stress_test() {
     //     .add(Logic, test_system)
     //     .schedule();
 
-    world.run(&schedule);
-    world.apply_commands();
-    world.run(&schedule);
+    schedule.run(&world);
+    // world.apply_commands();
+    // world.run(&schedule);
 
     let mut entity = world
         .get_entity_mut(Entity::from_index_and_generation(

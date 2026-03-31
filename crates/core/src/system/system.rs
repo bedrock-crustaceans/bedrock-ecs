@@ -238,10 +238,4 @@ where
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct SystemId(pub(crate) TypeId);
-
-impl SystemId {
-    pub const fn of<P, F: IntoSystem<P> + 'static>() -> SystemId {
-        SystemId(TypeId::of::<F>())
-    }
-}
+pub struct SystemId(pub(crate) u32);

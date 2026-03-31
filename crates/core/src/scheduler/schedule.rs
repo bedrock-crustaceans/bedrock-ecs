@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use rustc_hash::FxHashMap;
 
-use crate::scheduler::{AccessType, ScheduleGraph, ScheduleNode};
+use crate::scheduler::{AccessType, ScheduleGraph, ScheduleNode, Scheduler};
 use crate::system::{IntoSystem, ParamBundle, System, SystemId};
 use crate::world::World;
 
@@ -30,10 +30,10 @@ macro_rules! impl_bundle {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let sid = SystemId::of::<$gen, [<$gen Fun>]>();
+                        let sid = schedule.next_id();
                         let boxed = [<$gen:lower>].into_system(schedule.world, sid);
 
-                        schedule.systems.insert(sid, boxed);
+                        schedule.systems.push(boxed);
                     )*
                 }
             }
@@ -60,16 +60,24 @@ pub trait ScheduleLabel {
 pub struct SystemLabelId(pub(crate) TypeId);
 
 pub struct ScheduleBuilder<'w> {
+    next_id: u32,
     pub(crate) world: &'w mut World,
-    pub(crate) systems: FxHashMap<SystemId, Box<dyn System>>,
+    pub(crate) systems: Vec<Box<dyn System>>,
 }
 
 impl<'w> ScheduleBuilder<'w> {
     pub fn new(world: &'w mut World) -> ScheduleBuilder<'w> {
         ScheduleBuilder {
+            next_id: 0,
             world,
-            systems: FxHashMap::default(),
+            systems: Vec::new(),
         }
+    }
+
+    pub(crate) fn next_id(&mut self) -> SystemId {
+        let id = self.next_id;
+        self.next_id += 1;
+        SystemId(id)
     }
 
     #[must_use = "dropping the builder without calling `ScheduleBuilder::schedule` will do nothing"]
@@ -83,36 +91,32 @@ impl<'w> ScheduleBuilder<'w> {
         self
     }
 
-    pub fn schedule(self) -> ScheduleGraph {
+    pub fn schedule(self) -> Scheduler {
         // Build the dependency graph
         let mut graph = ScheduleGraph::new();
 
         let mut writers = FxHashMap::<AccessType, usize>::default();
         let mut readers = FxHashMap::<AccessType, Vec<usize>>::default();
 
-        graph.nodes.reserve(self.systems.len());
-        for (i, sys) in self.systems.values().enumerate() {
-            graph.nodes.push(ScheduleNode {
-                id: sys.meta().id(),
-            });
-
+        graph.edges.resize_with(self.systems.len(), Vec::new);
+        for (i, sys) in self.systems.iter().enumerate() {
             let access = sys.access();
             for desc in access {
                 if desc.exclusive {
                     // If there exist writers or readers, create an edge
                     if let Some(prev_writer) = writers.insert(desc.ty, i) {
-                        graph.edges.insert((prev_writer, i));
+                        graph.edges[prev_writer].push(i);
                     }
 
                     if let Some(prev_readers) = readers.get_mut(&desc.ty) {
                         for reader in prev_readers.iter() {
-                            graph.edges.insert((*reader, i));
+                            graph.edges[*reader].push(i);
                         }
                         prev_readers.clear();
                     }
                 } else {
                     if let Some(&prev_writer) = writers.get(&desc.ty) {
-                        graph.edges.insert((prev_writer, i));
+                        graph.edges[prev_writer].push(i);
                     }
 
                     readers.entry(desc.ty).or_insert_with(Vec::new).push(i);
@@ -120,9 +124,22 @@ impl<'w> ScheduleBuilder<'w> {
             }
         }
 
+        graph.edges.iter_mut().for_each(|v| v.dedup());
+
         // TODO: We should perform transitive reduction to remove redundant edges.
 
-        graph.systems = self.systems;
-        graph
+        let mut scheduler = Scheduler {
+            curr_in_degrees: Vec::with_capacity(self.systems.len()),
+            in_degrees: Vec::with_capacity(self.systems.len()),
+            systems: self.systems,
+            graph,
+        };
+
+        scheduler.build_static_in_degrees();
+        scheduler.reset_in_degrees();
+
+        println!("{:?} {:?}", scheduler.in_degrees, scheduler.graph);
+
+        scheduler
     }
 }

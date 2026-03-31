@@ -131,19 +131,6 @@ impl World {
         self.resources.contains::<R>()
     }
 
-    #[expect(clippy::missing_panics_doc, reason = "internal invariant")]
-    pub fn run(&mut self, schedule: &ScheduleGraph) {
-        // TODO: Implement multithreaded scheduler.
-
-        for node in &schedule.nodes {
-            let system = schedule.systems.get(&node.id).unwrap();
-            unsafe {
-                system.call(self);
-            }
-        }
-        self.current_tick += 1;
-    }
-
     #[inline]
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
         ScheduleBuilder::new(self)
