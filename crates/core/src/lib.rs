@@ -13,6 +13,7 @@ pub mod message;
 pub mod query;
 pub mod resource;
 pub mod scheduler;
+pub mod sparse;
 pub mod system;
 pub mod table;
 pub mod time;
