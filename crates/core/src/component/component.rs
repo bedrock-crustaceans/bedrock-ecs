@@ -1,5 +1,4 @@
 use std::any::TypeId;
-use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 
@@ -134,10 +133,6 @@ macro_rules! impl_component_bundle {
                     Some(set)
                 }
 
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "ComponentBundle::new_table", fields(bundle = std::any::type_name::<Self>()), skip_all)
-                )]
                 #[allow(unused)]
                 unsafe fn new_table(signature: Signature) -> Table {
                     let mut lookup = FxHashMap::with_capacity_and_hasher(Self::LEN, FxBuildHasher::default());
@@ -163,10 +158,6 @@ macro_rules! impl_component_bundle {
                     }
                 }
 
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "ComponentBundle::new_joined_table", skip_all)
-                )]
                 unsafe fn new_joined_table(base: &Table, mut signature: Signature) -> Table {
                     // Check whether the original table and this bundle are disjoint.
                     if !base.signature.is_disjoint(&signature) {
@@ -178,8 +169,6 @@ macro_rules! impl_component_bundle {
 
                     let old_col_count = base.columns.len();
                     let new_col_count = old_col_count + Self::LEN;
-
-                    tracing::debug!("Column count: {old_col_count} -> {new_col_count}");
 
                     let mut columns = Vec::with_capacity(new_col_count);
 

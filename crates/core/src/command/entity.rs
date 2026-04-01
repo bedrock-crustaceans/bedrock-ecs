@@ -89,7 +89,17 @@ pub struct RemoveCommand<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Command for RemoveCommand<T> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "RemoveCommand::apply", skip_all)
+    )]
     fn apply(self: Box<Self>, world: &mut World) {
+        tracing::trace!(
+            "removing {} from entity {:?}",
+            std::any::type_name::<T>(),
+            self.entity
+        );
+
         match self.entity {
             EntityCommandsHandle::Spawned(handle) => {
                 world
@@ -118,7 +128,17 @@ pub struct InsertCommand<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Command for InsertCommand<T> {
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(name = "InsertCommand::apply", skip_all)
+    )]
     fn apply(self: Box<Self>, world: &mut World) {
+        tracing::trace!(
+            "inserting {} into {:?}",
+            std::any::type_name::<T>(),
+            self.entity
+        );
+
         match self.entity {
             EntityCommandsHandle::Spawned(handle) => {
                 world
@@ -153,10 +173,10 @@ impl<T: ComponentBundle> Command for SpawnCommand<T> {
     #[inline]
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(name = "SpawnCommand::apply", fields(self), skip_all)
+        tracing::instrument(name = "SpawnCommand::apply", skip_all)
     )]
     fn apply(self: Box<Self>, world: &mut World) {
-        tracing::trace!("applying spawn command, target: {:?}", self.handle);
+        tracing::trace!("spawning {:?}", self.handle);
         let entity = world.spawn(self.components).handle();
 
         println!("spawned {:?} as {entity:?}", self.handle);
@@ -173,10 +193,10 @@ impl Command for DespawnCommand {
     #[inline]
     #[cfg_attr(
         feature = "tracing",
-        tracing::instrument(name = "DespawnCommand::apply", fields(self), skip_all)
+        tracing::instrument(name = "DespawnCommand::apply", skip_all)
     )]
     fn apply(self: Box<Self>, world: &mut World) {
-        tracing::trace!("applying despawn command, target: {:?}", self.handle);
+        tracing::trace!("despawning {:?}", self.handle);
 
         match self.handle {
             EntityCommandsHandle::Spawned(handle) => world.despawn(handle),

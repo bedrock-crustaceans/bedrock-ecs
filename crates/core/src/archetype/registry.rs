@@ -224,9 +224,11 @@ impl Archetypes {
         let mut combined_signature = signature.clone();
         combined_signature.union(&old_table.signature);
 
-        let new_table = if let Some(table) = self.get_by_signature_mut(&signature) {
+        let new_table = if let Some(table) = self.get_by_signature_mut(&combined_signature) {
+            tracing::debug!("found existing table for insertion");
             table
         } else {
+            tracing::debug!("creating new table for insertion");
             let table = unsafe { B::new_joined_table(old_table, signature) };
 
             // Update generation to refresh query caches

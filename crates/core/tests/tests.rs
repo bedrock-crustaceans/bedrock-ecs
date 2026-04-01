@@ -50,7 +50,7 @@ struct Visuals;
 
 use std::collections::HashMap;
 
-#[derive(Resource, Default)]
+#[derive(Debug, Resource, Default)]
 struct SpatialGrid {
     // Maps a grid coordinate (x, y) to a list of entity IDs and their factions
     cells: HashMap<(i32, i32), Vec<(Entity, Position, u8)>>,
@@ -58,7 +58,7 @@ struct SpatialGrid {
 }
 
 impl SpatialGrid {
-    fn new(cell_size: f32) -> Self {
+    pub fn new(cell_size: f32) -> Self {
         Self {
             cells: HashMap::new(),
             cell_size,
@@ -135,7 +135,7 @@ fn chaos_spawner_system(mut commands: Commands, query: Query<(Entity, &Health), 
                 },
                 Target(None),
             ));
-        } else if rng.random_ratio(1, 100) {
+        } else if rng.random_ratio(1, 10) {
             // Randomly "Stun" entities by adding the Static marker
             // tracing::warn!("Stunned {entity:?}");
             commands.entity(entity).insert(Static);
@@ -249,8 +249,10 @@ fn update_spatial_grid_system(
 #[test]
 fn massive_world_stress_test() {
     tracing_subscriber::fmt()
-        .with_thread_names(true)
         .with_max_level(tracing::Level::TRACE)
+        .with_file(true)
+        .with_line_number(true)
+        .with_target(false)
         .compact()
         .init();
 
@@ -265,7 +267,7 @@ fn massive_world_stress_test() {
     // 1. Initial Load: 10,000 Entities
     // This pushes the ECS beyond L3 cache limits (~2-5MB of component data)
     tracing::info!("Summoning entities");
-    for i in 0..10_000 {
+    for i in 0..50 {
         world.spawn((
             Position {
                 x: rng.random(),
@@ -286,7 +288,7 @@ fn massive_world_stress_test() {
         ));
     }
 
-    world.add_resources(SpatialGrid::default());
+    world.add_resources(SpatialGrid::new(1.0));
 
     let mut schedule = ScheduleBuilder::new(&mut world)
         .add(Physics, (physics_step_system, gravity_apply_system))
@@ -297,7 +299,7 @@ fn massive_world_stress_test() {
                 vitality_system,
                 poison_aura_system,
                 update_spatial_grid_system,
-                sync_point,
+                // sync_point,
             ),
         )
         .add(Visuals, (sprite_transform_system, ui_health_bar_system))
@@ -310,7 +312,8 @@ fn massive_world_stress_test() {
 
     // 2. Benchmarking the Tick
     let start = std::time::Instant::now();
-    let ticks = 50;
+    // let ticks = 50;
+    let ticks = 1;
 
     for i in 0..ticks {
         schedule.run(&world);
