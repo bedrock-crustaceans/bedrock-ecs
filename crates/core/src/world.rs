@@ -11,10 +11,9 @@ use crate::param;
 use crate::archetype::Archetypes;
 use crate::command::{CommandPool, DeferredEntity};
 use crate::component::ComponentBundle;
-use crate::entity::{Entities, Entity, EntityIndex, EntityMut, EntityRef};
+use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
-use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder, ScheduleGraph};
-use crate::sealed::Sealed;
+use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
 use crate::system::{Param, SystemMeta};
 
 pub struct World {

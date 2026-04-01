@@ -20,6 +20,9 @@ pub mod time;
 pub mod util;
 pub mod world;
 
+#[cfg(feature = "plugins")]
+pub mod plugins;
+
 pub mod prelude {
     pub use crate::archetype::Archetypes;
     pub use crate::component::{Component, ComponentBundle};

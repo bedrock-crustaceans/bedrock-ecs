@@ -1,12 +1,14 @@
 use bedrock_ecs::{
     command::Commands,
     entity::Entity,
+    plugins::WasmPlugin,
     prelude::{Res, ResMut, ScheduleBuilder},
     query::{Query, Without},
     world::World,
 };
 use bedrock_ecs_derive::{Component, Resource, ScheduleLabel};
 use rand::prelude::*;
+use wasmtime::{Caller, Engine, Linker, Module, Store};
 
 #[derive(Debug, Copy, Clone, Component)]
 struct Position {
@@ -349,4 +351,26 @@ fn massive_world_stress_test() {
     //     first_pos.x != 0.0 || first_pos.y != 0.0,
     //     "Entities did not move!"
     // );
+}
+
+#[test]
+fn plugin_test() {
+    let status = std::process::Command::new("cargo")
+        .args(["build", "-p", "test-plugin", "--target", "wasm32-wasip2"])
+        .status()
+        .expect("failed to build test plugin");
+
+    assert!(status.success());
+
+    const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
+
+    let engine = Engine::default();
+
+    let plugin = WasmPlugin::new(WASM_PATH, &engine).unwrap();
+    let manifest = plugin.manifest();
+
+    println!(
+        "name is {}, version is {:?}",
+        manifest.name, manifest.version
+    );
 }

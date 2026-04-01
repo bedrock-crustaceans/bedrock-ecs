@@ -2,6 +2,7 @@ use std::alloc::Layout;
 use std::any::TypeId;
 use std::cell::UnsafeCell;
 use std::marker::PhantomData;
+use std::num::NonZero;
 use std::ptr::NonNull;
 
 use crate::query::Filter;
@@ -49,7 +50,6 @@ pub struct Column {
     enforcer: BorrowEnforcer,
     /// Tracks which components have changed in this Column.
     tracker: UnsafeCell<ChangeTracker>,
-    /// Which components in this
     /// The type ID of the item contained in this Column.
     pub(crate) ty: TypeId,
     /// The layout of the component type.
@@ -455,6 +455,14 @@ impl Column {
 
         if index >= self.len {
             return None;
+        }
+
+        if self.layout.size() == 0 {
+            // Return a simple dangling pointer.
+
+            // Safety: Alignment is always nonzero, even for ZSTs.
+            let align = unsafe { NonZero::new_unchecked(self.layout.align()) };
+            return Some(NonNull::without_provenance(align));
         }
 
         let offset = self.layout.size() * index;

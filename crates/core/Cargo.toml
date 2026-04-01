@@ -7,7 +7,8 @@ edition = "2024"
 tracing = []
 generics = []
 inspect = []
-default = ["generics", "tracing", "inspect"]
+plugins = ["dep:wasmtime", "dep:wit-bindgen"]
+default = ["generics", "tracing", "inspect", "plugins"]
 
 [[bench]]
 name = "signature"
@@ -24,6 +25,11 @@ rustc-hash = "2.1.1"
 thread_local = "1.1.9"
 nonmax = "0.5.5"
 open = "5.3.3"
+
+wasmtime = { version = "43.0.0", optional = true }
+wit-bindgen = { version = "0.54.0", optional = true }
+wasmtime-wasi = "43.0.0"
+bytes = "1.11.1"
 
 [dev-dependencies]
 criterion = "0.8.2"
