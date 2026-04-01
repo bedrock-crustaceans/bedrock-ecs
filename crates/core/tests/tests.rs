@@ -232,6 +232,7 @@ fn ui_health_bar_system(query: Query<(&Health, &Position)>) {
 
 fn sync_point(world: &World) {}
 
+#[inline(never)]
 fn update_spatial_grid_system(
     query: Query<(Entity, &Position, &Faction)>,
     mut grid: ResMut<SpatialGrid>,
@@ -267,7 +268,7 @@ fn massive_world_stress_test() {
     // 1. Initial Load: 10,000 Entities
     // This pushes the ECS beyond L3 cache limits (~2-5MB of component data)
     tracing::info!("Summoning entities");
-    for i in 0..50 {
+    for i in 0..10_000 {
         world.spawn((
             Position {
                 x: rng.random(),
@@ -299,7 +300,7 @@ fn massive_world_stress_test() {
                 vitality_system,
                 poison_aura_system,
                 update_spatial_grid_system,
-                // sync_point,
+                sync_point,
             ),
         )
         .add(Visuals, (sprite_transform_system, ui_health_bar_system))
@@ -313,7 +314,7 @@ fn massive_world_stress_test() {
     // 2. Benchmarking the Tick
     let start = std::time::Instant::now();
     // let ticks = 50;
-    let ticks = 1;
+    let ticks = 10;
 
     for i in 0..ticks {
         schedule.run(&world);

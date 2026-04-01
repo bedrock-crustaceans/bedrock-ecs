@@ -98,12 +98,12 @@ impl<'s> Commands<'s> {
     pub fn spawn(&mut self, bundle: impl ComponentBundle) -> EntityCommands<'_, 's> {
         let index = self.buffer.allocate_deferred_index();
         self.buffer.push(SpawnCommand {
-            handle: DeferredEntity(index.0),
+            handle: DeferredEntity(index.to_bits()),
             components: bundle,
         });
 
         EntityCommands {
-            entity: EntityCommandsHandle::Deferred(DeferredEntity(index.0)),
+            entity: EntityCommandsHandle::Deferred(DeferredEntity(index.to_bits())),
             commands: self,
         }
     }

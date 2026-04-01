@@ -141,7 +141,7 @@ impl Table {
             // Update metadata of the entity that will be moved into the current index.
             tracing::trace!(
                 "update meta of entity {} (table row {})",
-                meta.handle.index(),
+                meta.handle.index().to_bits(),
                 row.0
             );
 

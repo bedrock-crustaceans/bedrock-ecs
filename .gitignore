@@ -3,6 +3,8 @@
 /Cargo.lock
 /crates/core/schedule.html
 /crates/core/execution.html
+/schedule.html
+/execution.html
 expand.rs
 profile.kernel.etl
 profile.json.gz

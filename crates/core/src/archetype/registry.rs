@@ -250,6 +250,7 @@ impl Archetypes {
             .insert(entity.handle, ColumnRow(new_table.entities.len() - 1));
 
         // Copy over all old data
+        tracing::trace!("copying over old component data");
         for column in &mut old_table.columns {
             let new_column_idx = *new_table.lookup.get(&column.ty_id()).unwrap();
             let new_column = &mut new_table.columns[new_column_idx];
@@ -258,11 +259,13 @@ impl Archetypes {
         }
 
         // Remove data from old table
+        tracing::trace!("removing old component references");
         old_table.remove(entities, entity, false);
 
         let table_ptr = NonNull::from_mut(new_table);
 
         // Update metadata reference to current table.
+        tracing::trace!("updating entity metadata");
         entities.set_meta(
             entity.handle.index(),
             EntityMeta {
@@ -273,6 +276,7 @@ impl Archetypes {
         );
 
         // Insert new data
+        tracing::trace!("inserting new component data");
         components.insert_into(new_table, current_tick);
 
         // Verify that all columns now have the same length

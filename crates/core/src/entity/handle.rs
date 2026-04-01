@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use nonmax::NonMaxU32;
+
 // This pretty similar to Bevy's version since it seems to work better than a plain `u64` with
 // bitwise operations like we initially did. The fields are aligned in such a way that the struct
 // is equivalent to a `u64`.
@@ -43,7 +45,7 @@ impl Hash for Entity {
 
 impl Entity {
     const DANGLING: Entity =
-        Entity::from_index_and_generation(EntityIndex(u32::MAX), EntityGeneration(u32::MAX));
+        Entity::from_index_and_generation(EntityIndex(None), EntityGeneration(u32::MAX));
 
     #[inline]
     pub const fn from_index_and_generation(
@@ -81,26 +83,26 @@ impl Entity {
 
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct EntityIndex(pub(crate) u32);
+pub struct EntityIndex(pub(crate) Option<NonMaxU32>);
 
 impl EntityIndex {
-    pub const TOMBSTONE: EntityIndex = EntityIndex(u32::MAX);
+    pub const TOMBSTONE: EntityIndex = EntityIndex(None);
 
+    /// `u32::MAX` is returned if the index refers to a 'tombstone', or dead entity.
     #[inline]
     pub const fn to_bits(&self) -> u32 {
-        self.0
+        // This cannot be done using `Option::map` because it is not const
+        // when attempting to drop a `NonMaxU32` inside of it.
+        match self.0 {
+            Some(handle) => handle.get(),
+            None => u32::MAX,
+        }
     }
 
+    /// `u32::MAX` will mark this entity as a `tombstone`.
     #[inline]
     pub const fn from_bits(index: u32) -> EntityIndex {
-        EntityIndex(index)
-    }
-}
-
-impl fmt::Display for EntityIndex {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let index = self.0;
-        write!(f, "{index}")
+        EntityIndex(NonMaxU32::new(index))
     }
 }
 

@@ -1,5 +1,7 @@
 use std::ptr::NonNull;
 
+use nonmax::{NonMaxU32, NonMaxUsize};
+
 use crate::command::Command;
 use crate::entity::EntityIndex;
 use crate::world::World;
@@ -53,7 +55,7 @@ impl LocalCommandQueue {
     pub fn allocate_deferred_index(&mut self) -> EntityIndex {
         let id = self.next_deferred_id;
         self.next_deferred_id += 1;
-        EntityIndex(id)
+        EntityIndex(NonMaxU32::new(id))
     }
 
     pub fn push<C: Command>(&mut self, cmd: C) {

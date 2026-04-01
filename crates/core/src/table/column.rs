@@ -529,8 +529,6 @@ impl Column {
     ///
     /// This function panics if the index is out of bounds.
     pub fn swap_remove(&mut self, idx: usize, should_drop: bool) {
-        tracing::trace!("swap removing row {idx}");
-
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
