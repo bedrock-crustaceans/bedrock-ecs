@@ -38,11 +38,17 @@ impl From<usize> for ComponentId {
     }
 }
 
+pub enum StorageType {
+    Table,
+    SparseSet,
+}
+
 /// A marker trait indicating that the implementor can be used as a component.
 pub trait Component: 'static + Send {
     // TODO: Add a tracking type so change tracking can be enabled or disabled for specific components.
     // TODO: Add a storage type constant so each component can decide whether it should be stored in a sparse set
     // or archetype table.
+    const STORAGE: StorageType = StorageType::Table;
 }
 
 /// A collection of components used in a filter. This trait makes it possible to use tuples
