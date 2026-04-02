@@ -2,7 +2,7 @@
 members = [
     "crates/core",
     "crates/derive"
-, "crates/reflect"]
+, "crates/reflect", "crates/test-plugin"]
 resolver = "2"
 
 [profile.profiling]

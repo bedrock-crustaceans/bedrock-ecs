@@ -66,6 +66,17 @@ impl Entity {
     }
 
     #[inline]
+    pub const fn from_bits(bits: u64) -> Self {
+        let gen_bits = bits as u32; // Only take the lower 32 bits
+        let generation = EntityGeneration::from_bits(gen_bits);
+
+        let idx_bits = (bits >> 32) as u32;
+        let index = EntityIndex::from_bits(idx_bits);
+
+        Self::from_index_and_generation(index, generation)
+    }
+
+    #[inline]
     pub const fn to_bits(&self) -> u64 {
         self.generation.to_bits() as u64 | ((self.index.to_bits() as u64) << 32)
     }

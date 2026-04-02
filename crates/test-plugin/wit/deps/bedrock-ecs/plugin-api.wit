@@ -1,0 +1,45 @@
+package bedrock-ecs:plugin;
+
+interface server {
+    use system.{system-manifest};
+
+    get-version: func() -> string;
+    register-system: func(manifest: system-manifest) -> u32;
+}
+
+interface metadata {
+    record plugin-manifest {
+        name: string,
+        version: string
+    }
+
+    get-manifest: func() -> plugin-manifest;
+    init: func();
+}
+
+interface system {
+    variant access-descriptor {
+        local,
+        res,
+        res-mut,
+        query,
+        commands,
+        %world
+    }
+
+    record system-manifest {
+        name: string,
+        access: list<access-descriptor>
+    }
+
+    resource system {
+        call: func();
+    }
+}
+
+world api {
+    import server;
+
+    export metadata;
+    export system;
+}

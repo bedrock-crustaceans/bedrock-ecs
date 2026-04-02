@@ -1,32 +1,34 @@
+mod query;
 mod system;
 
-use std::path::Path;
-
+pub use query::*;
 pub use system::*;
+
+use std::{path::Path, ptr::NonNull};
+
 use wasmtime::{
     Engine, Store,
     component::{Component, HasSelf, Linker},
 };
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
-use crate::plugins::bindings::{
-    bedrock_ecs::plugin::server, exports::bedrock_ecs::plugin::metadata::Manifest,
-};
+pub(super) mod bindings {
+    wasmtime::component::bindgen!({
+        path: "wit",
+        world: "api"
+    });
+}
 
-struct WasmPluginState {
-    pub table: ResourceTable,
+struct WasmPluginStore {
     pub ctx: WasiCtx,
-
-    pub server_version: Vec<u32>,
+    pub table: ResourceTable,
+    pub world: NonNull<World>,
+    pub scheduler: NonNull<Scheduler>,
 }
 
-impl server::Host for WasmPluginState {
-    fn get_version(&mut self) -> Vec<u32> {
-        self.server_version.clone()
-    }
-}
+unsafe impl Send for WasmPluginStore {}
 
-impl WasiView for WasmPluginState {
+impl WasiView for WasmPluginStore {
     fn ctx(&mut self) -> WasiCtxView<'_> {
         WasiCtxView {
             ctx: &mut self.ctx,
@@ -35,58 +37,91 @@ impl WasiView for WasmPluginState {
     }
 }
 
-mod bindings {
-    wasmtime::component::bindgen!({
-        path: "wit",
-        world: "plugin"
-    });
+impl host::Host for WasmPluginStore {
+    fn get_version(&mut self) -> String {
+        todo!()
+    }
+
+    fn get_component_id(&mut self, name: String) -> Option<u32> {
+        todo!()
+    }
+
+    fn get_resource_id(&mut self, name: String) -> Option<u32> {
+        todo!()
+    }
+
+    /// Registers a system and returns a unique identifier for this system.
+    ///
+    /// The host will use this identifier to refer to the system from now on.
+    fn register_system(&mut self, system: host::SystemManifest) -> u32 {
+        todo!()
+    }
+
+    fn deregister_system(&mut self, id: u32) {
+        todo!()
+    }
 }
 
+use bindings::bedrock_ecs::plugin::host;
+
+use crate::{
+    plugins::bindings::exports::bedrock_ecs::plugin::metadata, scheduler::Scheduler, world::World,
+};
+
 pub struct WasmPlugin {
-    store: Store<WasmPluginState>,
-    manifest: Manifest,
-    component: Component,
+    world: NonNull<World>,
+    manifest: metadata::PluginManifest,
+    store: Store<WasmPluginStore>,
+    instance: bindings::Api,
 }
 
 impl WasmPlugin {
-    pub fn new<P: AsRef<Path>>(file: P, engine: &Engine) -> Result<Self, wasmtime::Error> {
-        let component = Component::from_file(engine, file)?;
-
-        let table = ResourceTable::new();
-        let ctx = WasiCtxBuilder::new()
-            .inherit_stdout()
-            .inherit_stderr()
-            .build();
-
-        let state = WasmPluginState {
-            ctx,
-            table,
-            server_version: vec![0, 42, 0],
-        };
-
-        let mut store = Store::new(&engine, state);
-        let mut linker = Linker::new(engine);
+    pub fn new<P: AsRef<Path>>(
+        path: P,
+        engine: &Engine,
+        world: &mut World,
+    ) -> wasmtime::Result<Self> {
+        let component = Component::from_file(&engine, path)?;
+        let mut linker = Linker::new(&engine);
 
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
+        host::add_to_linker::<_, HasSelf<WasmPluginStore>>(&mut linker, |state| state)?;
 
-        type Data = HasSelf<WasmPluginState>;
-        server::add_to_linker::<_, Data>(&mut linker, |state: &mut WasmPluginState| state)?;
+        let mut store = Store::new(
+            &engine,
+            WasmPluginStore {
+                ctx: WasiCtxBuilder::new()
+                    .inherit_stdout()
+                    .inherit_stderr()
+                    .build(),
+                table: ResourceTable::new(),
+                world: NonNull::from_mut(world),
+            },
+        );
 
-        let instance = bindings::Plugin::instantiate(&mut store, &component, &linker)?;
+        let instance = bindings::Api::instantiate(&mut store, &component, &linker)?;
 
-        // Attempt to load the manifest
-        let manifest = instance
+        // Obtain the plugin manifest.
+        let plugin_manifest = instance
             .bedrock_ecs_plugin_metadata()
             .call_get_manifest(&mut store)?;
 
+        // Initialise the plugin
+        instance
+            .bedrock_ecs_plugin_metadata()
+            .call_init(&mut store)?;
+
         Ok(Self {
-            manifest,
+            manifest: plugin_manifest,
             store,
-            component,
+            instance,
+            world: NonNull::from_mut(world),
         })
     }
 
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest
+    pub fn destroy(mut self) -> wasmtime::Result<()> {
+        self.instance
+            .bedrock_ecs_plugin_metadata()
+            .call_deinit(&mut self.store)
     }
 }

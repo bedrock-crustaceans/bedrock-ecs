@@ -1,25 +1,7 @@
-use crate::{
-    scheduler::AccessDesc,
-    system::{System, SystemMeta},
-    world::World,
-};
+use crate::{plugins::bindings::bedrock_ecs::plugin::system::SystemManifest, system::SystemId};
 
-pub struct PluginSystemContainer {
-    meta: SystemMeta,
-    method: wasmtime::Func,
-}
-
-impl System for PluginSystemContainer {
-    #[inline]
-    fn meta(&self) -> &SystemMeta {
-        &self.meta
-    }
-
-    fn access(&self) -> &[AccessDesc] {
-        todo!()
-    }
-
-    unsafe fn call(&self, world: &World) {
-        todo!()
-    }
+#[derive(Debug)]
+pub struct WasmSystem {
+    id: u32,
+    manifest: SystemManifest,
 }

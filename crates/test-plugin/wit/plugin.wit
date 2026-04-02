@@ -1,5 +1,5 @@
 package component:plugin;
 
 world plugin {
-    include bedrock-ecs:plugin/guest;
+    include bedrock-ecs:plugin/api;
 }

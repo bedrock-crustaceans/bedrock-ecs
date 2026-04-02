@@ -2,8 +2,9 @@ use std::any::TypeId;
 
 use rustc_hash::FxHashMap;
 
-use crate::scheduler::{AccessType, ScheduleGraph, ScheduleNode, Scheduler};
-use crate::system::{IntoSystem, ParamBundle, System, SystemId};
+use crate::plugins::WasmSystem;
+use crate::scheduler::{AccessDesc, AccessType, ScheduleGraph, Scheduler};
+use crate::system::{IntoSystem, ParamBundle, System, SystemId, SystemMeta};
 use crate::world::World;
 
 #[diagnostic::on_unimplemented(
@@ -56,6 +57,11 @@ pub trait ScheduleLabel {
     const NAME: &'static str;
 }
 
+pub struct SystemDescriptor<'a> {
+    name: &'a str,
+    access: &'a [AccessDesc],
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SystemLabelId(pub(crate) TypeId);
 
@@ -63,6 +69,9 @@ pub struct ScheduleBuilder<'w> {
     next_id: u32,
     pub(crate) world: &'w mut World,
     pub(crate) systems: Vec<Box<dyn System>>,
+
+    #[cfg(feature = "plugins")]
+    pub(crate) wasm_systems: Vec<WasmSystem>,
 }
 
 impl<'w> ScheduleBuilder<'w> {
@@ -71,6 +80,9 @@ impl<'w> ScheduleBuilder<'w> {
             next_id: 0,
             world,
             systems: Vec::new(),
+
+            #[cfg(feature = "plugins")]
+            wasm_systems: Vec::new(),
         }
     }
 
@@ -91,6 +103,12 @@ impl<'w> ScheduleBuilder<'w> {
         self
     }
 
+    pub(crate) fn add_wasm(mut self, system: WasmSystem) -> ScheduleBuilder<'w> {
+        self.wasm_systems.push(system);
+        self
+    }
+
+    #[must_use = "the resulting scheduler must be used to run the schedule"]
     pub fn schedule(self) -> Scheduler {
         // Build the dependency graph
         let mut graph = ScheduleGraph::new();

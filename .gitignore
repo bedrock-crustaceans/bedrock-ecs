@@ -3,6 +3,7 @@
 /Cargo.lock
 /crates/core/schedule.html
 /crates/core/execution.html
+/crates/core/modules
 /schedule.html
 /execution.html
 expand.rs

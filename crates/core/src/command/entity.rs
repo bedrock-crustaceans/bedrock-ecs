@@ -38,9 +38,9 @@ impl EntityCommands<'_, '_> {
     ///
     /// Entities that have been spawned during this tick will not have a handle yet.
     #[inline]
-    pub fn entity(&self) -> Option<&Entity> {
+    pub fn entity(&self) -> Option<Entity> {
         match &self.entity {
-            EntityCommandsHandle::Spawned(entity) => Some(entity),
+            EntityCommandsHandle::Spawned(entity) => Some(*entity),
             EntityCommandsHandle::Deferred(_) => None,
         }
     }

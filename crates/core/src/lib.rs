@@ -3,6 +3,7 @@
 
 #![warn(clippy::pedantic)]
 #![allow(clippy::must_use_candidate)]
+#![allow(unused)]
 
 pub mod archetype;
 pub mod command;

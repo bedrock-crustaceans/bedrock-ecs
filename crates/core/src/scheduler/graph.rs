@@ -34,11 +34,6 @@ impl AccessDesc {
     }
 }
 
-#[derive(Debug)]
-pub struct ScheduleNode {
-    pub id: SystemId,
-}
-
 #[derive(Default, Debug)]
 pub struct ScheduleGraph {
     pub(crate) edges: Vec<Vec<usize>>,

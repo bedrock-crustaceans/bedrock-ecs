@@ -1,19 +1,56 @@
 package bedrock-ecs:plugin;
 
-interface server {
-    get-version: func() -> list<u32>;
+interface types {
+    type component-id = u32;
+    type system-id = u32;
+    type resource-id = u32;
+}
+
+interface system {
+    use types.{component-id, resource-id};
+
+    variant access-type {
+        component(component-id),
+        %resource(resource-id),
+        %world
+    }
+
+    record access-descriptor {
+        ty: access-type,
+        mutable: bool
+    }
+
+    record system-manifest {
+        name: string,
+        access: list<access-descriptor>
+    }
+}
+
+interface host {
+    use types.{system-id, component-id, resource-id};
+    use system.{system-manifest};
+
+    register-system: func(manifest: system-manifest) -> system-id;
+    deregister-system: func(id: system-id);
+
+    /// Called during init to resolve a component type by name.
+    get-component-id: func(name: string) -> option<component-id>;
+    get-resource-id: func(name: string) -> option<resource-id>;
+    get-version: func() -> string;
 }
 
 interface metadata {
-    record manifest {
+    record plugin-manifest {
         name: string,
-        version: list<u32>
+        version: string
     }
 
-    get-manifest: func() -> manifest;
+    get-manifest: func() -> plugin-manifest;
+    init: func();
+    deinit: func();
 }
 
-world plugin {
-    import server;
+world api {
+    import host;
     export metadata;
 }
