@@ -3,8 +3,9 @@ use crate::{
         bedrock_ecs::plugin::{
             host,
             system::{self, AccessDescriptor, AccessType, SystemManifest},
+            types::ComponentId,
         },
-        exports::bedrock_ecs::plugin::metadata::{self, PluginManifest},
+        exports::bedrock_ecs::plugin::plugin::{self, PluginManifest},
     },
     local::Local,
 };
@@ -19,7 +20,7 @@ mod bindings {
             "bedrock-ecs:plugin/types": generate,
             "bedrock-ecs:plugin/system": generate,
             "bedrock-ecs:plugin/host": generate,
-            "bedrock-ecs:plugin/metadata": generate,
+            "bedrock-ecs:plugin/plugin": generate,
         }
     });
 
@@ -29,13 +30,25 @@ mod bindings {
 
 struct Plugin;
 
-impl metadata::Guest for Plugin {
+impl plugin::Guest for Plugin {
     fn init() {
         println!("host version is {}", host::get_version());
 
         let system_id = host::register_system(&SystemManifest {
-            name: String::from("wasm_test_system"),
-            access: vec![],
+            name: String::from("wasm_test_system_shared"),
+            access: vec![AccessDescriptor {
+                ty: AccessType::Component(2),
+                mutable: false,
+            }],
+        })
+        .unwrap();
+
+        let system_id = host::register_system(&SystemManifest {
+            name: String::from("wasm_test_system_exclusive"),
+            access: vec![AccessDescriptor {
+                ty: AccessType::World,
+                mutable: true,
+            }],
         })
         .unwrap();
 
@@ -50,4 +63,6 @@ impl metadata::Guest for Plugin {
     }
 
     fn deinit() {}
+
+    fn call(id: plugin::SystemId) {}
 }

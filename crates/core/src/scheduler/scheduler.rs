@@ -101,7 +101,7 @@ impl Scheduler {
             #[cfg(feature = "inspect")]
             let start = Instant::now();
 
-            tracing::trace!("executing system {}", system.meta().name());
+            tracing::error!("executing system {}", system.meta().name());
             unsafe { system.call(world) };
 
             #[cfg(feature = "inspect")]
@@ -128,6 +128,9 @@ impl Scheduler {
     }
 
     pub fn run(&mut self, world: &World) {
+        // Reset the in degrees.
+        self.reset_in_degrees();
+
         #[cfg(feature = "inspect")]
         {
             let mut lock = self.timing.lock().unwrap();

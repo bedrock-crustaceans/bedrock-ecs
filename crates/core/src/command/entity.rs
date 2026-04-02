@@ -57,10 +57,10 @@ impl EntityCommands<'_, '_> {
     ///
     /// This is a deferred operation and will be performed after the end of this tick.
     pub fn insert(&mut self, components: impl ComponentBundle) -> &mut Self {
-        self.commands.buffer.push(InsertCommand {
-            entity: self.entity,
-            components,
-        });
+        // self.commands.buffer.push(InsertCommand {
+        //     entity: self.entity,
+        //     components,
+        // });
         self
     }
 
@@ -71,15 +71,15 @@ impl EntityCommands<'_, '_> {
             _marker: PhantomData,
         };
 
-        self.commands.buffer.push(cmd);
+        // self.commands.buffer.push(cmd);
         self
     }
 
     /// Despawns the entity
     pub fn despawn(self) {
-        self.commands.buffer.push(DespawnCommand {
-            handle: self.entity,
-        });
+        // self.commands.buffer.push(DespawnCommand {
+        //     handle: self.entity,
+        // });
     }
 }
 
@@ -178,8 +178,6 @@ impl<T: ComponentBundle> Command for SpawnCommand<T> {
     fn apply(self: Box<Self>, world: &mut World) {
         tracing::trace!("spawning {:?}", self.handle);
         let entity = world.spawn(self.components).handle();
-
-        println!("spawned {:?} as {entity:?}", self.handle);
         world.deferred_entities.insert(self.handle, entity);
     }
 }

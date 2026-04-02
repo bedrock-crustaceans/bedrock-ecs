@@ -35,6 +35,11 @@ interface host {
     use types.{system-id, component-id, resource-id};
     use system.{system-manifest};
 
+    variant plugin-error {
+        // This action is only allowed inside of `init`.
+        outside-init
+    }
+
     /// Registers the system to the server. The server will use the returned ID
     /// to refer to the system from now on.
     ///
@@ -47,7 +52,7 @@ interface host {
     /// will fail.
     ///
     /// No guarantees are made about the system IDs, except that they will be unique.
-    register-system: func(manifest: system-manifest) -> result<system-id>;
+    register-system: func(manifest: system-manifest) -> result<system-id, plugin-error>;
 
     /// Called during init to resolve a component type by name.
     ///
@@ -63,7 +68,9 @@ interface host {
     get-version: func() -> string;
 }
 
-interface metadata {
+interface plugin {
+    use types.{system-id};
+
     record plugin-manifest {
         name: string,
         version: string
@@ -72,9 +79,11 @@ interface metadata {
     get-manifest: func() -> plugin-manifest;
     init: func();
     deinit: func();
+
+    call: func(id: system-id);
 }
 
 world api {
     import host;
-    export metadata;
+    export plugin;
 }

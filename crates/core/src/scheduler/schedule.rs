@@ -36,7 +36,7 @@ macro_rules! impl_bundle {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let boxed = [<$gen:lower>].into_system(schedule.world);
+                        let boxed = [<$gen:lower>].into_boxed_system(schedule.world);
                         schedule.systems.push(boxed);
                     )*
                 }

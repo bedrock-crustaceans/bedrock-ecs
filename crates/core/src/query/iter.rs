@@ -128,34 +128,6 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
-                /// Creates an empty iterator that always returns `None`. This exists because
-                /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-                ///
-                /// [`Empty`]: std::iter::Empty
-                pub fn empty(world: &'w World) -> Self {
-                    Self {
-                        world,
-                        current_tick: 0,
-                        last_tick: 0,
-                        cache: [].iter(),
-                        iters: ($($gen::Iter::empty(world)),*),
-                        _marker: PhantomData
-                    }
-                }
-
-                /// The length of the full iterator if it were unfiltered.
-                fn unfiltered_len(&self) -> usize {
-                    let cache = self.cache.as_slice();
-
-                    // Compute lengths of all remaining tables...
-                    let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
-
-                    // and add the remaining length of the current table.
-                    full + self.local_len()
-                }
-            }
-
             impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
                     #[cfg(debug_assertions)]
@@ -201,6 +173,34 @@ macro_rules! impl_bundle {
                 fn local_len(&self) -> usize {
                     let ($($gen),*) = &self.iters;
                     iter_len!($($gen),*)
+                }
+            }
+
+            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+                /// Creates an empty iterator that always returns `None`. This exists because
+                /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
+                ///
+                /// [`Empty`]: std::iter::Empty
+                pub fn empty(world: &'w World) -> Self {
+                    Self {
+                        world,
+                        current_tick: 0,
+                        last_tick: 0,
+                        cache: [].iter(),
+                        iters: ($($gen::Iter::empty(world)),*),
+                        _marker: PhantomData
+                    }
+                }
+
+                /// The length of the full iterator if it were unfiltered.
+                fn unfiltered_len(&self) -> usize {
+                    let cache = self.cache.as_slice();
+
+                    // Compute lengths of all remaining tables...
+                    let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
+
+                    // and add the remaining length of the current table.
+                    full + self.local_len()
                 }
             }
 

@@ -15,9 +15,9 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: ChangeTrackerIter<'a>,
     /// Pointer to current component.
-    pub(crate) curr: Option<NonNull<T>>,
-    /// Remaining elements
-    pub(crate) remaining: usize,
+    pub(crate) curr: NonNull<T>,
+    /// End pointer or remaining elements (when ZST)
+    pub(crate) end: *const T,
     /// Ensures that the components and filters live at least as long as the column.
     pub(crate) _marker: PhantomData<(&'a T, F)>,
 
@@ -25,29 +25,52 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
+impl<'a, T, F: Filter> ColumnIter<'a, T, F> {
+    /// # Safety
+    /// 
+    /// Caller must ensure that the iterator is still within range.
+    #[inline]
+    unsafe fn next_zst(&mut self) -> Option<Ref<'a, T>> {
+        assert_eq!(std::mem::size_of::<T>(), 0);
+
+        self.curr = unsafe { self.curr.byte_add(1) };
+        Some(Ref { inner: unsafe { &*std::ptr::dangling::<T>() } })
+    }
+
+    /// # Safety
+    /// 
+    /// Caller must ensure that the iterator is still within range.
+    #[inline]
+    unsafe fn next_nozst(&mut self) -> Option<Ref<'a, T>> {
+        assert_ne!(std::mem::size_of::<T>(), 0);
+
+        let reffed = Ref { inner: unsafe { &*self.curr.as_ptr() } };
+        self.curr = unsafe { self.curr.add(1) };
+
+        Some(reffed)
+    }
+}
+
 impl<'a, T, F: Filter> Iterator for ColumnIter<'a, T, F> {
     type Item = Ref<'a, T>;
 
     fn next(&mut self) -> Option<Ref<'a, T>> {
-        if self.remaining == 0 || self.curr.is_none() {
-            return None;
+        if self.curr.as_ptr().cast_const() == self.end {
+            return None
         }
 
         // Check whether this item satisfies the filter
-        if !F::apply_dynamic(self.tracker.next()?, self.current_tick) {
+        if F::METHOD.is_dynamic() && !F::apply_dynamic(self.tracker.next()?, self.current_tick) {
             return None;
         }
 
-        let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe { ptr.as_ptr().cast_const().as_ref_unchecked() };
-
-        self.remaining -= 1;
-
-        // Safety: This is safe because by the check at the start of the function, there are
-        // remaining elements.
-        *ptr = unsafe { ptr.add(1) };
-
-        Some(Ref { inner: item })
+        if std::mem::size_of::<T>() == 0 {
+            // Safety: there are elements remaining by the check at the top
+            return unsafe { self.next_zst() };
+        } else {
+            // Safety: there are elements remaining by the check at the top
+            return unsafe { self.next_nozst() };
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -58,7 +81,11 @@ impl<'a, T, F: Filter> Iterator for ColumnIter<'a, T, F> {
 
 impl<T, F: Filter> ExactSizeIterator for ColumnIter<'_, T, F> {
     fn len(&self) -> usize {
-        self.remaining
+        if std::mem::size_of::<T>() == 0 {
+            unsafe { self.end.byte_offset_from(self.curr.as_ptr()) as usize }
+        } else {
+            unsafe { self.end.offset_from(self.curr.as_ptr()) as usize }
+        }
     }
 }
 
@@ -66,11 +93,13 @@ impl<T, F: Filter> FusedIterator for ColumnIter<'_, T, F> {}
 
 impl<'a, T, F: Filter> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
     fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
+        let dangling = NonNull::<T>::dangling();
+
         ColumnIter {
             current_tick: 0,
             tracker: ChangeTrackerIter::empty(),
-            curr: None,
-            remaining: 0,
+            curr: dangling,
+            end: dangling.as_ptr(),
             _marker: PhantomData,
 
             #[cfg(debug_assertions)]

@@ -14,7 +14,7 @@ use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
-use crate::system::{Param, SystemMeta};
+use crate::system::{IntoSystem, Param, System, SystemContainer, SystemMeta};
 
 pub struct World {
     pub(crate) archetypes: Archetypes,
@@ -137,6 +137,13 @@ impl World {
     #[inline]
     pub fn build_schedule(&mut self) -> ScheduleBuilder<'_> {
         ScheduleBuilder::new(self)
+    }
+
+    pub fn run_system<P, S: IntoSystem<P>>(&mut self, system: S) {
+        let system = system.into_system(self);
+        unsafe {
+            system.call(self);
+        }
     }
 }
 

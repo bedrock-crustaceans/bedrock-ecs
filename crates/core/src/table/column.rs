@@ -259,23 +259,25 @@ impl Column {
             ColumnIter {
                 current_tick,
                 tracker: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
-                curr: Some(start_ptr.cast::<T>()),
-                remaining: self.len,
+                curr: start_ptr.cast::<T>(),
+                end: unsafe { start_ptr.cast::<T>().add(self.len()) }.as_ptr(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
                 _guard: Some(guard),
             }
         } else {
+            let dangling = NonNull::<T>::dangling();
+
             ColumnIter {
                 current_tick,
                 tracker: ChangeTrackerIter::empty(),
-                curr: None,
-                remaining: 0,
+                curr: dangling,
+                end: dangling.as_ptr(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
-                _guard: Some(guard),
+                _guard: None
             }
         }
     }

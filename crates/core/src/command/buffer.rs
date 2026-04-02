@@ -68,6 +68,8 @@ impl LocalCommandQueue {
         reason = "assert for safety, but should realistically never be triggered"
     )]
     pub fn apply_all(&mut self, world: &mut World) {
+        println!("Local buffer has {} commands", self.buffer.len());
+
         self.buffer.drain(..).for_each(|cmd| {
             cmd.apply(world);
         })

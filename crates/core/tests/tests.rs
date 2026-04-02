@@ -156,6 +156,8 @@ fn vitality_system(query: Query<(&mut Health, &mut Stamina, &Position)>) {
 }
 
 fn gravity_apply_system(query: Query<(&mut Velocity, &Mass), Without<Static>>) {
+    println!("gravity");
+
     const GRAVITY_CONSTANT: f32 = -0.08; // Bedrock-ish gravity scale
 
     query.iter().for_each(|(mut vel, mass)| {
@@ -218,19 +220,19 @@ fn sprite_transform_system(query: Query<(&Position, &mut Sprite)>) {
     });
 }
 
-fn ui_health_bar_system(query: Query<(&Health, &Position)>) {
-    // We iterate read-only. This system can run in parallel
-    // with any other read-only system (like a Renderer).
-    for (health, pos) in &query {
-        // Stress test: formatting strings is surprisingly expensive
-        // compared to raw math. This simulates generating hover-text.
-        if health.0 < 50.0 {
-            let _debug_label = format!("HP: {:.1} at ({:.1}, {:.1})", health.0, pos.x, pos.y);
-            // In your actual server, you would push this to a
-            // "NetworkEvents" resource or a broadcast buffer.
-        }
-    }
-}
+// fn ui_health_bar_system(query: Query<(&Health, &Position)>) {
+//     // We iterate read-only. This system can run in parallel
+//     // with any other read-only system (like a Renderer).
+//     for (health, pos) in &query {
+//         // Stress test: formatting strings is surprisingly expensive
+//         // compared to raw math. This simulates generating hover-text.
+//         if health.0 < 50.0 {
+//             // let _debug_label = format!("HP: {:.1} at ({:.1}, {:.1})", health.0, pos.x, pos.y);
+//             // In your actual server, you would push this to a
+//             // "NetworkEvents" resource or a broadcast buffer.
+//         }
+//     }
+// }
 
 fn sync_point(world: &World) {}
 
@@ -277,27 +279,27 @@ fn massive_world_stress_test() {
 
     // 1. Initial Load: 10,000 Entities
     // This pushes the ECS beyond L3 cache limits (~2-5MB of component data)
-    // tracing::info!("Summoning entities");
-    // for i in 0..10_000 {
-    //     world.spawn((
-    //         Position {
-    //             x: rng.random(),
-    //             y: rng.random(),
-    //         },
-    //         Velocity {
-    //             x: rng.random(),
-    //             y: rng.random(),
-    //         },
-    //         Health(rng.random_range(10.0..100.0)),
-    //         Faction((i % 4) as u8),
-    //         Stamina(100.0),
-    //         Sprite {
-    //             id: i,
-    //             visible: true,
-    //         },
-    //         Target(None),
-    //     ));
-    // }
+    tracing::info!("Summoning entities");
+    for i in 0..10_000 {
+        world.spawn((
+            Position {
+                x: rng.random(),
+                y: rng.random(),
+            },
+            Velocity {
+                x: rng.random(),
+                y: rng.random(),
+            },
+            Health(rng.random_range(10.0..100.0)),
+            Faction((i % 4) as u8),
+            Stamina(100.0),
+            Sprite {
+                id: i,
+                visible: true,
+            },
+            Target(None),
+        ));
+    }
 
     world.add_resources(SpatialGrid::new(1.0));
 
@@ -310,60 +312,68 @@ fn massive_world_stress_test() {
                 vitality_system,
                 poison_aura_system,
                 update_spatial_grid_system,
-                // sync_point,
+                sync_point,
             ),
         )
-        .add(Visuals, (sprite_transform_system, ui_health_bar_system));
+        .add(Visuals, (sprite_transform_system));
 
     let status = std::process::Command::new("cargo")
-        .args(["build", "-p", "test-plugin", "--target", "wasm32-wasip2"])
+        .args([
+            "build",
+            "-p",
+            "test-plugin",
+            "--release",
+            "--target",
+            "wasm32-wasip2",
+        ])
         .status()
         .expect("failed to build test plugin");
 
     assert!(status.success());
 
-    const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
+    // const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
+    const WASM_PATH: &str = "target/wasm32-wasip2/release/test_plugin.wasm";
 
     let mut plugins = PluginRegistry::new().unwrap();
     plugins.add(WASM_PATH).unwrap();
 
     plugins.resolve_systems(&mut schedule_builder).unwrap();
 
-    let schedule = schedule_builder.schedule();
+    let mut schedule = schedule_builder.schedule();
     let schedule_render = schedule.render_dependency_graph();
 
     std::fs::write("schedule.html", schedule_render)
         .expect("failed to write schedule render to file");
 
-    // // 2. Benchmarking the Tick
-    // let start = std::time::Instant::now();
-    // // let ticks = 50;
-    // let ticks = 10;
+    // 2. Benchmarking the Tick
+    let start = std::time::Instant::now();
+    let ticks = 50;
+    // let ticks = 1;
 
-    // for i in 0..ticks {
-    //     schedule.run(&world);
-    //     // CRITICAL: Apply commands to trigger the archetype migrations
-    //     world.apply_commands();
+    for i in 0..ticks {
+        schedule.run(&world);
+        // CRITICAL: Apply commands to trigger the archetype migrations
+        world.apply_commands();
 
-    //     if i == 0 {
-    //         let execution_render = schedule.render_execution_graph();
-    //         std::fs::write("execution.html", execution_render)
-    //             .expect("failed to write execution render to file");
-    //     }
-    // }
+        if i == 0 {
+            let execution_render = schedule.render_execution_graph();
+            std::fs::write("execution.html", execution_render)
+                .expect("failed to write execution render to file");
+        }
+    }
 
-    // let duration = start.elapsed();
-    // println!(
-    //     "\n--- STRESS TEST RESULTS ---\n\
-    //     Total Entities: {}\n\
-    //     Total Ticks: {}\n\
-    //     Avg Tick Time: {:?}\n\
-    //     Est. TPS: {:.2}\n",
-    //     world.alive_count(),
-    //     ticks,
-    //     duration / ticks as u32,
-    //     ticks as f64 / duration.as_secs_f64()
-    // );
+    let duration = start.elapsed();
+    println!(
+        "\n--- STRESS TEST RESULTS ---\n\
+        Total Entities: {}\n\
+        Total Ticks: {}\n\
+        Avg Tick Time: {:?}\n\
+        Est. TPS: {:.2}\n",
+        world.alive_count(),
+        ticks,
+        duration / ticks as u32,
+        ticks as f64 / duration.as_secs_f64()
+    );
 
     // // 3. Validation
     // // Ensure data actually changed
@@ -375,17 +385,17 @@ fn massive_world_stress_test() {
     // );
 }
 
-#[test]
-fn plugin_test() {
-    let status = std::process::Command::new("cargo")
-        .args(["build", "-p", "test-plugin", "--target", "wasm32-wasip2"])
-        .status()
-        .expect("failed to build test plugin");
+// #[test]
+// fn plugin_test() {
+//     let status = std::process::Command::new("cargo")
+//         .args(["build", "-p", "test-plugin", "--target", "wasm32-wasip2"])
+//         .status()
+//         .expect("failed to build test plugin");
 
-    assert!(status.success());
+//     assert!(status.success());
 
-    const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
+//     const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
 
-    let mut plugins = PluginRegistry::new().unwrap();
-    plugins.add(WASM_PATH).unwrap();
-}
+//     let mut plugins = PluginRegistry::new().unwrap();
+//     plugins.add(WASM_PATH).unwrap();
+// }

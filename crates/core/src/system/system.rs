@@ -81,17 +81,17 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
 ///
 /// This is where the the states and metadata are stored.
 pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
-    meta: UnsafeCell<SystemMeta>,
-    system: F,
-    state: UnsafeCell<P::State>,
+    pub(crate) meta: UnsafeCell<SystemMeta>,
+    pub(crate) system: F,
+    pub(crate) state: UnsafeCell<P::State>,
 
     #[cfg(debug_assertions)]
-    enforcer: BorrowEnforcer,
+    pub(crate) enforcer: BorrowEnforcer,
 
     #[cfg(feature = "generics")]
-    access: GenericArray<AccessDesc, P::AccessCount>,
+    pub(crate) access: GenericArray<AccessDesc, P::AccessCount>,
     #[cfg(not(feature = "generics"))]
-    access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
+    pub(crate) access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
 }
 
 unsafe impl<P, F> Send for SystemContainer<P, F>
@@ -161,7 +161,11 @@ macro_rules! impl_system {
             Sys: ParametrizedSystem<($($gen),*)>,
             Sys: Fn($($gen),*) + 'static
         {
-            fn into_system(self, world: &mut World) -> Box<dyn System> {
+            fn into_system(self, world: &mut World) -> impl System + 'static {
+                self.into_container(world)
+            }
+
+            fn into_boxed_system(self, world: &mut World) -> Box<dyn System> {
                 Box::new(self.into_container(world))
             }
         }
@@ -215,7 +219,8 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
-    fn into_system(self, world: &mut World) -> Box<dyn System>;
+    fn into_system(self, world: &mut World) -> impl System + 'static;
+    fn into_boxed_system(self, world: &mut World) -> Box<dyn System>;
 }
 
 #[diagnostic::do_not_recommend]
@@ -225,7 +230,12 @@ where
     F: Fn(P) + 'static,
     F: ParametrizedSystem<P>,
 {
-    fn into_system(self, world: &mut World) -> Box<dyn System> {
+    // static lifetime is required to tell Rust that the returned system does not borrow the world.
+    fn into_system(self, world: &mut World) -> impl System + 'static {
+        self.into_container(world)
+    }
+
+    fn into_boxed_system(self, world: &mut World) -> Box<dyn System> {
         Box::new(self.into_container(world))
     }
 }

@@ -1,7 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use crate::{
     component::ComponentId,
     plugins::{
-        PluginId,
+        Plugin, PluginId,
         bindings::bedrock_ecs::plugin::system::{
             AccessDescriptor as PluginAccessDesc, AccessType as PluginAccessType, SystemManifest,
         },
@@ -34,9 +36,9 @@ impl From<PluginAccessDesc> for AccessDesc {
     }
 }
 
-#[derive(Debug)]
 pub struct WasmSystem {
-    pub plugin_id: PluginId,
+    /// The plugin that this system is associated with
+    pub plugin: Arc<Mutex<Plugin>>,
     pub id: u32,
     pub access: Vec<AccessDesc>,
     pub meta: SystemMeta,
@@ -53,6 +55,9 @@ impl System for WasmSystem {
     }
 
     unsafe fn call(&self, world: &World) {
-        todo!()
+        let mut lock = self.plugin.lock().expect("failed to lock plugin");
+        if let Err(err) = lock.call(self.id) {
+            tracing::error!("Plugin was trapped while calling system {}", self.id);
+        }
     }
 }
