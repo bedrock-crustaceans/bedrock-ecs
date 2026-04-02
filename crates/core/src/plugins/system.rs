@@ -38,13 +38,13 @@ impl From<PluginAccessDesc> for AccessDesc {
 pub struct WasmSystem {
     pub plugin_id: PluginId,
     pub id: u32,
-    pub name: String,
     pub access: Vec<AccessDesc>,
+    pub meta: SystemMeta,
 }
 
 impl System for WasmSystem {
     fn meta(&self) -> &SystemMeta {
-        todo!("system name is required to be static, meta should use String instead");
+        &self.meta
     }
 
     #[inline]

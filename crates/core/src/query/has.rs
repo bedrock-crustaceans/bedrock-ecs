@@ -49,7 +49,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::None,
-            exclusive: false,
+            mutable: false,
         }
     }
 

@@ -80,25 +80,20 @@ impl<R: Resource> Deref for Res<'_, R> {
     }
 }
 
-pub struct ResState {
-    system: &'static str,
-    resource: &'static str,
-}
-
 unsafe impl<R: Resource> Param for Res<'_, R> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
     type Output<'s> = Res<'s, R>;
 
     // Keep track of system and resource name for logging purposes.
-    type State = ResState;
+    type State = ();
 
     #[cfg(feature = "generics")]
     #[inline]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
         GenericArray::from((AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<R>()),
-            exclusive: false,
+            mutable: false,
         },))
     }
 
@@ -111,39 +106,29 @@ unsafe impl<R: Resource> Param for Res<'_, R> {
         }]
     }
 
-    fn init(world: &mut World, meta: &SystemMeta) -> ResState {
-        let full_name = std::any::type_name::<R>();
-        // Attempt to extract type name.
-        let res_name = full_name.split("::").last().unwrap_or(full_name);
+    fn init(world: &mut World, meta: &SystemMeta) {
+        if !world.resources.contains::<R>() {
+            let full_name = std::any::type_name::<R>();
+            // Attempt to extract type name.
+            let res_name = full_name.split("::").last().unwrap_or(full_name);
 
-        if world.resources.contains::<R>() {
-            return ResState {
-                resource: res_name,
-                system: meta.name,
-            };
-        }
-
-        // Check whether the resource exists and warn otherwise
-        tracing::warn!(
-            "`Res<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
-            res_name,
-            meta.name
-        );
-
-        ResState {
-            resource: res_name,
-            system: meta.name,
+            // Check whether the resource exists and warn otherwise
+            tracing::warn!(
+                "`Res<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
+                res_name,
+                meta.name
+            );
         }
     }
 
     #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut ResState) -> Res<'w, R> {
+    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> Res<'w, R> {
         let Some(res) = world.resources.get::<R>() else {
-            tracing::error!(
-                "System `{}` attempted to access `Res<{}>` which does not exist",
-                state.system,
-                state.resource
-            );
+            let full_name = std::any::type_name::<R>();
+            // Attempt to extract type name.
+            let res_name = full_name.split("::").last().unwrap_or(full_name);
+
+            tracing::error!("System attempted to access `Res<{res_name}>` which does not exist");
 
             panic!("cannot access non-existent resource");
         };
@@ -174,14 +159,14 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
     type Output<'s> = ResMut<'s, R>;
 
     // Keep track of system and resource name for logging purposes.
-    type State = ResState;
+    type State = ();
 
     #[cfg(feature = "generics")]
     #[inline]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
         GenericArray::from((AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<R>()),
-            exclusive: true,
+            mutable: true,
         },))
     }
 
@@ -190,43 +175,33 @@ unsafe impl<R: Resource> Param for ResMut<'_, R> {
     fn access(_world: &mut World) -> SmallVec<[AccessDesc; 4]> {
         smallvec![AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<R>()),
-            exclusive: false
+            mutable: false
         }]
     }
 
-    fn init(world: &mut World, meta: &SystemMeta) -> ResState {
-        let full_name = std::any::type_name::<R>();
-        // Attempt to extract type name.
-        let res_name = full_name.split("::").last().unwrap_or(full_name);
+    fn init(world: &mut World, meta: &SystemMeta) {
+        if !world.resources.contains::<R>() {
+            let full_name = std::any::type_name::<R>();
+            // Attempt to extract type name.
+            let res_name = full_name.split("::").last().unwrap_or(full_name);
 
-        if world.resources.contains::<R>() {
-            return ResState {
-                resource: res_name,
-                system: meta.name,
-            };
-        }
-
-        // Check whether the resource exists and warn otherwise
-        tracing::warn!(
-            "`ResMut<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
-            res_name,
-            meta.name
-        );
-
-        ResState {
-            resource: res_name,
-            system: meta.name,
+            // Check whether the resource exists and warn otherwise
+            tracing::warn!(
+                "`ResMut<{}>` is used by system `{}` but the resource does not exist. Attempting to call this system will cause a panic.",
+                res_name,
+                meta.name
+            );
         }
     }
 
     #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut ResState) -> ResMut<'w, R> {
+    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> ResMut<'w, R> {
         let Some(ptr) = world.resources.get_ptr::<R>() else {
-            tracing::error!(
-                "System `{}` attempted to access `ResMut<{}>` which does not exist",
-                state.system,
-                state.resource
-            );
+            let full_name = std::any::type_name::<R>();
+            // Attempt to extract type name.
+            let res_name = full_name.split("::").last().unwrap_or(full_name);
+
+            tracing::error!("System attempted to access `ResMut<{res_name}>` which does not exist");
 
             panic!(
                 "cannot access non-existent resource, ensure you've called `World::insert_resources`"

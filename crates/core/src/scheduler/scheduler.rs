@@ -76,6 +76,9 @@ impl Scheduler {
                 self.in_degrees[*to] += 1;
             }
         }
+
+        // Systems that are no in the graph have no dependencies and automatically have an in-degrees
+        // count of 0.
     }
 
     pub(crate) fn reset_in_degrees(&mut self) {

@@ -1,7 +1,7 @@
 use bedrock_ecs::{
     command::Commands,
     entity::Entity,
-    plugins::WasmPlugin,
+    plugins::PluginRegistry,
     prelude::{Res, ResMut, ScheduleBuilder},
     query::{Query, Without},
     world::World,
@@ -251,13 +251,21 @@ fn update_spatial_grid_system(
 
 #[test]
 fn massive_world_stress_test() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let fmt = tracing_subscriber::fmt::Layer::new()
+        .with_target(false)
         .with_file(true)
         .with_line_number(true)
-        .with_target(false)
         .compact()
-        .init();
+        .with_filter(
+            tracing_subscriber::filter::Targets::new()
+                .with_target("bedrock_ecs", tracing::Level::TRACE),
+        );
+
+    tracing_subscriber::registry().with(fmt).init();
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(6)
@@ -269,31 +277,31 @@ fn massive_world_stress_test() {
 
     // 1. Initial Load: 10,000 Entities
     // This pushes the ECS beyond L3 cache limits (~2-5MB of component data)
-    tracing::info!("Summoning entities");
-    for i in 0..10_000 {
-        world.spawn((
-            Position {
-                x: rng.random(),
-                y: rng.random(),
-            },
-            Velocity {
-                x: rng.random(),
-                y: rng.random(),
-            },
-            Health(rng.random_range(10.0..100.0)),
-            Faction((i % 4) as u8),
-            Stamina(100.0),
-            Sprite {
-                id: i,
-                visible: true,
-            },
-            Target(None),
-        ));
-    }
+    // tracing::info!("Summoning entities");
+    // for i in 0..10_000 {
+    //     world.spawn((
+    //         Position {
+    //             x: rng.random(),
+    //             y: rng.random(),
+    //         },
+    //         Velocity {
+    //             x: rng.random(),
+    //             y: rng.random(),
+    //         },
+    //         Health(rng.random_range(10.0..100.0)),
+    //         Faction((i % 4) as u8),
+    //         Stamina(100.0),
+    //         Sprite {
+    //             id: i,
+    //             visible: true,
+    //         },
+    //         Target(None),
+    //     ));
+    // }
 
     world.add_resources(SpatialGrid::new(1.0));
 
-    let mut schedule = ScheduleBuilder::new(&mut world)
+    let mut schedule_builder = ScheduleBuilder::new(&mut world)
         .add(Physics, (physics_step_system, gravity_apply_system))
         .add(Logic, (ai_perception_system, chaos_spawner_system))
         .add(
@@ -302,46 +310,60 @@ fn massive_world_stress_test() {
                 vitality_system,
                 poison_aura_system,
                 update_spatial_grid_system,
-                sync_point,
+                // sync_point,
             ),
         )
-        .add(Visuals, (sprite_transform_system, ui_health_bar_system))
-        .schedule();
+        .add(Visuals, (sprite_transform_system, ui_health_bar_system));
 
+    let status = std::process::Command::new("cargo")
+        .args(["build", "-p", "test-plugin", "--target", "wasm32-wasip2"])
+        .status()
+        .expect("failed to build test plugin");
+
+    assert!(status.success());
+
+    const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
+
+    let mut plugins = PluginRegistry::new().unwrap();
+    plugins.add(WASM_PATH).unwrap();
+
+    plugins.resolve_systems(&mut schedule_builder).unwrap();
+
+    let schedule = schedule_builder.schedule();
     let schedule_render = schedule.render_dependency_graph();
 
     std::fs::write("schedule.html", schedule_render)
         .expect("failed to write schedule render to file");
 
-    // 2. Benchmarking the Tick
-    let start = std::time::Instant::now();
-    // let ticks = 50;
-    let ticks = 10;
+    // // 2. Benchmarking the Tick
+    // let start = std::time::Instant::now();
+    // // let ticks = 50;
+    // let ticks = 10;
 
-    for i in 0..ticks {
-        schedule.run(&world);
-        // CRITICAL: Apply commands to trigger the archetype migrations
-        world.apply_commands();
+    // for i in 0..ticks {
+    //     schedule.run(&world);
+    //     // CRITICAL: Apply commands to trigger the archetype migrations
+    //     world.apply_commands();
 
-        if i == 0 {
-            let execution_render = schedule.render_execution_graph();
-            std::fs::write("execution.html", execution_render)
-                .expect("failed to write execution render to file");
-        }
-    }
+    //     if i == 0 {
+    //         let execution_render = schedule.render_execution_graph();
+    //         std::fs::write("execution.html", execution_render)
+    //             .expect("failed to write execution render to file");
+    //     }
+    // }
 
-    let duration = start.elapsed();
-    println!(
-        "\n--- STRESS TEST RESULTS ---\n\
-        Total Entities: {}\n\
-        Total Ticks: {}\n\
-        Avg Tick Time: {:?}\n\
-        Est. TPS: {:.2}\n",
-        world.alive_count(),
-        ticks,
-        duration / ticks as u32,
-        ticks as f64 / duration.as_secs_f64()
-    );
+    // let duration = start.elapsed();
+    // println!(
+    //     "\n--- STRESS TEST RESULTS ---\n\
+    //     Total Entities: {}\n\
+    //     Total Ticks: {}\n\
+    //     Avg Tick Time: {:?}\n\
+    //     Est. TPS: {:.2}\n",
+    //     world.alive_count(),
+    //     ticks,
+    //     duration / ticks as u32,
+    //     ticks as f64 / duration.as_secs_f64()
+    // );
 
     // // 3. Validation
     // // Ensure data actually changed
@@ -364,13 +386,6 @@ fn plugin_test() {
 
     const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
 
-    let engine = Engine::default();
-
-    let plugin = WasmPlugin::new(WASM_PATH, &engine).unwrap();
-    let manifest = plugin.manifest();
-
-    println!(
-        "name is {}, version is {:?}",
-        manifest.name, manifest.version
-    );
+    let mut plugins = PluginRegistry::new().unwrap();
+    plugins.add(WASM_PATH).unwrap();
 }

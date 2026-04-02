@@ -95,6 +95,10 @@ impl<'w> ScheduleBuilder<'w> {
         self
     }
 
+    pub(crate) fn add_contained(&mut self, system: Box<dyn System>) {
+        self.systems.push(system);
+    }
+
     #[must_use = "the resulting scheduler must be used to run the schedule"]
     pub fn schedule(self) -> Scheduler {
         // Build the dependency graph

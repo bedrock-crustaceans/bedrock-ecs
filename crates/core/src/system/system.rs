@@ -13,7 +13,9 @@ use crate::world::World;
 
 #[derive(Debug)]
 pub struct SystemMeta {
-    pub(crate) name: &'static str,
+    /// For the Rust-only side of the ECS, using a static str is fine here,
+    /// but for systems coming from WebAssembly the names are loaded at runtime.
+    pub(crate) name: String,
     pub(crate) last_ran: u32,
 }
 
@@ -27,8 +29,8 @@ impl SystemMeta {
     ///
     /// This name is determined on a best-effort basis. It may not always be entirely accurate.
     #[inline]
-    pub fn name(&self) -> &'static str {
-        self.name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -56,7 +58,7 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
         let access = P::access(world);
         let meta = SystemMeta {
             last_ran: world.current_tick,
-            name,
+            name: name.to_owned(),
         };
 
         let state = P::init(world, &meta);
