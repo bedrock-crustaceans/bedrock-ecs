@@ -13,7 +13,6 @@ use crate::world::World;
 
 #[derive(Debug)]
 pub struct SystemMeta {
-    pub(crate) id: SystemId,
     pub(crate) name: &'static str,
     pub(crate) last_ran: u32,
 }
@@ -22,12 +21,6 @@ impl SystemMeta {
     #[inline]
     pub fn last_ran(&self) -> u32 {
         self.last_ran
-    }
-
-    /// Returns the unique identifier of the system.
-    #[inline]
-    pub fn id(&self) -> SystemId {
-        self.id
     }
 
     /// Returns the name of the system.
@@ -54,7 +47,7 @@ pub trait System: Sync {
 }
 
 pub trait ParametrizedSystem<P: ParamBundle>: Sized {
-    fn into_container(self, world: &mut World, id: SystemId) -> SystemContainer<P, Self> {
+    fn into_container(self, world: &mut World) -> SystemContainer<P, Self> {
         let mut name = std::any::type_name::<Self>();
         if !name.contains('{') {
             name = name.split("::").last().unwrap_or(name);
@@ -63,7 +56,6 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
         let access = P::access(world);
         let meta = SystemMeta {
             last_ran: world.current_tick,
-            id,
             name,
         };
 
@@ -167,8 +159,8 @@ macro_rules! impl_system {
             Sys: ParametrizedSystem<($($gen),*)>,
             Sys: Fn($($gen),*) + 'static
         {
-            fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
-                Box::new(self.into_container(world, id))
+            fn into_system(self, world: &mut World) -> Box<dyn System> {
+                Box::new(self.into_container(world))
             }
         }
     }
@@ -221,7 +213,7 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
     note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
-    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System>;
+    fn into_system(self, world: &mut World) -> Box<dyn System>;
 }
 
 #[diagnostic::do_not_recommend]
@@ -231,8 +223,8 @@ where
     F: Fn(P) + 'static,
     F: ParametrizedSystem<P>,
 {
-    fn into_system(self, world: &mut World, id: SystemId) -> Box<dyn System> {
-        Box::new(self.into_container(world, id))
+    fn into_system(self, world: &mut World) -> Box<dyn System> {
+        Box::new(self.into_container(world))
     }
 }
 

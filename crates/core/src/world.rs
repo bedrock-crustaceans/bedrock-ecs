@@ -159,7 +159,7 @@ unsafe impl Param for &World {
     fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
         GenericArray::from((AccessDesc {
             ty: AccessType::World,
-            exclusive: false,
+            mutable: false,
         },))
     }
 

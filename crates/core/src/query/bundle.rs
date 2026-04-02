@@ -233,7 +233,7 @@ unsafe impl QueryData for Entity {
     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::None,
-            exclusive: false,
+            mutable: false,
         }
     }
 
@@ -298,7 +298,7 @@ unsafe impl<T: Component> QueryData for &T {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
-            exclusive: false,
+            mutable: false,
         }
     }
 
@@ -383,7 +383,7 @@ unsafe impl<T: Component> QueryData for &mut T {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
-            exclusive: true,
+            mutable: true,
         }
     }
 
@@ -461,7 +461,7 @@ unsafe impl<T: Component> QueryData for Ref<'_, T> {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
-            exclusive: false,
+            mutable: false,
         }
     }
 
@@ -535,7 +535,7 @@ unsafe impl<T: Component> QueryData for Mut<'_, T> {
     fn access(reg: &mut ComponentRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
-            exclusive: true,
+            mutable: true,
         }
     }
 

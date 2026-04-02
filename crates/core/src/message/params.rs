@@ -75,7 +75,7 @@ unsafe impl<T: Message> Param for Inbox<'_, T> {
     fn access(_world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount> {
         GenericArray::from((AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<Mailbox<T>>()),
-            exclusive: false,
+            mutable: false,
         },))
     }
 
@@ -137,7 +137,7 @@ unsafe impl<T: Message> Param for Outbox<'_, T> {
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U1> {
         GenericArray::from((AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<Mailbox<T>>()),
-            exclusive: true,
+            mutable: true,
         },))
     }
 

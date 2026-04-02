@@ -1,4 +1,9 @@
 use std::any::TypeId;
+#[cfg(feature = "plugins")]
+use std::sync::Arc;
+#[cfg(feature = "plugins")]
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 
 use rustc_hash::FxHashMap;
 
@@ -31,9 +36,7 @@ macro_rules! impl_bundle {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let sid = schedule.next_id();
-                        let boxed = [<$gen:lower>].into_system(schedule.world, sid);
-
+                        let boxed = [<$gen:lower>].into_system(schedule.world);
                         schedule.systems.push(boxed);
                     )*
                 }
@@ -66,30 +69,19 @@ pub struct SystemDescriptor<'a> {
 pub struct SystemLabelId(pub(crate) TypeId);
 
 pub struct ScheduleBuilder<'w> {
-    next_id: u32,
+    pub(crate) next_id: Arc<AtomicU32>,
+
     pub(crate) world: &'w mut World,
     pub(crate) systems: Vec<Box<dyn System>>,
-
-    #[cfg(feature = "plugins")]
-    pub(crate) wasm_systems: Vec<WasmSystem>,
 }
 
 impl<'w> ScheduleBuilder<'w> {
     pub fn new(world: &'w mut World) -> ScheduleBuilder<'w> {
         ScheduleBuilder {
-            next_id: 0,
+            next_id: Arc::new(AtomicU32::new(0)),
             world,
             systems: Vec::new(),
-
-            #[cfg(feature = "plugins")]
-            wasm_systems: Vec::new(),
         }
-    }
-
-    pub(crate) fn next_id(&mut self) -> SystemId {
-        let id = self.next_id;
-        self.next_id += 1;
-        SystemId(id)
     }
 
     #[must_use = "dropping the builder without calling `ScheduleBuilder::schedule` will do nothing"]
@@ -100,11 +92,6 @@ impl<'w> ScheduleBuilder<'w> {
     {
         systems.insert_into(&mut self);
 
-        self
-    }
-
-    pub(crate) fn add_wasm(mut self, system: WasmSystem) -> ScheduleBuilder<'w> {
-        self.wasm_systems.push(system);
         self
     }
 
@@ -144,7 +131,7 @@ impl<'w> ScheduleBuilder<'w> {
                     continue;
                 }
 
-                if desc.exclusive {
+                if desc.mutable {
                     // If there exist writers or readers, create an edge
                     if let Some(prev_writer) = writers.insert(desc.ty, i) {
                         graph.edges[prev_writer].push(i);

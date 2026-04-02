@@ -21,7 +21,7 @@ pub enum AccessType {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct AccessDesc {
     pub(crate) ty: AccessType,
-    pub(crate) exclusive: bool,
+    pub(crate) mutable: bool,
 }
 
 impl AccessDesc {
@@ -30,7 +30,7 @@ impl AccessDesc {
             return true;
         }
 
-        self.ty == other.ty && (self.exclusive || other.exclusive)
+        self.ty == other.ty && (self.mutable || other.mutable)
     }
 }
 

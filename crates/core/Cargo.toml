@@ -30,6 +30,7 @@ wasmtime = { version = "43.0.0", optional = true }
 wit-bindgen = { version = "0.54.0", optional = true }
 wasmtime-wasi = "43.0.0"
 bytes = "1.11.1"
+nohash-hasher = "0.2.0"
 
 [dev-dependencies]
 criterion = "0.8.2"

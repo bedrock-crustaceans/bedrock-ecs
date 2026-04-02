@@ -9,17 +9,22 @@ interface types {
 interface system {
     use types.{component-id, resource-id};
 
+    /// The type of resource accessed by the system.
     variant access-type {
+        none,
+        entity,
+        %world,
         component(component-id),
         %resource(resource-id),
-        %world
     }
 
+    /// Describes a resource that is accessed by the system.
     record access-descriptor {
         ty: access-type,
         mutable: bool
     }
 
+    /// Information about the system that is necessary for the scheduler.
     record system-manifest {
         name: string,
         access: list<access-descriptor>
@@ -30,12 +35,31 @@ interface host {
     use types.{system-id, component-id, resource-id};
     use system.{system-manifest};
 
-    register-system: func(manifest: system-manifest) -> system-id;
-    deregister-system: func(id: system-id);
+    /// Registers the system to the server. The server will use the returned ID
+    /// to refer to the system from now on.
+    ///
+    /// The manifest *must* contain a list of all resources accessed by the system. Attempting
+    /// to access a resource not listed in the manifest will fail. The manifest is used by the scheduler
+    /// to execute your system in parallel with others, therefore other systems may be using resources that
+    /// are not explicitly listed as required in the manifest.
+    ///
+    /// This function can only be called during initialization, all calls outside of `init`
+    /// will fail.
+    ///
+    /// No guarantees are made about the system IDs, except that they will be unique.
+    register-system: func(manifest: system-manifest) -> result<system-id>;
 
     /// Called during init to resolve a component type by name.
+    ///
+    /// All communication with the server is done via component IDs, instead of component names.
     get-component-id: func(name: string) -> option<component-id>;
+
+    /// Called during init to resolve a resource type by name.
+    ///
+    /// All communication with the server is done via resource IDs, instead of resource names.
     get-resource-id: func(name: string) -> option<resource-id>;
+
+    /// The server version that is running your plugin.
     get-version: func() -> string;
 }
 

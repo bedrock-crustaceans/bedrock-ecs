@@ -1,10 +1,17 @@
 mod query;
+mod registry;
 mod system;
 
 pub use query::*;
+pub use registry::*;
+use rustc_hash::FxHashMap;
 pub use system::*;
 
-use std::{path::Path, ptr::NonNull};
+use std::{
+    path::Path,
+    ptr::NonNull,
+    sync::{Arc, atomic::AtomicU32},
+};
 
 use wasmtime::{
     Engine, Store,
@@ -19,11 +26,16 @@ pub(super) mod bindings {
     });
 }
 
+enum WasmPluginData {
+    Scheduling { systems: Vec<WasmSystem> },
+}
+
 struct WasmPluginStore {
     pub ctx: WasiCtx,
     pub table: ResourceTable,
-    pub world: NonNull<World>,
-    pub scheduler: NonNull<Scheduler>,
+    pub plugin_id: u32,
+    pub systems: FxHashMap<String, u32>,
+    pub data: WasmPluginData,
 }
 
 unsafe impl Send for WasmPluginStore {}
@@ -53,8 +65,20 @@ impl host::Host for WasmPluginStore {
     /// Registers a system and returns a unique identifier for this system.
     ///
     /// The host will use this identifier to refer to the system from now on.
-    fn register_system(&mut self, system: host::SystemManifest) -> u32 {
-        todo!()
+    fn register_system(&mut self, system: host::SystemManifest) -> Result<u32, ()> {
+        match &mut self.data {
+            WasmPluginData::Scheduling { systems } => {
+                let next_id = self.systems.len() as u32;
+                systems.push(WasmSystem {
+                    plugin_id: self.plugin_id,
+                    id: next_id,
+                    manifest: system,
+                });
+            }
+            _ => return Err(()),
+        }
+
+        Ok()
     }
 
     fn deregister_system(&mut self, id: u32) {
@@ -65,7 +89,8 @@ impl host::Host for WasmPluginStore {
 use bindings::bedrock_ecs::plugin::host;
 
 use crate::{
-    plugins::bindings::exports::bedrock_ecs::plugin::metadata, scheduler::Scheduler, world::World,
+    plugins::bindings::exports::bedrock_ecs::plugin::metadata, prelude::ScheduleBuilder,
+    scheduler::Scheduler, world::World,
 };
 
 pub struct WasmPlugin {
@@ -79,6 +104,7 @@ impl WasmPlugin {
     pub fn new<P: AsRef<Path>>(
         path: P,
         engine: &Engine,
+        plugin_id: u32,
         world: &mut World,
     ) -> wasmtime::Result<Self> {
         let component = Component::from_file(&engine, path)?;
@@ -95,7 +121,10 @@ impl WasmPlugin {
                     .inherit_stderr()
                     .build(),
                 table: ResourceTable::new(),
-                world: NonNull::from_mut(world),
+                plugin_id,
+                data: WasmPluginData::Scheduling {
+                    systems: Vec::new(),
+                },
             },
         );
 
