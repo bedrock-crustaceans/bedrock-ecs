@@ -6,7 +6,7 @@ use std::num::NonZero;
 use std::ptr::NonNull;
 
 use crate::query::Filter;
-use crate::table::{ChangeTracker, ChangeTrackerIter, ColumnIter, ColumnIterMut};
+use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut};
 use crate::util::LayoutExt;
 
 #[cfg(debug_assertions)]
@@ -255,12 +255,12 @@ impl Column {
             "attempt to create column iter with wrong type"
         );
 
-        if let Some(start_ptr) = self.data {
+        if let Some(base) = self.data {
             ColumnIter {
                 current_tick,
-                tracker: ChangeTrackerIter::new(unsafe { &*self.tracker.get() }),
-                curr: start_ptr.cast::<T>(),
-                end: unsafe { start_ptr.cast::<T>().add(self.len()) }.as_ptr(),
+                tracker: unsafe { &*self.tracker.get() },
+                len: self.len(),
+                base: base.cast::<T>(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
@@ -269,16 +269,17 @@ impl Column {
         } else {
             let dangling = NonNull::<T>::dangling();
 
-            ColumnIter {
-                current_tick,
-                tracker: ChangeTrackerIter::empty(),
-                curr: dangling,
-                end: dangling.as_ptr(),
-                _marker: PhantomData,
+            todo!();
 
-                #[cfg(debug_assertions)]
-                _guard: None
-            }
+            // ColumnIter {
+            //     current_tick,
+            //     tracker: ChangeTracker::empty(),
+            //     base: dangling,
+            //     _marker: PhantomData,
+
+            //     #[cfg(debug_assertions)]
+            //     _guard: None
+            // }
         }
     }
 
@@ -303,37 +304,21 @@ impl Column {
         );
 
         // Safety: This is safe because we are guaranteed to have unique access to this entire column.
-        let tracker = unsafe { &*self.tracker.get().cast_const() };
-        let changes = ChangeTrackerIter::new(tracker);
-
-        if let Some(start_ptr) = self.data {
+        let changes = unsafe { &*self.tracker.get() };
+        if let Some(base) = self.data {
             ColumnIterMut {
-                index: 0,
                 changes,
                 last_tick,
                 current_tick,
-
-                curr: Some(start_ptr.cast::<T>()),
-                remaining: self.len,
+                len: self.len(),
+                base: base.cast::<T>(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
                 _guard: Some(guard),
             }
         } else {
-            ColumnIterMut {
-                index: 0,
-                changes,
-                last_tick,
-                current_tick,
-
-                curr: None,
-                remaining: 0,
-                _marker: PhantomData,
-
-                #[cfg(debug_assertions)]
-                _guard: Some(guard),
-            }
+            todo!()
         }
     }
 

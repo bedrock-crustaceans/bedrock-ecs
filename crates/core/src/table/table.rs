@@ -241,20 +241,20 @@ impl Table {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        self.columns.len()
+        self.entities.len()
     }
 
-    /// The amount of entities that this table contains.
+    /// The amount of columns in this table.
     #[inline]
-    pub fn entity_len(&self) -> usize {
+    pub fn width(&self) -> usize {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
-        self.entities.len()
+        self.columns.len()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.entity_len() == 0
+        self.len() == 0
     }
 }

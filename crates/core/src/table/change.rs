@@ -113,6 +113,20 @@ impl ChangeTracker {
         }
     }
 
+    /// # Safety
+    ///
+    /// `index` must be within bounds of this tracker.
+    #[inline]
+    pub unsafe fn index_unchecked(&self, index: usize) -> Changes {
+        let added_tick = unsafe { *self.added.get_unchecked(index).get() };
+        let changed_tick = unsafe { *self.changed.get_unchecked(index).get() };
+
+        Changes {
+            added_tick,
+            changed_tick,
+        }
+    }
+
     /// Sets the component at `index` as changed in `current_tick`.
     ///
     /// This causes queries using the [`Changed`] filter to return this specific component.
@@ -160,48 +174,5 @@ impl ChangeTracker {
         self.added.resize_with(n, || UnsafeCell::new(current_tick));
         self.changed
             .resize_with(n, || UnsafeCell::new(current_tick));
-    }
-}
-
-pub struct ChangeTrackerIter<'a> {
-    index: usize,
-    pub(crate) tracker: Option<&'a ChangeTracker>,
-}
-
-impl<'a> ChangeTrackerIter<'a> {
-    pub fn empty() -> ChangeTrackerIter<'a> {
-        Self {
-            index: 0,
-            tracker: None,
-        }
-    }
-
-    pub fn new(tracker: &'a ChangeTracker) -> ChangeTrackerIter<'a> {
-        Self {
-            index: 0,
-            tracker: Some(tracker),
-        }
-    }
-}
-
-impl Iterator for ChangeTrackerIter<'_> {
-    type Item = Changes;
-
-    fn next(&mut self) -> Option<Changes> {
-        let tracker = self.tracker?;
-        let index = self.index;
-
-        self.index += 1;
-
-        #[cfg(debug_assertions)]
-        let _guard = tracker.enforcer.read();
-
-        let added = unsafe { *tracker.added.get(index)?.get().cast_const() };
-        let changed = unsafe { *tracker.changed.get(index)?.get().cast_const() };
-
-        Some(Changes {
-            added_tick: added,
-            changed_tick: changed,
-        })
     }
 }

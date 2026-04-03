@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityRef};
-use crate::query::{EmptyableIterator, Filter};
-use crate::table::{ChangeTrackerIter, Mut, Ref};
+use crate::query::{Filter, RandomAccessArray};
+use crate::table::{ChangeTracker, Mut};
 use crate::world::World;
 
 #[cfg(debug_assertions)]
@@ -13,11 +13,9 @@ use crate::util::debug::{ReadGuard, WriteGuard};
 /// An immutable iterator over a column.
 pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
-    pub(crate) tracker: ChangeTrackerIter<'a>,
-    /// Pointer to current component.
-    pub(crate) curr: NonNull<T>,
-    /// End pointer or remaining elements (when ZST)
-    pub(crate) end: *const T,
+    pub(crate) tracker: &'a ChangeTracker,
+    pub(crate) len: usize,
+    pub(crate) base: NonNull<T>,
     /// Ensures that the components and filters live at least as long as the column.
     pub(crate) _marker: PhantomData<(&'a T, F)>,
 
@@ -25,164 +23,91 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
+impl<'a, T, F: Filter> RandomAccessArray for ColumnIter<'a, T, F> {
+    type Item = &'a T;
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> &'a T {
+        debug_assert!(isize::try_from(index).is_ok());
+
+        unsafe { &*self.base.add(index).as_ptr().cast_const() }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
 impl<'a, T, F: Filter> ColumnIter<'a, T, F> {
     /// # Safety
-    /// 
+    ///
     /// Caller must ensure that the iterator is still within range.
     #[inline]
-    unsafe fn next_zst(&mut self) -> Option<Ref<'a, T>> {
-        assert_eq!(std::mem::size_of::<T>(), 0);
-
-        self.curr = unsafe { self.curr.byte_add(1) };
-        Some(Ref { inner: unsafe { &*std::ptr::dangling::<T>() } })
+    unsafe fn next_zst(&self) -> &'a T {
+        debug_assert_eq!(std::mem::size_of::<T>(), 0);
+        unsafe { &*std::ptr::dangling() }
     }
 
     /// # Safety
-    /// 
+    ///
     /// Caller must ensure that the iterator is still within range.
     #[inline]
-    unsafe fn next_nozst(&mut self) -> Option<Ref<'a, T>> {
-        assert_ne!(std::mem::size_of::<T>(), 0);
-
-        let reffed = Ref { inner: unsafe { &*self.curr.as_ptr() } };
-        self.curr = unsafe { self.curr.add(1) };
-
-        Some(reffed)
+    unsafe fn next_nozst(&self, index: usize) -> &'a T {
+        let ptr = unsafe { self.base.add(index) };
+        unsafe { &*ptr.as_ptr() }
     }
-}
 
-impl<'a, T, F: Filter> Iterator for ColumnIter<'a, T, F> {
-    type Item = Ref<'a, T>;
+    #[inline]
+    pub unsafe fn filter(&self, index: usize) -> bool {
+        F::apply_dynamic(
+            unsafe { self.tracker.index_unchecked(index) },
+            self.current_tick,
+        )
+    }
 
-    fn next(&mut self) -> Option<Ref<'a, T>> {
-        if self.curr.as_ptr().cast_const() == self.end {
-            return None
-        }
-
-        // Check whether this item satisfies the filter
-        if F::METHOD.is_dynamic() && !F::apply_dynamic(self.tracker.next()?, self.current_tick) {
-            return None;
-        }
-
+    #[inline]
+    pub unsafe fn index(&self, index: usize) -> &'a T {
         if std::mem::size_of::<T>() == 0 {
-            // Safety: there are elements remaining by the check at the top
-            return unsafe { self.next_zst() };
+            unsafe { self.next_zst() }
         } else {
-            // Safety: there are elements remaining by the check at the top
-            return unsafe { self.next_nozst() };
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl<T, F: Filter> ExactSizeIterator for ColumnIter<'_, T, F> {
-    fn len(&self) -> usize {
-        if std::mem::size_of::<T>() == 0 {
-            unsafe { self.end.byte_offset_from(self.curr.as_ptr()) as usize }
-        } else {
-            unsafe { self.end.offset_from(self.curr.as_ptr()) as usize }
-        }
-    }
-}
-
-impl<T, F: Filter> FusedIterator for ColumnIter<'_, T, F> {}
-
-impl<'a, T, F: Filter> EmptyableIterator<'a, Ref<'a, T>> for ColumnIter<'a, T, F> {
-    fn empty(_world: &'a World) -> ColumnIter<'a, T, F> {
-        let dangling = NonNull::<T>::dangling();
-
-        ColumnIter {
-            current_tick: 0,
-            tracker: ChangeTrackerIter::empty(),
-            curr: dangling,
-            end: dangling.as_ptr(),
-            _marker: PhantomData,
-
-            #[cfg(debug_assertions)]
-            _guard: None,
+            unsafe { self.next_nozst(index) }
         }
     }
 }
 
 /// A mutable iterator over a column.
 pub struct ColumnIterMut<'a, T, F: Filter> {
-    pub(crate) changes: ChangeTrackerIter<'a>,
+    pub(crate) changes: &'a ChangeTracker,
     pub(crate) last_tick: u32,
     pub(crate) current_tick: u32,
-    pub(crate) index: usize,
-    /// Pointer to current component.
-    pub(crate) curr: Option<NonNull<T>>,
-    /// Remaining elements
-    pub(crate) remaining: usize,
+    pub(crate) len: usize,
+    pub(crate) base: NonNull<T>,
     pub(crate) _marker: PhantomData<(&'a mut T, F)>,
 
     #[cfg(debug_assertions)]
     pub(crate) _guard: Option<WriteGuard>,
 }
 
-impl<'a, T, F: Filter> Iterator for ColumnIterMut<'a, T, F> {
+impl<'a, T, F: Filter> RandomAccessArray for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
-    fn next(&mut self) -> Option<Mut<'a, T>> {
-        if self.remaining == 0 || self.curr.is_none() {
-            return None;
-        }
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Mut<'a, T> {
+        debug_assert!(isize::try_from(index).is_ok());
 
-        if !F::apply_dynamic(self.changes.next()?, self.last_tick) {
-            return None;
-        }
-
-        let ptr = self.curr.as_mut().unwrap();
-        let item = unsafe { &mut *ptr.as_ptr() };
-
-        self.remaining -= 1;
-        self.index += 1;
-        *ptr = unsafe { ptr.add(1) };
-
-        Some(Mut {
-            tracker: self
-                .changes
-                .tracker
-                .expect("column iterator did not have a change tracker"),
+        let inner = unsafe { &mut *self.base.add(index).as_ptr() };
+        Mut {
+            index,
             current_tick: self.current_tick,
-            index: self.index - 1,
-            inner: item,
-        })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl<T, F: Filter> ExactSizeIterator for ColumnIterMut<'_, T, F> {
-    fn len(&self) -> usize {
-        self.remaining
-    }
-}
-
-impl<T, F: Filter> FusedIterator for ColumnIterMut<'_, T, F> {}
-
-impl<'a, T, F: Filter> EmptyableIterator<'a, Mut<'a, T>> for ColumnIterMut<'a, T, F> {
-    fn empty(_world: &'a World) -> ColumnIterMut<'a, T, F> {
-        ColumnIterMut {
-            changes: ChangeTrackerIter::empty(),
-            index: 0,
-            last_tick: 0,
-            current_tick: 0,
-
-            curr: None,
-            remaining: 0,
-            _marker: PhantomData,
-
-            #[cfg(debug_assertions)]
-            _guard: None,
+            tracker: self.changes,
+            inner,
         }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -215,17 +140,6 @@ impl ExactSizeIterator for EntityIter<'_> {
 }
 
 impl FusedIterator for EntityIter<'_> {}
-
-impl<'w> EmptyableIterator<'w, Entity> for EntityIter<'w> {
-    fn empty(_world: &'w World) -> EntityIter<'w> {
-        EntityIter {
-            iter: [].iter(),
-
-            #[cfg(debug_assertions)]
-            _guard: None,
-        }
-    }
-}
 
 pub struct EntityRefIter<'w> {
     pub(crate) world: &'w World,
@@ -261,15 +175,3 @@ impl ExactSizeIterator for EntityRefIter<'_> {
 }
 
 impl FusedIterator for EntityRefIter<'_> {}
-
-impl<'w> EmptyableIterator<'w, EntityRef<'w>> for EntityRefIter<'w> {
-    fn empty(world: &'w World) -> EntityRefIter<'w> {
-        EntityRefIter {
-            world,
-            iter: [].iter(),
-
-            #[cfg(debug_assertions)]
-            _guard: None,
-        }
-    }
-}

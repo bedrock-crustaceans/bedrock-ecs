@@ -11,10 +11,7 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
     prelude::ComponentBundle,
-    query::{
-        EmptyableIterator, Filter, Impossible, QueryBundle, QueryData, QueryState, QueryType,
-        TableCache,
-    },
+    query::{Filter, QueryBundle, QueryData, QueryState, QueryType, RandomAccessArray, TableCache},
     scheduler::{AccessDesc, AccessType},
     table::{ColumnRow, Table},
     world::World,
@@ -87,8 +84,8 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
 
         let matches = table.signature.contains(&signature);
         HasIter {
-            remaining: table.entity_len(),
             matches,
+            len: table.width(),
             _marker: PhantomData,
         }
     }
@@ -96,47 +93,27 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
 
 /// Iterator that returns whether the entity has the component.
 pub struct HasIter<'t> {
+    /// While this iterator does not actually fetch any data from tables,
+    /// it still needs to know when the table ends to jump to the next one.
+    len: usize,
+    /// Whether the current table has the component. This is computed once when the iterator
+    /// is created.
     matches: bool,
-    remaining: usize,
     // There is nothing preventing this iterator from outliving the query, but
     // the query iterators are required to not outlive the query for soundness reasons.
     _marker: PhantomData<&'t ()>,
 }
 
-impl<'t> EmptyableIterator<'t, bool> for HasIter<'t> {
-    fn empty(_world: &'t World) -> HasIter<'t> {
-        Self {
-            matches: false,
-            remaining: 0,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl Iterator for HasIter<'_> {
+impl RandomAccessArray for HasIter<'_> {
     type Item = bool;
 
     #[inline]
-    fn next(&mut self) -> Option<bool> {
-        if self.remaining == 0 {
-            return None;
-        }
-
-        self.remaining -= 1;
-        Some(self.matches)
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        self.matches
     }
 
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
-}
-
-impl ExactSizeIterator for HasIter<'_> {
     #[inline]
     fn len(&self) -> usize {
-        self.remaining
+        self.len
     }
 }
-
-impl FusedIterator for HasIter<'_> {}

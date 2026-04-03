@@ -57,7 +57,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         self.state
             .cache
             .iter()
-            .map(|c| self.world.archetypes.get_by_index(c.table).len())
+            .map(|c| self.world.archetypes.get_by_index(c.table).width())
             .sum::<usize>()
     }
 

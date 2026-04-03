@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{EmptyableIterator, Filter, HoppingIterator, QueryState};
+use crate::query::{Filter, HoppingIterator, QueryState, RandomAccessArray};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnIter, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
 use crate::world::World;
@@ -155,13 +155,7 @@ pub unsafe trait QueryData {
     type Output<'w>: 'w;
 
     /// Iterator used to iterate over columns of type `Self`.
-    ///
-    /// Use [`Impossible`] if this type does not support iteration.
-    ///
-    /// [`Impossible`]: crate::query::Impossible
-    ///
-    /// TODO: Maybe the `iter` can return an `impl Iterator` in which case we probably don't need this.
-    type Iter<'t, F: Filter>: EmptyableIterator<'t, Self::Output<'t>>;
+    type Iter<'t, F: Filter>: RandomAccessArray<Item = Self::Output<'t>>;
 
     const TY: QueryType;
 
@@ -217,65 +211,65 @@ pub enum QueryType {
     Has,
 }
 
-/// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
-/// inside of other components to be used later.
-///
-/// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
-/// only entities with the specified components will be returned.
-unsafe impl QueryData for Entity {
-    type Unref = Entity;
-    type Output<'w> = Entity;
-    type Iter<'t, F: Filter> = EntityIter<'t>;
+// /// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
+// /// inside of other components to be used later.
+// ///
+// /// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
+// /// only entities with the specified components will be returned.
+// unsafe impl QueryData for Entity {
+//     type Unref = Entity;
+//     type Output<'w> = Entity;
+//     type Iter<'t, F: Filter> = EntityIter<'t>;
 
-    const TY: QueryType = QueryType::Entity;
+//     const TY: QueryType = QueryType::Entity;
 
-    #[inline]
-    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
-        AccessDesc {
-            ty: AccessType::None,
-            mutable: false,
-        }
-    }
+//     #[inline]
+//     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+//         AccessDesc {
+//             ty: AccessType::None,
+//             mutable: false,
+//         }
+//     }
 
-    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-        unimplemented!("cannot call `component_id` on `Entity`")
-    }
+//     fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+//         unimplemented!("cannot call `component_id` on `Entity`")
+//     }
 
-    fn map_column(_table: &Table) -> NonMaxUsize {
-        unimplemented!("cannot call `cache_column` on `Entity`")
-    }
+//     fn map_column(_table: &Table) -> NonMaxUsize {
+//         unimplemented!("cannot call `cache_column` on `Entity`")
+//     }
 
-    fn get<'w, Q: QueryBundle, F: Filter>(
-        _world: &'w World,
-        _state: &'w QueryState<Q, F>,
-        table: &'w Table,
-        row: ColumnRow,
-        col: Option<NonMaxUsize>,
-    ) -> Option<Self::Output<'w>> {
-        debug_assert!(
-            col.is_none(),
-            "column index passed to entity handle iterator",
-        );
+//     fn get<'w, Q: QueryBundle, F: Filter>(
+//         _world: &'w World,
+//         _state: &'w QueryState<Q, F>,
+//         table: &'w Table,
+//         row: ColumnRow,
+//         col: Option<NonMaxUsize>,
+//     ) -> Option<Self::Output<'w>> {
+//         debug_assert!(
+//             col.is_none(),
+//             "column index passed to entity handle iterator",
+//         );
 
-        table.get_entity(row.0)
-    }
+//         table.get_entity(row.0)
+//     }
 
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        _last_tick: u32,
-        _current_tick: u32,
-    ) -> Self::Iter<'_, F> {
-        debug_assert!(
-            col.is_none(),
-            "column index passed to entity handle iterator",
-        );
+//     fn iter<F: Filter>(
+//         world: &World,
+//         table: usize,
+//         col: Option<NonMaxUsize>,
+//         _last_tick: u32,
+//         _current_tick: u32,
+//     ) -> Self::Iter<'_, F> {
+//         debug_assert!(
+//             col.is_none(),
+//             "column index passed to entity handle iterator",
+//         );
 
-        let table = world.archetypes.get_by_index(table);
-        table.iter_entities(world)
-    }
-}
+//         let table = world.archetypes.get_by_index(table);
+//         table.iter_entities(world)
+//     }
+// }
 
 /// Requests immutable access to a component of type `T`.
 ///
@@ -289,7 +283,7 @@ unsafe impl QueryData for Entity {
 /// that request a mutable reference will be given exclusive access to the component.
 unsafe impl<T: Component> QueryData for &T {
     type Unref = T;
-    type Output<'w> = Ref<'w, T>;
+    type Output<'w> = &'w T;
     type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
@@ -340,7 +334,7 @@ unsafe impl<T: Component> QueryData for &T {
                 .as_ref_unchecked()
         };
 
-        Some(Ref { inner: item })
+        Some(item)
     }
 
     fn iter<'w, F: Filter>(
@@ -373,158 +367,6 @@ unsafe impl<T: Component> QueryData for &T {
 /// Components also follow Rust's aliasing model. Using a mutable component reference will force the scheduler
 /// to give this system exclusive access to `T` for the duration of the system.
 unsafe impl<T: Component> QueryData for &mut T {
-    type Unref = T;
-    type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;
-
-    const TY: QueryType = QueryType::Component;
-
-    #[inline]
-    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
-        AccessDesc {
-            ty: AccessType::Component(reg.get_or_assign::<T>()),
-            mutable: true,
-        }
-    }
-
-    #[inline]
-    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
-        reg.get_or_assign::<T>()
-    }
-
-    /// # Panics
-    ///
-    /// This function panics if the column did not exist in the table. This
-    /// indicates a bug since it should not happen.
-    fn map_column(table: &Table) -> NonMaxUsize {
-        table
-            .lookup
-            .get(&TypeId::of::<T>())
-            .copied()
-            .and_then(NonMaxUsize::new)
-            .unwrap_or_else(|| {
-                panic!(
-                    "table column lookup failed for component {}",
-                    std::any::type_name::<T>()
-                )
-            })
-    }
-
-    fn get<'w, Q: QueryBundle, F: Filter>(
-        _world: &'w World,
-        state: &'w QueryState<Q, F>,
-        table: &'w Table,
-        row: ColumnRow,
-        col: Option<NonMaxUsize>,
-    ) -> Option<Self::Output<'w>> {
-        let col = table.column(col.unwrap().get());
-
-        // Safety: This query has unique access to this column.
-        let item = unsafe { col.get_ptr::<T>(row.0)?.as_ptr().as_mut_unchecked() };
-
-        // Safety: This query has unique access to this column.
-        let tracker = unsafe { col.tracker_ptr().as_ptr().as_mut_unchecked() };
-
-        Some(Mut {
-            index: row.0,
-            inner: item,
-            current_tick: state.current_tick,
-            tracker,
-        })
-    }
-
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        last_tick: u32,
-        current_tick: u32,
-    ) -> Self::Iter<'_, F> {
-        let col_index = col
-            .expect("no column index given to query data iterator")
-            .get();
-
-        let table = world.archetypes.get_by_index(table);
-        let col = table.column(col_index);
-        col.iter_mut(last_tick, current_tick)
-    }
-}
-
-unsafe impl<T: Component> QueryData for Ref<'_, T> {
-    type Unref = T;
-    type Output<'t> = Ref<'t, T>;
-    type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
-
-    const TY: QueryType = QueryType::Component;
-
-    #[inline]
-    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
-        AccessDesc {
-            ty: AccessType::Component(reg.get_or_assign::<T>()),
-            mutable: false,
-        }
-    }
-
-    #[inline]
-    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
-        reg.get_or_assign::<T>()
-    }
-
-    /// # Panics
-    ///
-    /// This function panics if the column did not exist in the table. This
-    /// indicates a bug since it should not happen.
-    fn map_column(table: &Table) -> NonMaxUsize {
-        table
-            .lookup
-            .get(&TypeId::of::<T>())
-            .copied()
-            .and_then(NonMaxUsize::new)
-            .unwrap_or_else(|| {
-                panic!(
-                    "table column lookup failed for component {}",
-                    std::any::type_name::<T>()
-                )
-            })
-    }
-
-    fn get<'w, Q: QueryBundle, F: Filter>(
-        _world: &'w World,
-        _state: &'w QueryState<Q, F>,
-        table: &'w Table,
-        row: ColumnRow,
-        col: Option<NonMaxUsize>,
-    ) -> Option<Self::Output<'w>> {
-        let col = table.column(col.unwrap().get());
-        let item = unsafe {
-            col.get_ptr::<T>(row.0)?
-                .as_ptr()
-                .cast_const()
-                .as_ref_unchecked()
-        };
-
-        Some(Ref { inner: item })
-    }
-
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        last_tick: u32,
-        _current_tick: u32,
-    ) -> Self::Iter<'_, F> {
-        let col_index = col
-            .expect("no column index given to query data iterator")
-            .get();
-
-        let table = world.archetypes.get_by_index(table);
-        let col = table.column(col_index);
-
-        col.iter(last_tick)
-    }
-}
-
-unsafe impl<T: Component> QueryData for Mut<'_, T> {
     type Unref = T;
     type Output<'w> = Mut<'w, T>;
     type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;

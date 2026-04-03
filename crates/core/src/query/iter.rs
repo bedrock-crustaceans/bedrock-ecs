@@ -16,35 +16,16 @@ use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
 use crate::world::World;
 
-/// Implements all query iteration traits but cannot be instantiated.
-pub struct Impossible<T> {
-    _marker: PhantomData<T>,
-}
+/// The query does not care what the type is or what it can do, it just needs to access the item
+/// at the given position.
+pub trait RandomAccessArray {
+    type Item;
 
-impl<T> Iterator for Impossible<T> {
-    type Item = T;
+    /// Returns the item at the given index.
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 
-    fn next(&mut self) -> Option<T> {
-        unimplemented!("cannot call `Impossible::next`");
-    }
-}
-
-impl<T> ExactSizeIterator for Impossible<T> {}
-
-impl<'w, T> EmptyableIterator<'w, T> for Impossible<T> {
-    fn empty(_world: &'w World) -> Impossible<T> {
-        unimplemented!("cannot create an `Impossible` iterator");
-    }
-}
-
-/// Extension trait that adds the `empty` method to construct an empty iterator.
-/// This is used by the query iterators when there are no more remaining components.
-pub trait EmptyableIterator<'w, T>: Sized + Iterator<Item = T> + ExactSizeIterator {
-    /// Creates an empty iterator that always returns `None`. This exists because
-    /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-    ///
-    /// [`Empty`]: std::iter::Empty
-    fn empty(world: &'w World) -> Self;
+    /// The *total length* of this iterator.
+    fn len(&self) -> usize;
 }
 
 /// An iterator that can jump from table to table.
@@ -61,20 +42,6 @@ pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
 
     /// Creates a new iterator over the given cache.
     fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
-
-    // /// Estimates the total amount of components remaining, including remaining tables.
-    // /// This estimate does not apply filters and will therefore always overestimate.
-    // ///
-    // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
-    // /// computing the length isn't a simple operation. The query needs to look through all of the
-    // /// future tables and compute their lengths. Therefore, this method has a performance cost.
-    // fn estimate_len(&self) -> usize;
-
-    /// Returns the length of the iterator of the *current* table.
-    ///
-    /// A hopping iterator jumps between tables and this function returns the remaining
-    /// components in the current table, *not* the total amount of components.
-    fn local_len(&self) -> usize;
 }
 
 /// An iterator that can jump from table to table.
@@ -102,9 +69,9 @@ pub trait HoppingIterator<'t>: Sized {
 
 /// Returns the remaining length of the iterator.
 /// Since all columns have the same length, the tail does not have to be checked.
-macro_rules! iter_len {
-    ($head:ident $(, $tail:expr)* $(,)?) => {
-        $head.len()
+macro_rules! get_head {
+    ($head:expr $(, $tail:expr)* $(,)?) => {
+        $head
     };
 }
 
@@ -118,8 +85,16 @@ macro_rules! impl_bundle {
                 world: &'w World,
                 /// The remaining cached tables that this iterator will hop to.
                 cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
-                /// The subiterators of this iterator.
-                iters: ($($gen::Iter<'w, FA>),*),
+                /// The subarrays that this iterator will iterate over.
+                /// These do not have to be columns, anything that implements [`RandomAccessArray`]
+                /// works.
+                sub: ($($gen::Iter<'w, FA>),*),
+                /// The current index in the subarrays.
+                index: usize,
+                /// The total length of the first subarray.
+                ///
+                /// Every subarray has the same length.
+                len: usize,
                 /// The current tick.
                 current_tick: u32,
                 /// The previous tick that this iterator was used in.
@@ -151,7 +126,7 @@ macro_rules! impl_bundle {
 
                     let mut counter = 0;
                     #[allow(unused)]
-                    let iters = ($(
+                    let sub = ($(
                         {
                             let it = $gen::iter(world, first_cache.table, first_cache.cols[counter], meta.last_tick, meta.current_tick);
                             counter += 1;
@@ -159,20 +134,20 @@ macro_rules! impl_bundle {
                         }
                     ),*);
 
+                    let ($($gen),*) = &sub;
+                    // Find the length of the first subarray. All subarrays have the same length.
+                    let len = get_head!($($gen),*).len();
+
                     Self {
                         world,
                         cache,
-                        iters,
+                        sub,
+                        index: 0,
+                        len,
                         last_tick: meta.last_tick,
                         current_tick: meta.current_tick,
                         _marker: PhantomData
                     }
-                }
-
-                #[allow(unused, non_snake_case)]
-                fn local_len(&self) -> usize {
-                    let ($($gen),*) = &self.iters;
-                    iter_len!($($gen),*)
                 }
             }
 
@@ -182,14 +157,15 @@ macro_rules! impl_bundle {
                 ///
                 /// [`Empty`]: std::iter::Empty
                 pub fn empty(world: &'w World) -> Self {
-                    Self {
-                        world,
-                        current_tick: 0,
-                        last_tick: 0,
-                        cache: [].iter(),
-                        iters: ($($gen::Iter::empty(world)),*),
-                        _marker: PhantomData
-                    }
+                    todo!();
+                    // Self {
+                    //     world,
+                    //     current_tick: 0,
+                    //     last_tick: 0,
+                    //     cache: [].iter(),
+                    //     iters: ($($gen::Iter::empty(world)),*),
+                    //     _marker: PhantomData
+                    // }
                 }
 
                 /// The length of the full iterator if it were unfiltered.
@@ -200,7 +176,42 @@ macro_rules! impl_bundle {
                     let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
 
                     // and add the remaining length of the current table.
-                    full + self.local_len()
+                    full + self.len
+                }
+
+                /// Jumps to the next table, returning whether the jump was successful
+                /// or whether the end of the query has been reached.
+                fn jump(&mut self) -> bool {
+                    if let Some(cache) = self.cache.next() {
+                        let mut offset = 0;
+                        self.sub = (
+                            $(
+                                {
+                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
+                                    offset += 1;
+                                    it
+                                }
+                            ),*
+                        );
+
+                        return true
+                    }
+
+                    false
+                }
+
+                /// Returns the next entity, while applying the query's dynamic filter.
+                #[inline]
+                fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
+                    todo!()
+                }
+
+                /// Returns the next entity, without performing any filtering.
+                ///
+                /// This bypasses the overhead of dynamic filtering when it is not enabled.
+                #[inline]
+                fn next_unfiltered(&mut self) -> Option<<Self as Iterator>::Item> {
+                    todo!();
                 }
             }
 
@@ -210,66 +221,11 @@ macro_rules! impl_bundle {
 
                 #[allow(non_snake_case, unused)]
                 fn next(&mut self) -> Option<Self::Item> {
-                    if FA::METHOD.is_dynamic() {
-                        loop {
-                            let ($($gen),*) = &mut self.iters;
-
-                            // Current iterator has ended, get the next one.
-                            if iter_len!($($gen),*) == 0 {
-                                // Attempt to jump to the next table in cache
-                                let cache = self.cache.next()?;
-
-                                let mut offset = 0;
-                                self.iters = (
-                                    $(
-                                        {
-                                            let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
-                                            offset += 1;
-                                            it
-                                        }
-                                    ),*
-                                );
-                            } else {
-                                // Have to reborrow to ensure that the line above can modify `self.iters`.
-                                let ($($gen),*) = &mut self.iters;
-                                while iter_len!($($gen),*) > 0 {
-                                    // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
-                                    let next = ($($gen.next()),*);
-                                    let ($($gen),*) = next;
-
-                                    // If all iterators returned a result, we found a new item
-                                    if $($gen.is_some())&&* {
-                                        return Some(($($gen.unwrap()),*))
-                                    }
-                                }
-                            }
-                        }
+                    // using `const` to force the compiler to eliminate this bounds check.
+                    if const { FA::METHOD.is_dynamic() } {
+                        self.next_filtered()
                     } else {
-                        // Use a more efficient iterator when the query does not make use of dynamic filters.
-                        let ($($gen),*) = &mut self.iters;
-                        if iter_len!($($gen),*) == 0 {
-                            // Attempt to jump to the next table in cache
-                            let cache = self.cache.next()?;
-
-                            let mut offset = 0;
-                            self.iters = (
-                                $(
-                                    {
-                                        let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
-                                        offset += 1;
-                                        it
-                                    }
-                                ),*
-                            );
-                        }
-
-                        // Have to reborrow to ensure that the line above can modify `self.iters`.
-                        let ($($gen),*) = &mut self.iters;
-                        // Advance all iterators because some columns might filter while others don't. We want the indices to stay matched up
-                        let next = ($($gen.next()),*);
-                        let ($($gen),*) = next;
-
-                        Some(($($gen?),*))
+                        self.next_unfiltered()
                     }
                 }
 
@@ -277,7 +233,7 @@ macro_rules! impl_bundle {
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     let upper_bound = self.unfiltered_len();
 
-                    if FA::TRIVIAL {
+                    if const { FA::TRIVIAL } {
                         // If this query performs no filtering, we know the exact size.
                         (upper_bound, Some(upper_bound))
                     } else {
