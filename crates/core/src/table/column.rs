@@ -6,7 +6,7 @@ use std::num::NonZero;
 use std::ptr::NonNull;
 
 use crate::query::Filter;
-use crate::table::{ChangeTracker, ColumnIter, ColumnIterMut};
+use crate::table::{ChangeTracker, ColumnArray, ColumnIterMut};
 use crate::util::LayoutExt;
 
 #[cfg(debug_assertions)]
@@ -245,7 +245,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter<T: 'static, F: Filter>(&self, current_tick: u32) -> ColumnIter<'_, T, F> {
+    pub fn iter<T: 'static, F: Filter>(&self, current_tick: u32) -> ColumnArray<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
@@ -256,7 +256,7 @@ impl Column {
         );
 
         if let Some(base) = self.data {
-            ColumnIter {
+            ColumnArray {
                 current_tick,
                 tracker: unsafe { &*self.tracker.get() },
                 len: self.len(),
@@ -307,7 +307,7 @@ impl Column {
         let changes = unsafe { &*self.tracker.get() };
         if let Some(base) = self.data {
             ColumnIterMut {
-                changes,
+                tracker: changes,
                 last_tick,
                 current_tick,
                 len: self.len(),

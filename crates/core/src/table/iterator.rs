@@ -1,5 +1,6 @@
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityRef};
@@ -10,8 +11,8 @@ use crate::world::World;
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
-/// An immutable iterator over a column.
-pub struct ColumnIter<'a, T, F: Filter> {
+/// TODO: This whole type can probably be removed, moving all of the implementation into `Column` itself.
+pub struct ColumnArray<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: &'a ChangeTracker,
     pub(crate) len: usize,
@@ -23,7 +24,7 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIter<'a, T, F> {
+unsafe impl<'a, T, F: Filter> ArrayLike for ColumnArray<'a, T, F> {
     type Item = &'a T;
 
     #[inline]
@@ -39,25 +40,36 @@ unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIter<'a, T, F> {
     }
 }
 
-impl<'a, T, F: Filter> ColumnIter<'a, T, F> {
+impl<'a, T, F: Filter> ColumnArray<'a, T, F> {
+    /// Constructs a ZST directly from a dangling pointer.
+    /// This skips having to add to the base pointer.
+    ///
     /// # Safety
     ///
-    /// Caller must ensure that the iterator is still within range.
+    /// `T` must be an inhabited ZST.
     #[inline]
-    unsafe fn next_zst(&self) -> &'a T {
-        debug_assert_eq!(std::mem::size_of::<T>(), 0);
-        unsafe { &*std::ptr::dangling() }
+    unsafe fn get_zst() -> &'a T {
+        debug_assert_eq!(std::mem::size_of::<T>(), 0); // this is unsound for non-ZSTs.
+
+        // Safety: we cannot construct `T` directly so we dereference a
+        // dangling (but aligned) pointer, which is safe for inhabited ZSTs.
+        unsafe { &*std::ptr::dangling::<T>() }
     }
 
+    /// Adds `index` to the base pointer and turns the pointer into a reference.
+    ///
     /// # Safety
     ///
-    /// Caller must ensure that the iterator is still within range.
+    /// `index` must be in range.
     #[inline]
-    unsafe fn next_nozst(&self, index: usize) -> &'a T {
+    unsafe fn get_nozst(&self, index: usize) -> &'a T {
         let ptr = unsafe { self.base.add(index) };
         unsafe { &*ptr.as_ptr() }
     }
 
+    /// # Safety
+    ///
+    /// `ìndex` must be in range.
     #[inline]
     pub unsafe fn filter(&self, index: usize) -> bool {
         F::apply_dynamic(
@@ -66,19 +78,26 @@ impl<'a, T, F: Filter> ColumnIter<'a, T, F> {
         )
     }
 
+    /// Retrieves the component at `index`.
+    ///
+    /// # Safety:
+    ///
+    /// `index` must be in range.
     #[inline]
-    pub unsafe fn index(&self, index: usize) -> &'a T {
+    pub unsafe fn index_unchecked(&self, index: usize) -> &'a T {
+        debug_assert!(index < self.len, "column iterator index out of range");
+
         if std::mem::size_of::<T>() == 0 {
-            unsafe { self.next_zst() }
+            unsafe { Self::get_zst() }
         } else {
-            unsafe { self.next_nozst(index) }
+            unsafe { self.get_nozst(index) }
         }
     }
 }
 
-/// A mutable iterator over a column.
+/// TODO: This whole type can probably be removed, moving all of the implementation into `Column` itself.
 pub struct ColumnIterMut<'a, T, F: Filter> {
-    pub(crate) changes: &'a ChangeTracker,
+    pub(crate) tracker: &'a ChangeTracker,
     pub(crate) last_tick: u32,
     pub(crate) current_tick: u32,
     pub(crate) len: usize,
@@ -89,18 +108,78 @@ pub struct ColumnIterMut<'a, T, F: Filter> {
     pub(crate) _guard: Option<WriteGuard>,
 }
 
+impl<'a, T, F: Filter> ColumnIterMut<'a, T, F> {
+    /// Constructs a ZST directly from a dangling pointer.
+    /// This skips having to add to the base pointer.
+    ///
+    /// # Safety
+    ///
+    /// `T` must be an inhabited ZST.
+    #[inline]
+    unsafe fn get_zst() -> &'a mut T {
+        debug_assert_eq!(std::mem::size_of::<T>(), 0); // this is unsound for non-ZSTs.
+
+        // Safety: we cannot construct `T` directly so we dereference a
+        // dangling (but aligned) pointer, which is safe for inhabited ZSTs.
+        unsafe { &mut *std::ptr::dangling_mut::<T>() }
+    }
+
+    /// Adds `index` to the base pointer and turns the pointer into a reference.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be in range.
+    #[inline]
+    unsafe fn get_nozst(&self, index: usize) -> &'a mut T {
+        let ptr = unsafe { self.base.add(index) };
+        unsafe { &mut *ptr.as_ptr() }
+    }
+
+    /// # Safety
+    ///
+    /// `ìndex` must be in range.
+    #[inline]
+    pub unsafe fn filter(&self, index: usize) -> bool {
+        F::apply_dynamic(
+            unsafe { self.tracker.index_unchecked(index) },
+            self.current_tick,
+        )
+    }
+
+    /// Retrieves the component at `index`.
+    ///
+    /// # Safety:
+    ///
+    /// `index` must be in range.
+    #[inline]
+    pub unsafe fn index_unchecked(&self, index: usize) -> &'a mut T {
+        debug_assert!(index < self.len, "column iterator index out of range");
+
+        if std::mem::size_of::<T>() == 0 {
+            unsafe { Self::get_zst() }
+        } else {
+            unsafe { self.get_nozst(index) }
+        }
+    }
+}
+
 unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Mut<'a, T> {
-        debug_assert!(isize::try_from(index).is_ok());
+        debug_assert!(isize::try_from(index).is_ok()); // soundness requirement for `std::ptr::add`.
+        debug_assert!(
+            index < self.len,
+            "mutable column iterator index out of range"
+        );
 
-        let inner = unsafe { &mut *self.base.add(index).as_ptr() };
+        // Safety: Soundness must be upheld by the caller.
+        let inner = unsafe { self.index_unchecked(index) };
         Mut {
             index,
             current_tick: self.current_tick,
-            tracker: self.changes,
+            tracker: self.tracker,
             inner,
         }
     }
@@ -111,67 +190,31 @@ unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIterMut<'a, T, F> {
     }
 }
 
+/// Iterates over entities in the current table.
+///
+// This not in the `entity` module since it iterates over entities in a table, not general entities.
 pub struct EntityIter<'w> {
-    pub(crate) iter: std::slice::Iter<'w, Entity>,
+    pub(crate) slice: &'w [Entity],
 
     #[cfg(debug_assertions)]
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-impl Iterator for EntityIter<'_> {
+unsafe impl ArrayLike for EntityIter<'_> {
     type Item = Entity;
 
-    fn next(&mut self) -> Option<Entity> {
-        let handle = *self.iter.next()?;
-        Some(handle)
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+        debug_assert!(
+            index < self.slice.len(),
+            "index out of bounds in entity iter"
+        );
+
+        *unsafe { self.slice.get_unchecked(index) }
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl ExactSizeIterator for EntityIter<'_> {
     #[inline]
     fn len(&self) -> usize {
-        self.iter.len()
+        self.slice.len()
     }
 }
-
-impl FusedIterator for EntityIter<'_> {}
-
-pub struct EntityRefIter<'w> {
-    pub(crate) world: &'w World,
-    pub(crate) iter: std::slice::Iter<'w, Entity>,
-
-    #[cfg(debug_assertions)]
-    pub(crate) _guard: Option<ReadGuard>,
-}
-
-impl<'w> Iterator for EntityRefIter<'w> {
-    type Item = EntityRef<'w>;
-
-    fn next(&mut self) -> Option<EntityRef<'w>> {
-        let id = self.iter.next()?;
-
-        Some(EntityRef {
-            handle: *id,
-            world: self.world,
-        })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.len();
-        (len, Some(len))
-    }
-}
-
-impl ExactSizeIterator for EntityRefIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.iter.len()
-    }
-}
-
-impl FusedIterator for EntityRefIter<'_> {}

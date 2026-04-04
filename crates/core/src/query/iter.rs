@@ -22,6 +22,9 @@ use crate::world::World;
 /// This is a separate trait from [`Index`] to allow for access without bounds checking.
 /// Bounds checking is already performed by the query itself and should not be done by this trait.
 ///
+/// It also moves the output type to an associated type rather than using a generic, since `Index<T>` would force
+/// every array-like object to return `T`.
+///
 /// # Safety
 ///
 /// - `Self` must have exactly as many items as the query thinks it has. I.e. if

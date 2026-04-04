@@ -14,7 +14,7 @@ use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{ArrayLike, Filter, HoppingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnIter, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
+use crate::table::{ColumnArray, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -208,65 +208,64 @@ pub enum QueryType {
     Has,
 }
 
-// /// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
-// /// inside of other components to be used later.
-// ///
-// /// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
-// /// only entities with the specified components will be returned.
-// unsafe impl QueryData for Entity {
-//     type Unref = Entity;
-//     type Output<'w> = Entity;
-//     type Iter<'t, F: Filter> = EntityIter<'t>;
+/// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
+/// inside of other components to be used later.
+///
+/// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
+/// only entities with the specified components will be returned.
+unsafe impl QueryData for Entity {
+    type Output<'w> = Entity;
+    type Iter<'t, F: Filter> = EntityIter<'t>;
 
-//     const TY: QueryType = QueryType::Entity;
+    const TY: QueryType = QueryType::Entity;
 
-//     #[inline]
-//     fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
-//         AccessDesc {
-//             ty: AccessType::None,
-//             mutable: false,
-//         }
-//     }
+    #[inline]
+    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+        AccessDesc {
+            ty: AccessType::None,
+            mutable: false,
+        }
+    }
 
-//     fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-//         unimplemented!("cannot call `component_id` on `Entity`")
-//     }
+    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+        unimplemented!("cannot call `component_id` on `Entity`")
+    }
 
-//     fn map_column(_table: &Table) -> NonMaxUsize {
-//         unimplemented!("cannot call `cache_column` on `Entity`")
-//     }
+    fn map_column(_table: &Table) -> NonMaxUsize {
+        unimplemented!("cannot call `cache_column` on `Entity`")
+    }
 
-//     fn get<'w, Q: QueryBundle, F: Filter>(
-//         _world: &'w World,
-//         _state: &'w QueryState<Q, F>,
-//         table: &'w Table,
-//         row: ColumnRow,
-//         col: Option<NonMaxUsize>,
-//     ) -> Option<Self::Output<'w>> {
-//         debug_assert!(
-//             col.is_none(),
-//             "column index passed to entity handle iterator",
-//         );
+    fn get<'w, Q: QueryBundle, F: Filter>(
+        _world: &'w World,
+        _state: &'w QueryState<Q, F>,
+        table: &'w Table,
+        row: ColumnRow,
+        col: Option<NonMaxUsize>,
+    ) -> Option<Self::Output<'w>> {
+        debug_assert!(
+            col.is_none(),
+            "column index passed to entity handle iterator",
+        );
 
-//         table.get_entity(row.0)
-//     }
+        table.get_entity(row.0)
+    }
 
-//     fn iter<F: Filter>(
-//         world: &World,
-//         table: usize,
-//         col: Option<NonMaxUsize>,
-//         _last_tick: u32,
-//         _current_tick: u32,
-//     ) -> Self::Iter<'_, F> {
-//         debug_assert!(
-//             col.is_none(),
-//             "column index passed to entity handle iterator",
-//         );
+    fn iter<F: Filter>(
+        world: &World,
+        table: usize,
+        col: Option<NonMaxUsize>,
+        _last_tick: u32,
+        _current_tick: u32,
+    ) -> Self::Iter<'_, F> {
+        debug_assert!(
+            col.is_none(),
+            "column index passed to entity handle iterator",
+        );
 
-//         let table = world.archetypes.get_by_index(table);
-//         table.iter_entities(world)
-//     }
-// }
+        let table = world.archetypes.get_by_index(table);
+        table.iter_entities(world)
+    }
+}
 
 /// Requests immutable access to a component of type `T`.
 ///
@@ -280,7 +279,7 @@ pub enum QueryType {
 /// that request a mutable reference will be given exclusive access to the component.
 unsafe impl<T: Component> QueryData for &T {
     type Output<'w> = &'w T;
-    type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
+    type Iter<'t, F: Filter> = ColumnArray<'t, T, F>;
 
     const TY: QueryType = QueryType::Component;
 

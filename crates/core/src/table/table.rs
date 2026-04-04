@@ -5,7 +5,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMeta};
-use crate::table::{Column, ColumnRow, EntityIter, EntityRefIter};
+use crate::table::{Column, ColumnRow, EntityIter};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 #[cfg(debug_assertions)]
@@ -209,27 +209,13 @@ impl Table {
         Some(&self.columns[idx])
     }
 
-    /// Creates an iterator over all the entities in this table.
-    pub fn iter_entity_refs<'w>(&'w self, world: &'w World) -> EntityRefIter<'w> {
-        #[cfg(debug_assertions)]
-        let guard = self.enforcer.read();
-
-        EntityRefIter {
-            world,
-            iter: self.entities.iter(),
-
-            #[cfg(debug_assertions)]
-            _guard: Some(guard),
-        }
-    }
-
     /// Creates an iterator over all entities in this table.
     pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
         EntityIter {
-            iter: self.entities.iter(),
+            slice: &self.entities,
 
             #[cfg(debug_assertions)]
             _guard: Some(guard),
