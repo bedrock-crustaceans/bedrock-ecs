@@ -114,8 +114,17 @@ unsafe impl ArrayLike for HasIter<'_> {
     type Item = bool;
 
     #[inline]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item {
+    unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item {
         self.matches
+    }
+
+    #[inline]
+    fn empty() -> Self {
+        Self {
+            len: 0,
+            matches: false,
+            _marker: PhantomData,
+        }
     }
 
     #[inline]

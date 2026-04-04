@@ -183,7 +183,8 @@ impl Column {
             None
         };
 
-        let layout = Layout::new::<T>();
+        let layout = Layout::new::<T>().align_to(64).unwrap();
+
         if std::mem::size_of::<T>() == 0 {
             // The allocator does not support "allocating" zero-sized types so we
             // handle them separately here by creating a dangling pointer and just increasing
@@ -260,7 +261,8 @@ impl Column {
                 current_tick,
                 tracker: unsafe { &*self.tracker.get() },
                 len: self.len,
-                base: base.cast::<T>(),
+                curr: base.cast::<T>().as_ptr(),
+                // base: base.cast::<T>(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
@@ -304,10 +306,9 @@ impl Column {
         );
 
         // Safety: This is safe because we are guaranteed to have unique access to this entire column.
-        let changes = unsafe { &*self.tracker.get() };
         if let Some(base) = self.data {
             ColumnIterMut {
-                tracker: changes,
+                tracker: self.tracker.get(),
                 last_tick,
                 current_tick,
                 len: self.len,

@@ -50,7 +50,9 @@ pub unsafe trait ArrayLike {
     /// # Safety
     ///
     /// `index` should be within bounds for this array.
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
+    unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item;
+
+    fn empty() -> Self;
 
     /// The length of this array.
     fn len(&self) -> usize;
@@ -105,14 +107,16 @@ macro_rules! impl_bundle {
             #[allow(unused_parens)]
             pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> {
                 world: &'w World,
+                cache_index: usize,
                 /// The remaining cached tables that this iterator will hop to.
-                cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
+                // cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
+                cache: &'w [TableCache<Q::AccessCount>],
                 /// The subarrays that this iterator will iterate over.
                 /// These do not have to be columns, anything that implements [`RandomAccessArray`]
                 /// works.
                 ///
                 /// Safety: This must always be some when `self.len != 0`.
-                sub: Option<($($gen::Iter<'w, FA>),*)>,
+                sub: ($($gen::Iter<'w, FA>),*),
                 /// The current index in the subarrays.
                 index: usize,
                 /// The total length of the first subarray.
@@ -142,17 +146,17 @@ macro_rules! impl_bundle {
                         }
                     }
 
-                    let mut cache = meta.cache.iter();
-                    let Some(first_cache) = cache.next() else {
+                    let cache = &meta.cache;
+                    if cache.is_empty() {
                         // There are no cached tables, just return an empty iterator.
                         return Self::empty(world)
-                    };
+                    }
 
                     let mut counter = 0;
                     #[allow(unused)]
                     let sub = ($(
                         {
-                            let it = $gen::iter(world, first_cache.table, first_cache.cols[counter], meta.last_tick, meta.current_tick);
+                            let it = $gen::iter(world, cache[0].table, cache[0].cols[counter], meta.last_tick, meta.current_tick);
                             counter += 1;
                             it
                         }
@@ -164,8 +168,9 @@ macro_rules! impl_bundle {
 
                     Self {
                         world,
+                        cache_index: 1,
                         cache,
-                        sub: Some(sub),
+                        sub,
                         index: 0,
                         len,
                         last_tick: meta.last_tick,
@@ -183,19 +188,20 @@ macro_rules! impl_bundle {
                 pub fn empty(world: &'w World) -> Self {
                     Self {
                         world,
+                        cache_index: 0,
                         current_tick: 0,
                         last_tick: 0,
                         index: 0,
                         len: 0,
-                        cache: [].iter(),
-                        sub: None,
+                        cache: &[],
+                        sub: ($($gen::Iter::<'w, FA>::empty()),*),
                         _marker: PhantomData
                     }
                 }
 
                 /// The length of the full iterator if it were unfiltered.
                 fn unfiltered_len(&self) -> usize {
-                    let cache = self.cache.as_slice();
+                    let cache = self.cache;
 
                     // Compute lengths of all remaining tables...
                     let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
@@ -206,11 +212,15 @@ macro_rules! impl_bundle {
 
                 /// Jumps to the next table, returning whether the jump was successful
                 /// or whether the end of the query has been reached.
-                #[inline]
                 fn jump(&mut self) -> bool {
-                    if let Some(cache) = self.cache.next() {
+                    if self.cache_index >= self.cache.len() {
+                        self.len = 0;
+                        false
+                    } else {
+                        let cache = &self.cache[self.cache_index];
+
                         let mut offset = 0;
-                        self.sub = Some((
+                        self.sub = (
                             $(
                                 {
                                     let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
@@ -219,17 +229,10 @@ macro_rules! impl_bundle {
                                     it
                                 }
                             ),*
-                        ));
+                        );
                         self.index = 0;
 
-                        tracing::trace!("jump was successful, now at table {}", cache.table);
                         true
-                    } else {
-                        self.len = 0;
-                        self.sub = None;
-
-                        tracing::trace!("jump failed, end of query reached");
-                        false
                     }
                 }
 
@@ -238,23 +241,6 @@ macro_rules! impl_bundle {
                 fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
                     todo!("next_filtered")
                 }
-
-                /// Returns the next entity, without performing any filtering.
-                ///
-                /// This bypasses the overhead of dynamic filtering when it is not enabled.
-                #[inline]
-                fn next_unfiltered(&mut self) -> Option<<Self as Iterator>::Item> {
-                    if self.index < self.len {
-                        // Safety: `self.sub` is always `Some` if `self.len != 0`.
-                        let ($($gen),*) = unsafe { self.sub.as_ref().unwrap_unchecked() };
-                        let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
-
-                        self.index += 1;
-                        return item;
-                    } else {
-                        return None
-                    }
-                }
             }
 
             #[allow(unused_parens)]
@@ -262,31 +248,22 @@ macro_rules! impl_bundle {
                 type Item = <($($gen),*) as QueryBundle>::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
+                #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
                     // Check whether iterator is empty
-                    if self.len == 0 { return None }
+                    if self.index >= self.len && !self.jump() {
+                        return None;
+                    }
 
-                    // using `const` to force the compiler to eliminate this bounds check.
-                    let item = if const { FA::METHOD.is_dynamic() } {
-                        self.next_filtered()
+                    if const { FA::METHOD.is_dynamic() } {
+                        todo!()
                     } else {
-                        self.next_unfiltered()
-                    };
+                        // Safety: `self.sub` is always `Some` if `self.len != 0`.
+                        let ($($gen),*) = &mut self.sub;
+                        let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
 
-                    // If item is `None` we've reached the end of the table. Try to jump to the next table.
-                    if item.is_none() {
-                        tracing::trace!("attempting jump to new table");
-
-                        let success = self.jump();
-                        if success {
-                            // Found a new table, restart iteration.
-                            return self.next();
-                        } else {
-                            // End of query has been reached.
-                            return None
-                        }
-                    } else {
-                        item
+                        self.index += 1;
+                        return item;
                     }
                 }
 
