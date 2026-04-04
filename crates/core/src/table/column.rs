@@ -259,7 +259,7 @@ impl Column {
             ColumnArray {
                 current_tick,
                 tracker: unsafe { &*self.tracker.get() },
-                len: self.len(),
+                len: self.len,
                 base: base.cast::<T>(),
                 _marker: PhantomData,
 
@@ -310,7 +310,7 @@ impl Column {
                 tracker: changes,
                 last_tick,
                 current_tick,
-                len: self.len(),
+                len: self.len,
                 base: base.cast::<T>(),
                 _marker: PhantomData,
 

@@ -11,7 +11,6 @@ use crate::world::World;
 #[cfg(debug_assertions)]
 use crate::util::debug::{ReadGuard, WriteGuard};
 
-/// TODO: This whole type can probably be removed, moving all of the implementation into `Column` itself.
 pub struct ColumnArray<'a, T, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) tracker: &'a ChangeTracker,
@@ -87,7 +86,7 @@ impl<'a, T, F: Filter> ColumnArray<'a, T, F> {
     pub unsafe fn index_unchecked(&self, index: usize) -> &'a T {
         debug_assert!(index < self.len, "column iterator index out of range");
 
-        if std::mem::size_of::<T>() == 0 {
+        if const { std::mem::size_of::<T>() == 0 } {
             unsafe { Self::get_zst() }
         } else {
             unsafe { self.get_nozst(index) }
@@ -95,7 +94,6 @@ impl<'a, T, F: Filter> ColumnArray<'a, T, F> {
     }
 }
 
-/// TODO: This whole type can probably be removed, moving all of the implementation into `Column` itself.
 pub struct ColumnIterMut<'a, T, F: Filter> {
     pub(crate) tracker: &'a ChangeTracker,
     pub(crate) last_tick: u32,
@@ -155,7 +153,7 @@ impl<'a, T, F: Filter> ColumnIterMut<'a, T, F> {
     pub unsafe fn index_unchecked(&self, index: usize) -> &'a mut T {
         debug_assert!(index < self.len, "column iterator index out of range");
 
-        if std::mem::size_of::<T>() == 0 {
+        if const { std::mem::size_of::<T>() == 0 } {
             unsafe { Self::get_zst() }
         } else {
             unsafe { self.get_nozst(index) }

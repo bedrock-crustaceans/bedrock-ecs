@@ -331,8 +331,8 @@ fn massive_world_stress_test() {
 
     assert!(status.success());
 
-    // const WASM_PATH: &str = "../../target/wasm32-wasip2/debug/test_plugin.wasm";
-    const WASM_PATH: &str = "target/wasm32-wasip2/release/test_plugin.wasm";
+    const WASM_PATH: &str = "../../target/wasm32-wasip2/release/test_plugin.wasm";
+    // const WASM_PATH: &str = "target/wasm32-wasip2/release/test_plugin.wasm";
 
     let mut plugins = PluginRegistry::new().unwrap();
     plugins.add(WASM_PATH).unwrap();
