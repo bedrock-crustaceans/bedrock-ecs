@@ -11,24 +11,25 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, ComponentRegistry},
     prelude::ComponentBundle,
-    query::{Filter, QueryBundle, QueryData, QueryState, QueryType, RandomAccessArray, TableCache},
+    query::{ArrayLike, Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
     table::{ColumnRow, Table},
     world::World,
 };
 
-/// Determines whether the entity has the given component.
+/// Determines whether the entity has the given components.
 ///
-/// Unlike the [`With`] filter, the query will also return entities that do not have
-/// this component.
+/// Unlike [`With`], this item provides no filtering and simply returns a boolean indicating whether
+/// the current entity has the given components. Consider using [`With`] instead if you do not care
+/// about the entities that do not own such components.
 ///
-/// It can be added to the data section of the query like so: `Query<(Entity, Has<Player>)>`. This example
-/// query would return a tuple `(Entity, bool)` where the boolean is `true` if the entity has the `Player` tag
-/// and `false` otherwise.
+/// Note that this since this is a query data item it belongs to the data section of the query, not the filters.
+/// Checking multiple components is also supported with tuple syntax like so: `Has<(A, B, C)>`.
 ///
 /// # Access
 ///
-/// This type does not require access to any data and can therefore run in parallel with any other system.
+/// This type does not require access to any data other than table metadata (which can only be modified at sync points),
+/// and can therefore run in parallel with any other system.
 ///
 /// [`With`]: crate::query::With
 pub struct Has<T: ComponentBundle> {
@@ -36,8 +37,6 @@ pub struct Has<T: ComponentBundle> {
 }
 
 unsafe impl<T: ComponentBundle> QueryData for Has<T> {
-    type Unref = Has<T>;
-
     type Output<'w> = bool;
     type Iter<'t, F: Filter> = HasIter<'t>;
 
@@ -104,7 +103,14 @@ pub struct HasIter<'t> {
     _marker: PhantomData<&'t ()>,
 }
 
-impl RandomAccessArray for HasIter<'_> {
+// Safety: Out of bounds access is not a concern here since it always returns a constant bool.
+//
+// Nevertheless, this iterator keeps track of a fake "length" of the current table to ensure the query
+// does not iterate forever.
+//
+// This is only a concern for queries of the form `Query<Has<T>>` since normally other iterators are there
+// to stop iteration.
+unsafe impl ArrayLike for HasIter<'_> {
     type Item = bool;
 
     #[inline]

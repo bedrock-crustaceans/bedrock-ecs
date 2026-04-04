@@ -16,30 +16,49 @@ use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
 use crate::world::World;
 
-/// The query does not care what the type is or what it can do, it just needs to access the item
-/// at the given position.
-pub trait RandomAccessArray {
+/// Queries do not care what a type is or contains, as long as it speaks the language of indices and filters.
+/// This trait encapsulates that logic, allowing any type implementing this trait to be queried.
+///
+/// This is a separate trait from [`Index`] to allow for access without bounds checking.
+/// Bounds checking is already performed by the query itself and should not be done by this trait.
+///
+/// # Safety
+///
+/// - `Self` must have exactly as many items as the query thinks it has. I.e. if
+///   there are five entities and we query `Query<(Entity, Has<Component>)>`, then
+///   the underlying array for `Has<Component>` must be able to return at least 5 items.
+///
+/// - [`len`] must return the exact size of the type. The type must support indexing via [`get_unchecked`]
+///   up to this length.
+///
+/// Queries perform their own bounds checking and then access all of the arrays without
+/// performing additional checks. This trait must be implemented correctly to prevent out of
+/// bounds access.
+///
+/// [`Index`]: std::ops::Index
+/// [`len`]: crate::query::ArrayLike::len
+/// [`get_unchecked`]: crate::query::ArrayLike::get_unchecked
+pub unsafe trait ArrayLike {
+    /// The item that this "array" contains.
     type Item;
 
     /// Returns the item at the given index.
+    ///
+    /// # Safety
+    ///
+    /// `index` should be within bounds for this array.
     unsafe fn get_unchecked(&self, index: usize) -> Self::Item;
 
-    /// The *total length* of this iterator.
+    /// The length of this array.
     fn len(&self) -> usize;
 }
 
 /// An iterator that can jump from table to table.
 ///
-/// These iterators usually contain multiple subiterators that iterate over the columns in each table.
+/// This is useful when querying a component that is contained in multiple archetypes.
+///
 #[cfg(feature = "generics")]
 pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
-    // /// Creates an iterator that returns a single item.
-    // ///
-    // /// This is used to implement [`Query::get`].
-    // ///
-    // /// [`Query::get`]: crate::query::Query::get
-    // fn once(table: &'t Table, row: ColumnRow) -> Self;
-
     /// Creates a new iterator over the given cache.
     fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 }

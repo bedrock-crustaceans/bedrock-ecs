@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use crate::entity::{Entity, EntityRef};
-use crate::query::{Filter, RandomAccessArray};
+use crate::query::{ArrayLike, Filter};
 use crate::table::{ChangeTracker, Mut};
 use crate::world::World;
 
@@ -23,7 +23,7 @@ pub struct ColumnIter<'a, T, F: Filter> {
     pub(crate) _guard: Option<ReadGuard>,
 }
 
-impl<'a, T, F: Filter> RandomAccessArray for ColumnIter<'a, T, F> {
+unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIter<'a, T, F> {
     type Item = &'a T;
 
     #[inline]
@@ -89,7 +89,7 @@ pub struct ColumnIterMut<'a, T, F: Filter> {
     pub(crate) _guard: Option<WriteGuard>,
 }
 
-impl<'a, T, F: Filter> RandomAccessArray for ColumnIterMut<'a, T, F> {
+unsafe impl<'a, T, F: Filter> ArrayLike for ColumnIterMut<'a, T, F> {
     type Item = Mut<'a, T>;
 
     #[inline]

@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{Filter, HoppingIterator, QueryState, RandomAccessArray};
+use crate::query::{ArrayLike, Filter, HoppingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnIter, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
 use crate::world::World;
@@ -143,9 +143,6 @@ pub unsafe trait QueryBundle: Sized {
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::Entity
 pub unsafe trait QueryData {
-    /// The type you would get if you were to remove the reference attached to `Self`.
-    type Unref: 'static;
-
     /// The type returned by the query. This does not have to equal `Self`.
     ///
     /// For components this is used to bound the lifetime to the query while other exotic types
@@ -155,7 +152,7 @@ pub unsafe trait QueryData {
     type Output<'w>: 'w;
 
     /// Iterator used to iterate over columns of type `Self`.
-    type Iter<'t, F: Filter>: RandomAccessArray<Item = Self::Output<'t>>;
+    type Iter<'t, F: Filter>: ArrayLike<Item = Self::Output<'t>>;
 
     const TY: QueryType;
 
@@ -282,7 +279,6 @@ pub enum QueryType {
 /// can be scheduled in parallel with other systems requesting an immutable reference to same components. Any systems
 /// that request a mutable reference will be given exclusive access to the component.
 unsafe impl<T: Component> QueryData for &T {
-    type Unref = T;
     type Output<'w> = &'w T;
     type Iter<'t, F: Filter> = ColumnIter<'t, T, F>;
 
@@ -367,7 +363,6 @@ unsafe impl<T: Component> QueryData for &T {
 /// Components also follow Rust's aliasing model. Using a mutable component reference will force the scheduler
 /// to give this system exclusive access to `T` for the duration of the system.
 unsafe impl<T: Component> QueryData for &mut T {
-    type Unref = T;
     type Output<'w> = Mut<'w, T>;
     type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;
 
