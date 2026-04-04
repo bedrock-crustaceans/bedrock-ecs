@@ -61,7 +61,7 @@ pub unsafe trait ArrayLike {
 /// This is useful when querying a component that is contained in multiple archetypes.
 ///
 #[cfg(feature = "generics")]
-pub trait HoppingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
+pub trait JumpingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
     /// Creates a new iterator over the given cache.
     fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 }
@@ -110,7 +110,9 @@ macro_rules! impl_bundle {
                 /// The subarrays that this iterator will iterate over.
                 /// These do not have to be columns, anything that implements [`RandomAccessArray`]
                 /// works.
-                sub: ($($gen::Iter<'w, FA>),*),
+                ///
+                /// Safety: This must always be some when `self.len != 0`.
+                sub: Option<($($gen::Iter<'w, FA>),*)>,
                 /// The current index in the subarrays.
                 index: usize,
                 /// The total length of the first subarray.
@@ -125,7 +127,7 @@ macro_rules! impl_bundle {
                 _marker: PhantomData<&'w ($($gen),*)>
             }
 
-            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> HoppingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> JumpingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
                     #[cfg(debug_assertions)]
                     {
@@ -163,7 +165,7 @@ macro_rules! impl_bundle {
                     Self {
                         world,
                         cache,
-                        sub,
+                        sub: Some(sub),
                         index: 0,
                         len,
                         last_tick: meta.last_tick,
@@ -179,15 +181,16 @@ macro_rules! impl_bundle {
                 ///
                 /// [`Empty`]: std::iter::Empty
                 pub fn empty(world: &'w World) -> Self {
-                    todo!();
-                    // Self {
-                    //     world,
-                    //     current_tick: 0,
-                    //     last_tick: 0,
-                    //     cache: [].iter(),
-                    //     iters: ($($gen::Iter::empty(world)),*),
-                    //     _marker: PhantomData
-                    // }
+                    Self {
+                        world,
+                        current_tick: 0,
+                        last_tick: 0,
+                        index: 0,
+                        len: 0,
+                        cache: [].iter(),
+                        sub: None,
+                        _marker: PhantomData
+                    }
                 }
 
                 /// The length of the full iterator if it were unfiltered.
@@ -203,29 +206,37 @@ macro_rules! impl_bundle {
 
                 /// Jumps to the next table, returning whether the jump was successful
                 /// or whether the end of the query has been reached.
+                #[inline]
                 fn jump(&mut self) -> bool {
                     if let Some(cache) = self.cache.next() {
                         let mut offset = 0;
-                        self.sub = (
+                        self.sub = Some((
                             $(
                                 {
                                     let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
                                     offset += 1;
+                                    self.len = it.len();
                                     it
                                 }
                             ),*
-                        );
+                        ));
+                        self.index = 0;
 
-                        return true
+                        tracing::trace!("jump was successful, now at table {}", cache.table);
+                        true
+                    } else {
+                        self.len = 0;
+                        self.sub = None;
+
+                        tracing::trace!("jump failed, end of query reached");
+                        false
                     }
-
-                    false
                 }
 
                 /// Returns the next entity, while applying the query's dynamic filter.
                 #[inline]
                 fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
-                    todo!()
+                    todo!("next_filtered")
                 }
 
                 /// Returns the next entity, without performing any filtering.
@@ -233,7 +244,16 @@ macro_rules! impl_bundle {
                 /// This bypasses the overhead of dynamic filtering when it is not enabled.
                 #[inline]
                 fn next_unfiltered(&mut self) -> Option<<Self as Iterator>::Item> {
-                    todo!();
+                    if self.index < self.len {
+                        // Safety: `self.sub` is always `Some` if `self.len != 0`.
+                        let ($($gen),*) = unsafe { self.sub.as_ref().unwrap_unchecked() };
+                        let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
+
+                        self.index += 1;
+                        return item;
+                    } else {
+                        return None
+                    }
                 }
             }
 
@@ -243,11 +263,30 @@ macro_rules! impl_bundle {
 
                 #[allow(non_snake_case, unused)]
                 fn next(&mut self) -> Option<Self::Item> {
+                    // Check whether iterator is empty
+                    if self.len == 0 { return None }
+
                     // using `const` to force the compiler to eliminate this bounds check.
-                    if const { FA::METHOD.is_dynamic() } {
+                    let item = if const { FA::METHOD.is_dynamic() } {
                         self.next_filtered()
                     } else {
                         self.next_unfiltered()
+                    };
+
+                    // If item is `None` we've reached the end of the table. Try to jump to the next table.
+                    if item.is_none() {
+                        tracing::trace!("attempting jump to new table");
+
+                        let success = self.jump();
+                        if success {
+                            // Found a new table, restart iteration.
+                            return self.next();
+                        } else {
+                            // End of query has been reached.
+                            return None
+                        }
+                    } else {
+                        item
                     }
                 }
 

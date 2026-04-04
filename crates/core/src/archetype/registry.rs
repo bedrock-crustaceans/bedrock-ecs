@@ -323,8 +323,6 @@ impl Archetypes {
             self.insert_table(Box::new(new_table))
         };
 
-        println!("src table: {src_table:?}, dst table: {dst_table:?}");
-
         // Update entity metadata in destination table.
         dst_table.entities.push(meta.handle);
 

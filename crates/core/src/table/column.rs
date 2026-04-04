@@ -269,7 +269,7 @@ impl Column {
         } else {
             let dangling = NonNull::<T>::dangling();
 
-            todo!();
+            todo!("empty column iter");
 
             // ColumnIter {
             //     current_tick,

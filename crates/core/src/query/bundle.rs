@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, ComponentRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{ArrayLike, Filter, HoppingIterator, QueryState};
+use crate::query::{ArrayLike, Filter, JumpingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnArray, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
 use crate::world::World;
@@ -53,14 +53,14 @@ pub unsafe trait QueryBundle: Sized {
     ///
     /// [`IteratorBundle1`]: crate::query::IteratorBundle1
     /// [`IteratorBundle2`]: crate::query::IteratorBundle2
-    type Iter<'a, F: Filter>: HoppingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: Filter>: JumpingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 
     #[cfg(not(feature = "generics"))]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a>: HoppingIterator<'a> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a>: JumpingIterator<'a> + Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
 

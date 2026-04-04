@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::entity::Entity;
-use crate::query::{Filter, HoppingIterator, QueryBundle};
+use crate::query::{Filter, JumpingIterator, QueryBundle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};

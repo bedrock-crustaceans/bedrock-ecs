@@ -91,6 +91,47 @@ impl Scheduler {
             .for_each(|(a, b)| a.store(*b, Ordering::Release));
     }
 
+    #[cfg(miri)]
+    fn run_system<'a>(&'a self, id: usize, world: &'a World, s: &'a std::thread::Scope<'a, '_>) {
+        s.spawn(move || {
+            // Ensure the current system does not run again.
+            self.curr_in_degrees[id].store(u32::MAX, Ordering::Release);
+
+            let system = &self.systems[id];
+
+            #[cfg(feature = "inspect")]
+            let start = Instant::now();
+
+            dbg!("executing system {}", system.meta().name());
+            unsafe { system.call(world) };
+            dbg!("finished system {}", system.meta().name());
+
+            #[cfg(feature = "inspect")]
+            {
+                let mut lock = self.timing.lock().unwrap();
+
+                let finish = Instant::now();
+                lock.timing[id] = ExecutionInfo {
+                    start,
+                    finish,
+                    thread: rayon::current_thread_index().unwrap(),
+                };
+            }
+
+            // Then decrease all in degrees of the dependent systems
+            for dependent in &self.graph.edges[id] {
+                let now = self.curr_in_degrees[*dependent].fetch_sub(1, Ordering::Relaxed) - 1;
+                if now == 0 {
+                    // This system has no more dependencies, it can run immediately
+                    std::thread::scope(|s| {
+                        self.run_system(*dependent, world, s);
+                    });
+                }
+            }
+        });
+    }
+
+    #[cfg(not(miri))]
     fn run_system<'a>(&'a self, id: usize, world: &'a World, s: &Scope<'a>) {
         s.spawn(move |s| {
             // Ensure the current system does not run again.
@@ -140,6 +181,19 @@ impl Scheduler {
                 .resize(self.systems.len(), ExecutionInfo::default());
         }
 
+        #[cfg(miri)]
+        std::thread::scope(|s| {
+            for id in self
+                .curr_in_degrees
+                .iter()
+                .enumerate()
+                .filter_map(|(i, d)| (d.load(Ordering::Acquire) == 0).then_some(i))
+            {
+                self.run_system(id, world, s);
+            }
+        });
+
+        #[cfg(not(miri))]
         rayon::scope(|s| {
             for id in self
                 .curr_in_degrees

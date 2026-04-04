@@ -1,6 +1,6 @@
 use bedrock_ecs::{
     command::Commands,
-    entity::Entity,
+    entity::{Entity, EntityGeneration, EntityIndex},
     plugins::PluginRegistry,
     prelude::{Res, ResMut, ScheduleBuilder},
     query::{Query, Without},
@@ -177,7 +177,10 @@ fn poison_aura_system(grid: Res<SpatialGrid>, query: Query<(&Position, &Faction,
     const POISON_RANGE_SQ: f32 = 25.0;
     const POISON_DAMAGE: f32 = 0.05;
 
+    let mut counter = 0;
     query.iter().for_each(|(pos, faction, mut health)| {
+        counter += 1;
+
         let (cx, cy) = grid.pos_to_cell(&pos);
 
         // Check the 3x3 grid area around the entity
@@ -200,6 +203,8 @@ fn poison_aura_system(grid: Res<SpatialGrid>, query: Query<(&Position, &Faction,
             }
         }
     });
+
+    println!("end aura");
 }
 
 fn sprite_transform_system(query: Query<(&Position, &mut Sprite)>) {
@@ -269,6 +274,7 @@ fn massive_world_stress_test() {
 
     tracing_subscriber::registry().with(fmt).init();
 
+    #[cfg(not(miri))]
     rayon::ThreadPoolBuilder::new()
         .num_threads(6)
         .build_global()
@@ -281,6 +287,7 @@ fn massive_world_stress_test() {
     // This pushes the ECS beyond L3 cache limits (~2-5MB of component data)
     tracing::info!("Summoning entities");
     for i in 0..10_000 {
+        println!("Spawning {i}");
         world.spawn((
             Position {
                 x: rng.random(),
@@ -316,6 +323,9 @@ fn massive_world_stress_test() {
             ),
         )
         .add(Visuals, (sprite_transform_system));
+
+    // let mut schedule_builder =
+    //     ScheduleBuilder::new(&mut world).add(Physics, (chaos_spawner_system, physics_step_system));
 
     let status = std::process::Command::new("cargo")
         .args([
@@ -383,6 +393,48 @@ fn massive_world_stress_test() {
     //     first_pos.x != 0.0 || first_pos.y != 0.0,
     //     "Entities did not move!"
     // );
+}
+
+#[derive(Component, Debug)]
+struct Counter(i32);
+
+fn counter_system1(query: Query<&mut Counter>) {
+    for mut counter in &query {
+        counter.0 += 1;
+    }
+}
+
+fn counter_reader(query: Query<(Entity, &Counter)>) {
+    for (entity, counter) in &query {
+        println!("{:?} counter is now {counter:?}", entity.index().to_bits());
+    }
+}
+
+#[test]
+fn small_test() {
+    let mut world = World::new();
+
+    for i in 0..5 {
+        world.spawn(Counter(i));
+    }
+
+    let schedule = ScheduleBuilder::new(&mut world).add(Logic, (counter_system1, counter_reader));
+    let mut scheduler = schedule.schedule();
+
+    let ticks = 10;
+    for _ in 0..ticks {
+        scheduler.run(&mut world);
+    }
+
+    for i in 0..5 {
+        let entity = Entity::from_index_and_generation(
+            EntityIndex::from_bits(i),
+            EntityGeneration::from_bits(0),
+        );
+
+        let counter = world.get_entity_mut(entity).unwrap().remove::<Counter>();
+        println!("end counter {i} is: {counter:?}");
+    }
 }
 
 // #[test]
