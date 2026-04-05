@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, TypeRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{ArrayLike, Filter, JumpingIterator, QueryState};
+use crate::query::{ArrayLike, Filter, JumpingIterator, QueryIter, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnRow, Mut, Ref, Table};
 use crate::util::{AsConstNonNull, ConstNonNull};
@@ -389,7 +389,7 @@ macro_rules! impl_bundle {
 
                 type BasePtrs = ($($gen::BasePtr),*);
 
-                type Iter<'t, FA: Filter> = crate::query::[< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
+                type Iter<'t, FA: Filter> = QueryIter<'t, ($($gen),*), FA> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 

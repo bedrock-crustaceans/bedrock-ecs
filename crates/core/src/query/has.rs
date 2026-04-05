@@ -37,6 +37,7 @@ pub struct Has<T: ComponentBundle> {
 }
 
 unsafe impl<T: ComponentBundle> QueryData for Has<T> {
+    type Deref = Has<T>;
     type Output<'w> = bool;
     type BasePtr = bool;
 
@@ -49,15 +50,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         }
     }
 
-    // fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-    //     unimplemented!()
-    // }
-
-    // fn map_column(_table: &Table) -> NonMaxUsize {
-    //     unimplemented!()
-    // }
-
-    fn get_base_ptr() -> Self::BasePtr {
+    fn get_base_ptr(table: &Table) -> Self::BasePtr {
         todo!()
     }
 

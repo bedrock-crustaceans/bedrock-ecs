@@ -94,138 +94,110 @@ pub trait HoppingIterator<'t>: Sized {
     fn current_len(&self) -> usize;
 }
 
-/// Returns the remaining length of the iterator.
-/// Since all columns have the same length, the tail does not have to be checked.
-macro_rules! get_head {
-    ($head:expr $(, $tail:expr)* $(,)?) => {
-        $head
-    };
+pub struct QueryIter<'w, Q: QueryBundle, F: Filter> {
+    len: usize,
+    index: usize,
+    cache: std::slice::Iter<'w, TableCache<Q>>,
+    base_ptrs: Q::BasePtrs,
+    filters: F::IterState,
 }
 
-#[cfg(feature = "generics")]
-macro_rules! impl_bundle {
-    ($count:expr, $($gen:ident),*) => {
-        paste::paste! {
-            #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
-            #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData + 'w),*> {
-                len: usize,
-                index: usize,
-                cache: std::slice::Iter<'w, TableCache<Q>>,
-                base_ptrs: Q::BasePtrs,
-                filters: FA::IterState
-            }
+impl<'w, Q: QueryBundle, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q, F> {
+    fn from_cache(world: &'w World, meta: &'w QueryState<Q, F>) -> Self {
+        let mut cache = meta.cache.iter();
 
-            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> JumpingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
-                fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
-                    let mut cache = meta.cache.iter();
+        // Look up all column base pointers.
+        let Some(first_cache) = cache.next() else {
+            return Self::empty();
+        };
 
-                    // Look up all column base pointers.
-                    let Some(first_cache) = cache.next() else {
-                        return Self::empty()
-                    };
-
-                    let table = unsafe { &*first_cache.table.as_ptr() };
-                    Self {
-                        len: table.len(),
-                        index: 0,
-                        cache,
-                        base_ptrs: Q::get_base_ptrs(table),
-                        filters: FA::new_iter_state(table)
-                    }
-                }
-            }
-
-            impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
-                /// Creates an empty iterator that always returns `None`. This exists because
-                /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-                ///
-                /// [`Empty`]: std::iter::Empty
-                pub fn empty() -> Self {
-                    Self {
-                        len: 0,
-                        index: 0,
-                        cache: [].iter(),
-                        base_ptrs: todo!(),
-                        filters: todo!()
-                    }
-                }
-
-                /// Jumps to the next table, returning whether the jump was successful
-                /// or whether the end of the query has been reached.
-                fn jump(&mut self) -> bool {
-                    if let Some(next_cache) = self.cache.next() {
-                        let table = unsafe { &*next_cache.table.as_ptr() };
-                        self.index = 0;
-                        self.base_ptrs = Q::get_base_ptrs(table);
-
-                        true
-                    } else {
-                        self.len = 0;
-                        false
-                    }
-                }
-
-                /// Returns the next entity, while applying the query's dynamic filter.
-                #[inline]
-                fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
-                    todo!("next_filtered")
-                }
-            }
-
-            #[allow(unused_parens)]
-            impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {
-                type Item = Q::Output<'t>;
-
-                #[allow(non_snake_case, unused)]
-                #[inline]
-                fn next(&mut self) -> Option<Self::Item> {
-                    // Check whether iterator is empty
-                    if self.index >= self.len && !self.jump() {
-                        return None;
-                    }
-
-                    let item = Q::fetch_from_base(self.base_ptrs, self.index);
-
-                    self.index += 1;
-                    return Some(item);
-                }
-
-                #[inline]
-                fn size_hint(&self) -> (usize, Option<usize>) {
-                    let upper_bound = todo!();
-                    // let upper_bound = self.unfiltered_len();
-
-                    if const { FA::TRIVIAL } {
-                        // If this query performs no filtering, we know the exact size.
-                        (upper_bound, Some(upper_bound))
-                    } else {
-                        // Otherwise it has a size ranging from zero to the maximum of the query.
-                        (0, Some(upper_bound))
-                    }
-                }
-            }
-
-            impl<'t, Q: QueryBundle, $($gen: QueryData),*> ExactSizeIterator for [< IteratorBundle $count >]<'t, Q, (), $($gen),*> {
-                #[inline]
-                fn len(&self) -> usize {
-                    todo!();
-                    // self.unfiltered_len()
-                }
-            }
-
-            impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {}
+        let table = unsafe { &*first_cache.table.as_ptr() };
+        Self {
+            len: table.len(),
+            index: 0,
+            cache,
+            base_ptrs: Q::get_base_ptrs(table),
+            filters: F::new_iter_state(table),
         }
     }
 }
 
-impl_bundle!(1, A);
-impl_bundle!(2, A, B);
-impl_bundle!(3, A, B, C);
-impl_bundle!(4, A, B, C, D);
-impl_bundle!(5, A, B, C, D, E);
-impl_bundle!(6, A, B, C, D, E, F);
-impl_bundle!(7, A, B, C, D, E, F, G);
-impl_bundle!(8, A, B, C, D, E, F, G, H);
-impl_bundle!(9, A, B, C, D, E, F, G, H, I);
-impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);
+impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
+    /// Creates an empty iterator that always returns `None`. This exists because
+    /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
+    ///
+    /// [`Empty`]: std::iter::Empty
+    pub fn empty() -> Self {
+        Self {
+            len: 0,
+            index: 0,
+            cache: [].iter(),
+            base_ptrs: todo!(),
+            filters: todo!(),
+        }
+    }
+
+    /// Jumps to the next table, returning whether the jump was successful
+    /// or whether the end of the query has been reached.
+    fn jump(&mut self) -> bool {
+        if let Some(next_cache) = self.cache.next() {
+            let table = unsafe { &*next_cache.table.as_ptr() };
+            self.index = 0;
+            self.base_ptrs = Q::get_base_ptrs(table);
+
+            true
+        } else {
+            self.len = 0;
+            false
+        }
+    }
+
+    /// Returns the next entity, while applying the query's dynamic filter.
+    #[inline]
+    fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
+        todo!("next_filtered")
+    }
+}
+
+#[allow(unused_parens)]
+impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
+    type Item = Q::Output<'t>;
+
+    #[allow(non_snake_case, unused)]
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        // Check whether iterator is empty
+        if self.index >= self.len && !self.jump() {
+            return None;
+        }
+
+        let item = Q::fetch_from_base(self.base_ptrs, self.index);
+
+        self.index += 1;
+        return Some(item);
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let upper_bound = todo!();
+        // let upper_bound = self.unfiltered_len();
+
+        if const { F::TRIVIAL } {
+            // If this query performs no filtering, we know the exact size.
+            (upper_bound, Some(upper_bound))
+        } else {
+            // Otherwise it has a size ranging from zero to the maximum of the query.
+            (0, Some(upper_bound))
+        }
+    }
+}
+
+impl<'t, Q: QueryBundle> ExactSizeIterator for QueryIter<'t, Q, ()> {
+    #[inline]
+    fn len(&self) -> usize {
+        todo!();
+        // self.unfiltered_len()
+    }
+}
+
+impl<'t, Q: QueryBundle, F: Filter> FusedIterator for QueryIter<'t, Q, F> {}
