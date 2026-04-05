@@ -241,7 +241,7 @@ impl Column {
     }
 
     #[inline]
-    pub fn change_base_ptr(&self) -> ConstNonNull<u32> {
+    pub fn changed_base_ptr(&self) -> ConstNonNull<u32> {
         todo!()
     }
 

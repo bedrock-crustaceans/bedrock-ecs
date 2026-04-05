@@ -1,7 +1,9 @@
 use std::any::TypeId;
 use std::fmt;
 use std::ops::Deref;
+use std::ptr::NonNull;
 
+use crate::util::ConstNonNull;
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 
@@ -56,6 +58,8 @@ pub trait Component: 'static + Send {
 ///
 /// It enables filters such as `With<(Health, Transform)>`.
 pub trait ComponentBundle: 'static + Send {
+    type TrackerPtrs;
+
     const LEN: usize;
 
     /// Whether this bundle contains the given type ID.
@@ -107,6 +111,16 @@ pub trait ComponentBundle: 'static + Send {
     ///
     /// This function does not drop the components.
     unsafe fn copy_from(table: &mut Table, row: ColumnRow) -> Self;
+
+    fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
+
+    fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
+}
+
+macro_rules! map_u32 {
+    ($x:tt) => {
+        u32
+    };
 }
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
@@ -115,13 +129,16 @@ macro_rules! impl_component_bundle {
         paste::paste! {
             #[allow(unused)]
             impl<$($gen:Component),*> ComponentBundle for ($($gen),*) {
+                // Using the `map_u32` macro to use `$gen` inside the repetition.
+                type TrackerPtrs = ($(ConstNonNull<map_u32!($gen)>),*);
+
                 const LEN: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
                 fn contains(ty_id: TypeId) -> bool {
                     $(TypeId::of::<$gen>() == ty_id)||*
                 }
 
-                fn get_or_assign_signature(reg: &mut ComponentRegistry) -> Signature {
+                fn get_or_assign_signature(reg: &mut TypeRegistry) -> Signature {
                     let mut set = Signature::new();
                     $(
                         let id = reg.get_or_assign::<$gen>();
@@ -130,7 +147,7 @@ macro_rules! impl_component_bundle {
                     set
                 }
 
-                fn try_get_signature(reg: &ComponentRegistry) -> Option<Signature> {
+                fn try_get_signature(reg: &TypeRegistry) -> Option<Signature> {
                     let mut set = Signature::new();
                     $(
                         let id = reg.get::<$gen>()?;
@@ -225,6 +242,24 @@ macro_rules! impl_component_bundle {
                             let ptr = col.get_erased_ptr(row.0).expect("requested row was not found in column");
 
                             unsafe { std::ptr::read(ptr.cast::<$gen>().as_ptr()) }
+                        }
+                    ),*)
+                }
+
+                fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
+                    ($(
+                        {
+                            let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
+                            col.added_base_ptr()
+                        }
+                    ),*)
+                }
+
+                fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
+                    ($(
+                        {
+                            let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
+                            col.changed_base_ptr()
                         }
                     ),*)
                 }

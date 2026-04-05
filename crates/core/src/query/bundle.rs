@@ -47,7 +47,7 @@ pub unsafe trait QueryBundle: Sized {
     where
         Self: 'a;
 
-    type BasePtrs;
+    type BasePtrs: Copy;
 
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
@@ -107,6 +107,8 @@ pub unsafe trait QueryBundle: Sized {
     /// [`map_column`]: QueryData::map_column
     fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
+    fn fetch_from_base<'w>(ptrs: Self::BasePtrs, index: usize) -> Self::Output<'w>;
+
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
@@ -165,7 +167,7 @@ pub unsafe trait QueryData {
     /// For some specialized types (such as [`Has`]) this can also be non-pointer data.
     ///
     /// [`Has`]: crate::query::Has
-    type BasePtr;
+    type BasePtr: Copy;
 
     const TY: QueryType;
 
@@ -364,7 +366,7 @@ unsafe impl<T: Component> QueryData for &mut T {
         let item = unsafe { col.get_ptr::<T>(row.0)?.as_ptr().as_mut_unchecked() };
 
         // Safety: This query has unique access to this column.
-        let tracker = unsafe { col.change_base_ptr().add(row.0) };
+        let tracker = unsafe { col.changed_base_ptr().add(row.0) };
 
         Some(Mut {
             inner: item,
@@ -408,6 +410,10 @@ macro_rules! impl_bundle {
                     todo!();
                 }
 
+                fn fetch_from_base<'w>(ptrs: ($($gen::BasePtr),*), index: usize) -> Self::Output<'w> where Self: 'w {
+                    todo!()
+                }
+
                 #[cfg_attr(
                     feature = "tracing",
                     tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
@@ -443,3 +449,8 @@ impl_bundle!(2, A, B);
 impl_bundle!(3, A, B, C);
 impl_bundle!(4, A, B, C, D);
 impl_bundle!(5, A, B, C, D, E);
+impl_bundle!(6, A, B, C, D, E, F);
+impl_bundle!(7, A, B, C, D, E, F, G);
+impl_bundle!(8, A, B, C, D, E, F, G, H);
+impl_bundle!(9, A, B, C, D, E, F, G, H, I);
+impl_bundle!(10, A, B, C, D, E, F, G, H, I, J);

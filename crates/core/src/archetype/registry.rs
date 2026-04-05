@@ -15,6 +15,7 @@ use crate::query::TableCache;
 use crate::query::{Filter, QueryBundle};
 use crate::table::{ColumnRow, Table};
 
+use crate::util::AsConstNonNull;
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 
@@ -145,7 +146,7 @@ impl Archetypes {
                     let cols = Q::get_base_ptrs(table);
 
                     return Some(TableCache {
-                        table: table_index,
+                        table: table.as_const_non_null(),
                         cols,
                     });
                 }

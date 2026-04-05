@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::component::ComponentBundle;
-use crate::table::{ChangeTracker, Changes};
+use crate::table::{ChangeTracker, Changes, Table};
 
 /// The possible methods of filtering used by queries.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -73,7 +73,7 @@ pub trait Filter: 'static {
     ///
     /// This is important because an older version of the ECS stored all state in the iterator regardless,
     /// which caused performance issues due to register pressure.
-    type IterState<'w>;
+    type IterState;
 
     /// Which filtering method this filter uses.
     ///
@@ -124,6 +124,8 @@ pub trait Filter: 'static {
     ///
     /// See [`FilterMethod`] for more information.
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
+
+    fn new_iter_state(table: &Table) -> Self::IterState;
 }
 
 /// A wrapper around `[bool; N]` that provides a method to create an array. This makes it possible for filter
@@ -153,20 +155,26 @@ impl<const N: usize> FilterIterable for [bool; N] {
 
 /// This is simply an empty filter that matches everything. It is the default filter used by queries.
 impl Filter for () {
-    type IterState<'w> = ();
+    type IterState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
     const TRIVIAL: bool = true;
 
+    #[inline]
     fn init(_archetypes: &mut Archetypes) {}
 
+    #[inline]
     fn apply_coarse(&self, _archetype: &Signature) -> bool {
         true
     }
 
+    #[inline]
     fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
+
+    #[inline]
+    fn new_iter_state(table: &Table) {}
 }
 
 /// A tuple of [`Filter`]s.
@@ -176,7 +184,7 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterBundle: 'static {
-    type IterState<'w>;
+    type IterState;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
@@ -207,6 +215,8 @@ pub trait FilterBundle: 'static {
 
     /// Apply all dynamic filters and AND them together.
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
+
+    fn new_iter_state(table: &Table) -> Self::IterState;
 }
 
 /// Implements [`FilterBundle`] for several sizes of tuples.
@@ -215,7 +225,7 @@ macro_rules! impl_filter_bundle {
         #[allow(non_snake_case)] // Because we use `$gen` as a variable name to avoid having to create custom identifiers.
         #[allow(unused_parens)] // Using this macro on a single type will result in `(A)`, this suppresses that warning.
         impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
-            type IterState<'w> = ($($gen::IterState<'w>),*);
+            type IterState = ($($gen::IterState),*);
 
             // Set method to dynamic (true) if at least one of the filters in the bundle is dynamic.
             // Otherwise it is set to coarse.
@@ -256,6 +266,11 @@ macro_rules! impl_filter_bundle {
                 // Just call the method on every filter in this bundle and collect into an array.
                 [$($gen::apply_dynamic(changes, last_tick)),*]
             }
+
+            #[inline]
+            fn new_iter_state(table: &Table) -> Self::IterState {
+                ($($gen::new_iter_state(table)),*)
+            }
         }
     }
 }
@@ -279,7 +294,7 @@ impl_filter_bundle!(A, B, C, D, E);
 pub struct Xor<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Xor<B> {
-    type IterState<'w> = B::IterState<'w>;
+    type IterState = B::IterState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -309,6 +324,11 @@ impl<B: FilterBundle> Filter for Xor<B> {
         let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
         truthy % 2 == 1
     }
+
+    #[inline]
+    fn new_iter_state(table: &Table) -> Self::IterState {
+        B::new_iter_state(table)
+    }
 }
 
 /// Performs a logical OR on the contained filters. In other words, this filter
@@ -321,7 +341,7 @@ impl<B: FilterBundle> Filter for Xor<B> {
 pub struct Or<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Or<B> {
-    type IterState<'w> = B::IterState<'w>;
+    type IterState = B::IterState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -346,6 +366,11 @@ impl<B: FilterBundle> Filter for Or<B> {
         let out = self.0.apply_coarse_iterable(archetypes);
         out.iter().any(|b| b)
     }
+
+    #[inline]
+    fn new_iter_state(table: &Table) -> Self::IterState {
+        B::new_iter_state(table)
+    }
 }
 
 /// Inverts the filter. For example `Not<With<T>>` is equivalent to `Without<T>`.
@@ -358,7 +383,7 @@ impl<B: FilterBundle> Filter for Or<B> {
 pub struct Not<B>(B);
 
 impl<B: FilterBundle> Filter for Not<B> {
-    type IterState<'w> = B::IterState<'w>;
+    type IterState = B::IterState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -383,6 +408,11 @@ impl<B: FilterBundle> Filter for Not<B> {
         let out = self.0.apply_coarse_iterable(archetypes);
         out.iter().any(|b| !b)
     }
+
+    #[inline]
+    fn new_iter_state(table: &Table) -> Self::IterState {
+        B::new_iter_state(table)
+    }
 }
 
 /// Matches only entity that have the component `T`, without actually returning the component.
@@ -403,7 +433,7 @@ pub struct With<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for With<T> {
-    type IterState<'w> = ();
+    type IterState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
@@ -428,6 +458,9 @@ impl<T: ComponentBundle> Filter for With<T> {
         // This filter only filters at the table level.
         true
     }
+
+    #[inline]
+    fn new_iter_state(_table: &Table) {}
 }
 
 /// Matches only entities that do not have the component `T`.
@@ -445,7 +478,7 @@ pub struct Without<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Without<T> {
-    type IterState<'w> = ();
+    type IterState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
@@ -468,6 +501,9 @@ impl<T: ComponentBundle> Filter for Without<T> {
     fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
         true
     }
+
+    #[inline]
+    fn new_iter_state(_table: &Table) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -478,7 +514,7 @@ pub struct Added<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Filter for Added<T> {
     /// A base pointer to the start of the change tracker.
-    type IterState<'w> = NonNull<u32>;
+    type IterState = T::TrackerPtrs;
 
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
@@ -502,6 +538,11 @@ impl<T: ComponentBundle> Filter for Added<T> {
     fn apply_dynamic(changes: Changes, current_tick: u32) -> bool {
         changes.added_tick >= current_tick
     }
+
+    #[inline]
+    fn new_iter_state(table: &Table) -> Self::IterState {
+        T::get_added_tracker_ptrs(table)
+    }
 }
 
 /// Queries using a `Changed` filter will always return everything the first time the system runs.
@@ -513,7 +554,7 @@ pub struct Changed<T: ComponentBundle> {
 
 impl<T: ComponentBundle> Filter for Changed<T> {
     /// A base pointer to the start of the change tracker.
-    type IterState<'w> = NonNull<u32>;
+    type IterState = T::TrackerPtrs;
 
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
@@ -536,5 +577,10 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     #[inline]
     fn apply_dynamic(changes: Changes, current_tick: u32) -> bool {
         changes.changed_tick >= current_tick
+    }
+
+    #[inline]
+    fn new_iter_state(table: &Table) -> Self::IterState {
+        T::get_changed_tracker_ptrs(table)
     }
 }

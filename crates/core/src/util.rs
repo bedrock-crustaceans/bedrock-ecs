@@ -23,13 +23,31 @@ impl<T> AsConstNonNull<T> for Vec<T> {
     }
 }
 
+impl<T> AsConstNonNull<T> for Box<T> {
+    #[inline]
+    fn as_const_non_null(&self) -> ConstNonNull<T> {
+        unsafe { ConstNonNull::new_unchecked(self.as_ref() as *const T) }
+    }
+}
+
 /// [`NonNull`] but wrapping a `const` pointer instead.
 ///
 /// Internally this is just a [`NonNull`] to make use of niche optimisations,
 /// but the public API only allows const usage.
 ///
 /// [`NonNull`]: std::ptr::NonNull
+#[repr(transparent)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ConstNonNull<T: ?Sized>(NonNull<T>);
+
+impl<T: ?Sized> Clone for ConstNonNull<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl<T: ?Sized> Copy for ConstNonNull<T> {}
 
 impl<T: ?Sized> ConstNonNull<T> {
     /// Creates a new [`ConstNonNull`], returning `None` if the pointer is null.

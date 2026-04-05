@@ -108,21 +108,30 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> {
+            pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData + 'w),*> {
+                len: usize,
                 index: usize,
                 cache: std::slice::Iter<'w, TableCache<Q>>,
                 base_ptrs: Q::BasePtrs,
-                filters: FA::IterState<'w>
+                filters: FA::IterState
             }
 
             impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> JumpingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
+                    let mut cache = meta.cache.iter();
+
                     // Look up all column base pointers.
+                    let Some(first_cache) = cache.next() else {
+                        return Self::empty()
+                    };
 
-
+                    let table = unsafe { &*first_cache.table.as_ptr() };
                     Self {
+                        len: table.len(),
                         index: 0,
-                        filters:
+                        cache,
+                        base_ptrs: Q::get_base_ptrs(table),
+                        filters: FA::new_iter_state(table)
                     }
                 }
             }
@@ -132,8 +141,9 @@ macro_rules! impl_bundle {
                 /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
                 ///
                 /// [`Empty`]: std::iter::Empty
-                pub fn empty(world: &'w World) -> Self {
+                pub fn empty() -> Self {
                     Self {
+                        len: 0,
                         index: 0,
                         cache: [].iter(),
                         base_ptrs: todo!(),
@@ -145,15 +155,13 @@ macro_rules! impl_bundle {
                 /// or whether the end of the query has been reached.
                 fn jump(&mut self) -> bool {
                     if let Some(next_cache) = self.cache.next() {
-                        self.base_ptrs = (
-                            $(
-                                $gen::get_base_ptr()
-                            ),*
-                        );
+                        let table = unsafe { &*next_cache.table.as_ptr() };
                         self.index = 0;
+                        self.base_ptrs = Q::get_base_ptrs(table);
 
                         true
                     } else {
+                        self.len = 0;
                         false
                     }
                 }
@@ -167,7 +175,7 @@ macro_rules! impl_bundle {
 
             #[allow(unused_parens)]
             impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> Iterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {
-                type Item = <($($gen),*) as QueryBundle>::Output<'t>;
+                type Item = Q::Output<'t>;
 
                 #[allow(non_snake_case, unused)]
                 #[inline]
@@ -177,23 +185,16 @@ macro_rules! impl_bundle {
                         return None;
                     }
 
-                    let ($($gen),*) = &mut self.sub;
-                    if const { FA::METHOD.is_dynamic() } {
-                        if $(!unsafe { $gen.filter_unchecked(self.index) })||* {
-                            return None
-                        }
-                    }
-
-                    // Safety: `self.sub` is always `Some` if `self.len != 0`.
-                    let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
+                    let item = Q::fetch_from_base(self.base_ptrs, self.index);
 
                     self.index += 1;
-                    return item;
+                    return Some(item);
                 }
 
                 #[inline]
                 fn size_hint(&self) -> (usize, Option<usize>) {
-                    let upper_bound = self.unfiltered_len();
+                    let upper_bound = todo!();
+                    // let upper_bound = self.unfiltered_len();
 
                     if const { FA::TRIVIAL } {
                         // If this query performs no filtering, we know the exact size.
@@ -208,7 +209,8 @@ macro_rules! impl_bundle {
             impl<'t, Q: QueryBundle, $($gen: QueryData),*> ExactSizeIterator for [< IteratorBundle $count >]<'t, Q, (), $($gen),*> {
                 #[inline]
                 fn len(&self) -> usize {
-                    self.unfiltered_len()
+                    todo!();
+                    // self.unfiltered_len()
                 }
             }
 

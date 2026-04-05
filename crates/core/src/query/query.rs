@@ -11,6 +11,10 @@ use crate::query::{Filter, JumpingIterator, QueryBundle};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{Param, SystemMeta};
+#[cfg(feature = "generics")]
+use crate::table::Table;
+#[cfg(feature = "generics")]
+use crate::util::ConstNonNull;
 use crate::world::World;
 
 /// A query is used to retrieve components from the components database.
@@ -60,7 +64,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         self.state
             .cache
             .iter()
-            .map(|c| self.world.archetypes.get_by_index(c.table).width())
+            .map(|c| unsafe { &*c.table.as_ptr() }.width())
             .sum::<usize>()
     }
 
@@ -126,7 +130,7 @@ unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q
 #[derive(Debug, Clone)]
 pub struct TableCache<Q: QueryBundle> {
     /// The index of the table in the archetypes container.
-    pub table: usize,
+    pub table: ConstNonNull<Table>,
     /// The columns within this table that should be queried.
     pub cols: Q::BasePtrs,
 }
