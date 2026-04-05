@@ -64,6 +64,16 @@ impl World {
         }
     }
 
+    pub fn spawn_batch(
+        &mut self,
+        batch: impl Iterator<Item = impl ComponentBundle>,
+    ) -> Vec<EntityMut<'_>> {
+        let (min, max) = batch.size_hint();
+        let size = max.unwrap_or(min);
+
+        todo!();
+    }
+
     #[inline]
     pub fn despawn(&mut self, entity: Entity) {
         let Some(meta) = self.entities.get_meta(entity) else {

@@ -52,6 +52,8 @@ pub unsafe trait ArrayLike {
     /// `index` should be within bounds for this array.
     unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item;
 
+    unsafe fn filter_unchecked(&self, index: usize) -> bool;
+
     fn empty() -> Self;
 
     /// The length of this array.
@@ -255,16 +257,18 @@ macro_rules! impl_bundle {
                         return None;
                     }
 
+                    let ($($gen),*) = &mut self.sub;
                     if const { FA::METHOD.is_dynamic() } {
-                        todo!()
-                    } else {
-                        // Safety: `self.sub` is always `Some` if `self.len != 0`.
-                        let ($($gen),*) = &mut self.sub;
-                        let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
-
-                        self.index += 1;
-                        return item;
+                        if $(!unsafe { $gen.filter_unchecked(self.index) })||* {
+                            return None
+                        }
                     }
+
+                    // Safety: `self.sub` is always `Some` if `self.len != 0`.
+                    let item = Some(($(unsafe { $gen.get_unchecked(self.index) }),*));
+
+                    self.index += 1;
+                    return item;
                 }
 
                 #[inline]

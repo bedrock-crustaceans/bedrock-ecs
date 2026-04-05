@@ -261,8 +261,7 @@ impl Column {
                 current_tick,
                 tracker: unsafe { &*self.tracker.get() },
                 len: self.len,
-                curr: base.cast::<T>().as_ptr(),
-                // base: base.cast::<T>(),
+                base: base.cast::<T>(),
                 _marker: PhantomData,
 
                 #[cfg(debug_assertions)]
@@ -291,11 +290,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`.
-    pub fn iter_mut<T: 'static, F: Filter>(
-        &self,
-        last_tick: u32,
-        current_tick: u32,
-    ) -> ColumnIterMut<'_, T, F> {
+    pub fn iter_mut<T: 'static, F: Filter>(&self, current_tick: u32) -> ColumnIterMut<'_, T, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.write();
 
@@ -309,7 +304,6 @@ impl Column {
         if let Some(base) = self.data {
             ColumnIterMut {
                 tracker: self.tracker.get(),
-                last_tick,
                 current_tick,
                 len: self.len,
                 base: base.cast::<T>(),

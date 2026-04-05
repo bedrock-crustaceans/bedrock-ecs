@@ -64,7 +64,7 @@ impl FilterMethod {
 ///
 /// Examples of coarse filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
 /// dynamic filters.
-pub trait Filter {
+pub trait Filter: 'static {
     /// Which filtering method this filter uses.
     ///
     /// Please note that dynamic filters can impact performance since the [`apply_dynamic`]
@@ -163,7 +163,7 @@ impl Filter for () {
 /// a logical AND, requiring all filters to match in order to yield the entity.
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
-pub trait FilterBundle {
+pub trait FilterBundle: 'static {
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
     const METHOD: FilterMethod;

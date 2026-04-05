@@ -1,10 +1,12 @@
 use std::any::TypeId;
+use std::marker::PhantomData;
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMeta};
+use crate::query::Filter;
 use crate::table::{Column, ColumnRow, EntityIter};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -210,12 +212,16 @@ impl Table {
     }
 
     /// Creates an iterator over all entities in this table.
-    pub fn iter_entities<'w>(&'w self, _world: &'w World) -> EntityIter<'w> {
+    pub fn iter_entities<'w, F: Filter>(&'w self, world: &'w World) -> EntityIter<'w, F> {
         #[cfg(debug_assertions)]
         let guard = self.enforcer.read();
 
         EntityIter {
+            tracker: todo!(),
             slice: &self.entities,
+            current_tick: world.current_tick,
+
+            _marker: PhantomData,
 
             #[cfg(debug_assertions)]
             _guard: Some(guard),

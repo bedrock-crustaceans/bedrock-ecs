@@ -215,7 +215,7 @@ pub enum QueryType {
 /// only entities with the specified components will be returned.
 unsafe impl QueryData for Entity {
     type Output<'w> = Entity;
-    type Iter<'t, F: Filter> = EntityIter<'t>;
+    type Iter<'t, F: Filter> = EntityIter<'t, F>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -434,6 +434,6 @@ unsafe impl<T: Component> QueryData for &mut T {
 
         let table = world.archetypes.get_by_index(table);
         let col = table.column(col_index);
-        col.iter_mut(last_tick, current_tick)
+        col.iter_mut(current_tick)
     }
 }

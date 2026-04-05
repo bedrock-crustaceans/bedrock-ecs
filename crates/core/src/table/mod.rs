@@ -1,9 +1,9 @@
 mod change;
 mod column;
-mod iterator;
+mod iter;
 mod table;
 
 pub use change::*;
 pub use column::*;
-pub use iterator::*;
+pub use iter::*;
 pub use table::*;

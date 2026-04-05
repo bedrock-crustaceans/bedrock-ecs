@@ -117,7 +117,7 @@ impl ChangeTracker {
     ///
     /// `index` must be within bounds of this tracker.
     #[inline]
-    pub unsafe fn index_unchecked(&self, index: usize) -> Changes {
+    pub unsafe fn get_unchecked(&self, index: usize) -> Changes {
         let added_tick = unsafe { *self.added.get_unchecked(index).get() };
         let changed_tick = unsafe { *self.changed.get_unchecked(index).get() };
 

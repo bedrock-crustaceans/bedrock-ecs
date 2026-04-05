@@ -77,7 +77,6 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     ) -> HasIter<'_> {
         debug_assert!(col.is_none(), "column index passed to `Has` iterator");
 
-        // TODO: This should be stored in some kind of persistent state.
         let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
         let table = world.archetypes.get_by_index(table);
 
@@ -112,6 +111,10 @@ pub struct HasIter<'t> {
 // to stop iteration.
 unsafe impl ArrayLike for HasIter<'_> {
     type Item = bool;
+
+    unsafe fn filter_unchecked(&self, index: usize) -> bool {
+        todo!()
+    }
 
     #[inline]
     unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item {
