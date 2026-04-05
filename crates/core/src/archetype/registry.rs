@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use crate::archetype::{ArchetypeGraph, Signature};
-use crate::component::ComponentRegistry;
+use crate::component::TypeRegistry;
 use crate::entity::{Entities, Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 
@@ -39,7 +39,7 @@ pub struct Archetypes {
     /// The component registry. This registry maps `TypeIds` to smaller unique identifiers.
     /// These smaller identifiers allow the ECS to use bitsets to represent the components that a
     /// table or query contains.
-    pub(crate) component_registry: ComponentRegistry,
+    pub(crate) component_registry: TypeRegistry,
     /// All archetype tables. These are in a vector to allow for quick access when the location is
     /// already known. Queries cache these indices and access the vector directly
     /// instead of going through the lookup map. The `lookup` table can be used to
@@ -121,7 +121,7 @@ impl Archetypes {
         start_at: NonMaxUsize,
         filter: &F,
 
-        #[cfg(feature = "generics")] cache: &mut SmallVec<[TableCache<Q::AccessCount>; 8]>,
+        #[cfg(feature = "generics")] cache: &mut SmallVec<[TableCache<Q>; 8]>,
         #[cfg(not(feature = "generics"))] cache: &mut SmallVec<[TableCache; 8]>,
     ) -> NonMaxUsize {
         #[cfg(debug_assertions)]
@@ -142,7 +142,7 @@ impl Archetypes {
 
                     // Found match
                     let table = &self.tables[table_index];
-                    let cols = Q::map_columns(table);
+                    let cols = Q::get_base_ptrs(table);
 
                     return Some(TableCache {
                         table: table_index,

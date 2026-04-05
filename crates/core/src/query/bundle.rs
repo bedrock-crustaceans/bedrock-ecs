@@ -4,17 +4,19 @@ use std::any::TypeId;
 #[cfg(feature = "generics")]
 use std::fmt::Debug;
 use std::ops::Add;
+use std::ptr::NonNull;
 
 use generic_array::{ArrayLength, GenericArray};
 use nonmax::NonMaxUsize;
 use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
-use crate::component::{Component, ComponentId, ComponentRegistry};
+use crate::component::{Component, ComponentId, TypeRegistry};
 use crate::entity::{Entity, EntityRef};
 use crate::query::{ArrayLike, Filter, JumpingIterator, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
-use crate::table::{ColumnArray, ColumnIterMut, ColumnRow, EntityIter, Mut, Ref, Table};
+use crate::table::{ColumnRow, Mut, Ref, Table};
+use crate::util::{AsConstNonNull, ConstNonNull};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -45,6 +47,8 @@ pub unsafe trait QueryBundle: Sized {
     where
         Self: 'a;
 
+    type BasePtrs;
+
     #[cfg(feature = "generics")]
     /// The type of iterator over the columns. Every collection size has a different iterator type
     /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
@@ -68,7 +72,7 @@ pub unsafe trait QueryBundle: Sized {
     const LEN: usize;
 
     /// Returns the signature of this query. This signature does not include possible filters.
-    fn signature(reg: &mut ComponentRegistry) -> Signature;
+    fn signature(reg: &mut TypeRegistry) -> Signature;
 
     /// Attempts to fetch a single entity from the query.
     ///
@@ -89,7 +93,7 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(feature = "generics")]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
-    fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount>;
+    fn access(reg: &mut TypeRegistry) -> GenericArray<AccessDesc, Self::AccessCount>;
 
     #[cfg(feature = "generics")]
     /// Finds all required columns from a lookup table.
@@ -101,12 +105,12 @@ pub unsafe trait QueryBundle: Sized {
     /// Internally this function calls [`map_column`] on each item in the bundle.
     ///
     /// [`map_column`]: QueryData::map_column
-    fn map_columns(table: &Table) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount>;
+    fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
-    fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
+    fn access(reg: &mut TypeRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
 
     #[cfg(not(feature = "generics"))]
     /// Finds all required columns from a lookup table.
@@ -143,6 +147,9 @@ pub unsafe trait QueryBundle: Sized {
 /// [`Component`]: crate::component::Component
 /// [`Entity`]: crate::entity::Entity
 pub unsafe trait QueryData {
+    /// Removes all references from `Self`.
+    type Deref: 'static;
+
     /// The type returned by the query. This does not have to equal `Self`.
     ///
     /// For components this is used to bound the lifetime to the query while other exotic types
@@ -151,28 +158,29 @@ pub unsafe trait QueryData {
     /// [`Has`]: crate::query::Has
     type Output<'w>: 'w;
 
-    /// Iterator used to iterate over columns of type `Self`.
-    type Iter<'t, F: Filter>: ArrayLike<Item = Self::Output<'t>>;
+    /// The base pointer of this data.
+    ///
+    /// This is the pointer that points to the start of the data column.
+    ///
+    /// For some specialized types (such as [`Has`]) this can also be non-pointer data.
+    ///
+    /// [`Has`]: crate::query::Has
+    type BasePtr;
 
     const TY: QueryType;
 
     /// Returns the resource that this parameter accessess.
-    fn access(reg: &mut ComponentRegistry) -> AccessDesc;
+    fn access(reg: &mut TypeRegistry) -> AccessDesc;
 
-    /// Returns the component ID of this type.
-    ///
-    /// # Panics
-    ///
-    /// This function panics when `Self` is an entity since entities do not have a component ID.
-    fn component_id(reg: &mut ComponentRegistry) -> ComponentId;
+    // /// Finds the index of the column that contains this type, in the given table.
+    // ///
+    // /// # Panics
+    // ///
+    // /// This function panics when `Self` is an entity since entities are not stored in columns.
+    // /// It also panics if the column is not found.
+    // fn map_column(table: &Table) -> NonMaxUsize;
 
-    /// Finds the index of the column that contains this type, in the given table.
-    ///
-    /// # Panics
-    ///
-    /// This function panics when `Self` is an entity since entities are not stored in columns.
-    /// It also panics if the column is not found.
-    fn map_column(table: &Table) -> NonMaxUsize;
+    fn get_base_ptr(table: &Table) -> Self::BasePtr;
 
     /// Attempts to fetch the component of type `Self` that is contained in the given table, column and row.
     ///
@@ -186,17 +194,6 @@ pub unsafe trait QueryData {
         row: ColumnRow,
         col: Option<NonMaxUsize>,
     ) -> Option<Self::Output<'w>>;
-
-    /// Returns an iterator over the column in the given table.
-    ///
-    /// If `Self` is an entity then this returns an iterator over the entities in the table.
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        last_tick: u32,
-        current_tick: u32,
-    ) -> Self::Iter<'_, F>;
 }
 
 /// The type of the query data. This is used inside of queries to figure out what the query should
@@ -208,32 +205,47 @@ pub enum QueryType {
     Has,
 }
 
+impl QueryType {
+    /// Whether `Self == Self::Component`.
+    ///
+    /// This is a separate function because `PartialEq` is `const`-unstable.
+    pub const fn is_component(&self) -> bool {
+        matches!(self, Self::Component)
+    }
+}
+
 /// Fetches the entity handle associated with the components. [`Entity`] is a stable reference and can be stored
 /// inside of other components to be used later.
 ///
 /// If the query does not contain any components, all entities in the entire world will be fetched. If it does,
 /// only entities with the specified components will be returned.
 unsafe impl QueryData for Entity {
+    type Deref = Entity;
     type Output<'w> = Entity;
-    type Iter<'t, F: Filter> = EntityIter<'t, F>;
+    type BasePtr = ConstNonNull<Entity>;
 
     const TY: QueryType = QueryType::Entity;
 
     #[inline]
-    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+    fn access(_reg: &mut TypeRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::None,
             mutable: false,
         }
     }
 
-    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-        unimplemented!("cannot call `component_id` on `Entity`")
+    #[inline]
+    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+        table.entities.as_const_non_null()
     }
 
-    fn map_column(_table: &Table) -> NonMaxUsize {
-        unimplemented!("cannot call `cache_column` on `Entity`")
-    }
+    // fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+    //     unimplemented!("cannot call `component_id` on `Entity`")
+    // }
+
+    // fn map_column(_table: &Table) -> NonMaxUsize {
+    //     unimplemented!("cannot call `cache_column` on `Entity`")
+    // }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
         _world: &'w World,
@@ -249,22 +261,6 @@ unsafe impl QueryData for Entity {
 
         table.get_entity(row.0)
     }
-
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        _last_tick: u32,
-        _current_tick: u32,
-    ) -> Self::Iter<'_, F> {
-        debug_assert!(
-            col.is_none(),
-            "column index passed to entity handle iterator",
-        );
-
-        let table = world.archetypes.get_by_index(table);
-        table.iter_entities(world)
-    }
 }
 
 /// Requests immutable access to a component of type `T`.
@@ -278,13 +274,14 @@ unsafe impl QueryData for Entity {
 /// can be scheduled in parallel with other systems requesting an immutable reference to same components. Any systems
 /// that request a mutable reference will be given exclusive access to the component.
 unsafe impl<T: Component> QueryData for &T {
+    type Deref = T;
     type Output<'w> = &'w T;
-    type Iter<'t, F: Filter> = ColumnArray<'t, T, F>;
+    type BasePtr = ConstNonNull<T>;
 
     const TY: QueryType = QueryType::Component;
 
     #[inline]
-    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+    fn access(reg: &mut TypeRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
             mutable: false,
@@ -292,26 +289,12 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
-        reg.get_or_assign::<T>()
-    }
+    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+        let col = table
+            .get_column_by_type(&TypeId::of::<T>())
+            .expect("expected column not found in table");
 
-    /// # Panics
-    ///
-    /// This function panics if the column did not exist in the table. This
-    /// indicates a bug since it should not happen.
-    fn map_column(table: &Table) -> NonMaxUsize {
-        table
-            .lookup
-            .get(&TypeId::of::<T>())
-            .copied()
-            .and_then(NonMaxUsize::new)
-            .unwrap_or_else(|| {
-                panic!(
-                    "table column lookup failed for component {}",
-                    std::any::type_name::<T>()
-                )
-            })
+        ConstNonNull::from(col.base_ptr())
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
@@ -331,23 +314,6 @@ unsafe impl<T: Component> QueryData for &T {
 
         Some(item)
     }
-
-    fn iter<'w, F: Filter>(
-        world: &'w World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        last_tick: u32,
-        _current_tick: u32,
-    ) -> Self::Iter<'w, F> {
-        let col_index = col
-            .expect("no column index given to query data iterator")
-            .get();
-
-        let table = world.archetypes.get_by_index(table);
-        let col = table.column(col_index);
-
-        col.iter(last_tick)
-    }
 }
 
 /// Requests mutable access to a component of type `T`.
@@ -362,13 +328,14 @@ unsafe impl<T: Component> QueryData for &T {
 /// Components also follow Rust's aliasing model. Using a mutable component reference will force the scheduler
 /// to give this system exclusive access to `T` for the duration of the system.
 unsafe impl<T: Component> QueryData for &mut T {
+    type Deref = T;
     type Output<'w> = Mut<'w, T>;
-    type Iter<'t, F: Filter> = ColumnIterMut<'t, T, F>;
+    type BasePtr = NonNull<T>;
 
     const TY: QueryType = QueryType::Component;
 
     #[inline]
-    fn access(reg: &mut ComponentRegistry) -> AccessDesc {
+    fn access(reg: &mut TypeRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::Component(reg.get_or_assign::<T>()),
             mutable: true,
@@ -376,26 +343,12 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    fn component_id(reg: &mut ComponentRegistry) -> ComponentId {
-        reg.get_or_assign::<T>()
-    }
+    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+        let col = table
+            .get_column_by_type(&TypeId::of::<T>())
+            .expect("expected column not found in table");
 
-    /// # Panics
-    ///
-    /// This function panics if the column did not exist in the table. This
-    /// indicates a bug since it should not happen.
-    fn map_column(table: &Table) -> NonMaxUsize {
-        table
-            .lookup
-            .get(&TypeId::of::<T>())
-            .copied()
-            .and_then(NonMaxUsize::new)
-            .unwrap_or_else(|| {
-                panic!(
-                    "table column lookup failed for component {}",
-                    std::any::type_name::<T>()
-                )
-            })
+        col.base_ptr()
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
@@ -411,29 +364,82 @@ unsafe impl<T: Component> QueryData for &mut T {
         let item = unsafe { col.get_ptr::<T>(row.0)?.as_ptr().as_mut_unchecked() };
 
         // Safety: This query has unique access to this column.
-        let tracker = unsafe { col.tracker_ptr().as_ptr().as_mut_unchecked() };
+        let tracker = unsafe { col.change_base_ptr().add(row.0) };
 
         Some(Mut {
-            index: row.0,
             inner: item,
             current_tick: state.current_tick,
-            tracker,
+            tracker: unsafe { &mut *tracker.as_ptr().cast_mut() },
         })
     }
+}
 
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        last_tick: u32,
-        current_tick: u32,
-    ) -> Self::Iter<'_, F> {
-        let col_index = col
-            .expect("no column index given to query data iterator")
-            .get();
+macro_rules! impl_bundle {
+    ($count:literal, $($gen:ident),*) => {
+        paste::paste! {
+            #[allow(unused_parens)]
+            #[diagnostic::do_not_recommend]
+            unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
+                type AccessCount = generic_array::typenum::[< U $count >];
+                type Output<'t> = ($($gen::Output<'t>),*) where
+                    Self: 't,
+                    ($($gen),*): 't;
 
-        let table = world.archetypes.get_by_index(table);
-        let col = table.column(col_index);
-        col.iter_mut(current_tick)
+                type BasePtrs = ($($gen::BasePtr),*);
+
+                type Iter<'t, FA: Filter> = crate::query::[< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
+
+                const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
+
+                fn signature(reg: &mut TypeRegistry) -> Signature {
+                    let mut sig = Signature::new();
+
+                    $(
+                        if const { $gen::TY.is_component() } {
+                            let id = reg.get_or_assign::<$gen::Deref>();
+                            sig.set(*id);
+                        }
+                    )*
+
+                    sig
+                }
+
+                fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: ColumnRow) -> Option<Self::Output<'t>> where Self: 't {
+                    todo!();
+                }
+
+                #[cfg_attr(
+                    feature = "tracing",
+                    tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
+                )]
+                #[inline]
+                fn access(reg: &mut TypeRegistry) -> GenericArray<AccessDesc, Self::AccessCount> {
+                    GenericArray::from(
+                        ($(
+                            $gen::access(reg),
+                        )*)
+                    )
+                }
+
+                #[cfg_attr(
+                    feature = "tracing",
+                    tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
+                )]
+                #[inline]
+                fn get_base_ptrs(table: &Table) -> Self::BasePtrs {
+                    (
+                        ($(
+                            $gen::get_base_ptr(table)
+                        ),*)
+                    )
+                }
+            }
+        }
     }
 }
+
+impl_bundle!(1, A);
+impl_bundle!(2, A, B);
+impl_bundle!(3, A, B, C);
+impl_bundle!(4, A, B, C, D);
+impl_bundle!(5, A, B, C, D, E);

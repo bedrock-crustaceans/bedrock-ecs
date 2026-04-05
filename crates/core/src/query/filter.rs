@@ -1,12 +1,13 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 #[cfg(not(feature = "generics"))]
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::component::ComponentBundle;
-use crate::table::Changes;
+use crate::table::{ChangeTracker, Changes};
 
 /// The possible methods of filtering used by queries.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -65,6 +66,15 @@ impl FilterMethod {
 /// Examples of coarse filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
 /// dynamic filters.
 pub trait Filter: 'static {
+    /// The state for the filter that is stored inside of the query.
+    ///
+    /// This is used by dynamic filters to keep track of the change columns.
+    /// Coarse filters will not use this at all, keeping the iterator bundle structs very small.
+    ///
+    /// This is important because an older version of the ECS stored all state in the iterator regardless,
+    /// which caused performance issues due to register pressure.
+    type IterState<'w>;
+
     /// Which filtering method this filter uses.
     ///
     /// Please note that dynamic filters can impact performance since the [`apply_dynamic`]
@@ -143,6 +153,8 @@ impl<const N: usize> FilterIterable for [bool; N] {
 
 /// This is simply an empty filter that matches everything. It is the default filter used by queries.
 impl Filter for () {
+    type IterState<'w> = ();
+
     const METHOD: FilterMethod = FilterMethod::Coarse;
     const TRIVIAL: bool = true;
 
@@ -164,6 +176,8 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterBundle: 'static {
+    type IterState<'w>;
+
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
     const METHOD: FilterMethod;
@@ -201,6 +215,8 @@ macro_rules! impl_filter_bundle {
         #[allow(non_snake_case)] // Because we use `$gen` as a variable name to avoid having to create custom identifiers.
         #[allow(unused_parens)] // Using this macro on a single type will result in `(A)`, this suppresses that warning.
         impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
+            type IterState<'w> = ($($gen::IterState<'w>),*);
+
             // Set method to dynamic (true) if at least one of the filters in the bundle is dynamic.
             // Otherwise it is set to coarse.
             const METHOD: FilterMethod = FilterMethod::from_bool($($gen::METHOD.to_bool())||*);
@@ -263,6 +279,8 @@ impl_filter_bundle!(A, B, C, D, E);
 pub struct Xor<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Xor<B> {
+    type IterState<'w> = B::IterState<'w>;
+
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -303,6 +321,8 @@ impl<B: FilterBundle> Filter for Xor<B> {
 pub struct Or<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Or<B> {
+    type IterState<'w> = B::IterState<'w>;
+
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -338,6 +358,8 @@ impl<B: FilterBundle> Filter for Or<B> {
 pub struct Not<B>(B);
 
 impl<B: FilterBundle> Filter for Not<B> {
+    type IterState<'w> = B::IterState<'w>;
+
     const METHOD: FilterMethod = B::METHOD;
 
     #[inline]
@@ -381,6 +403,8 @@ pub struct With<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for With<T> {
+    type IterState<'w> = ();
+
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
     fn init(archetypes: &mut Archetypes) -> Self {
@@ -421,6 +445,8 @@ pub struct Without<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Without<T> {
+    type IterState<'w> = ();
+
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
     fn init(archetypes: &mut Archetypes) -> Self {
@@ -451,6 +477,9 @@ pub struct Added<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Added<T> {
+    /// A base pointer to the start of the change tracker.
+    type IterState<'w> = NonNull<u32>;
+
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
     fn init(archetypes: &mut Archetypes) -> Self {
@@ -483,6 +512,9 @@ pub struct Changed<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Changed<T> {
+    /// A base pointer to the start of the change tracker.
+    type IterState<'w> = NonNull<u32>;
+
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
     fn init(archetypes: &mut Archetypes) -> Self {

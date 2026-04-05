@@ -8,7 +8,7 @@ use crate::util::debug::BorrowEnforcer;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::archetype::Signature;
-use crate::component::ComponentRegistry;
+use crate::component::TypeRegistry;
 use crate::table::{Column, ColumnRow, Table};
 
 /// A component ID.
@@ -69,7 +69,7 @@ pub trait ComponentBundle: 'static + Send {
     /// In the signature, the indices corresponding the components of this bundle are set to 1.
     ///
     /// [`try_get_signature`]: Self::try_get_signature
-    fn get_or_assign_signature(reg: &mut ComponentRegistry) -> Signature;
+    fn get_or_assign_signature(reg: &mut TypeRegistry) -> Signature;
 
     /// Converts this bundle to a signature to compare against archetype tables. If a component had not been
     /// this function will return `None`.
@@ -77,7 +77,7 @@ pub trait ComponentBundle: 'static + Send {
     /// The advantage of this method is that you do not need mutable access to the component registry.
     ///
     /// In the signature, the indices corresponding the components of this bundle are set to 1.
-    fn try_get_signature(reg: &ComponentRegistry) -> Option<Signature>;
+    fn try_get_signature(reg: &TypeRegistry) -> Option<Signature>;
 
     /// Creates a new table for this bundle of components. This table can be inserted into the archetypes container.
     ///

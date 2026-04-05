@@ -3,14 +3,15 @@
 use std::any::TypeId;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use nonmax::NonMaxUsize;
 
-use generic_array::GenericArray;
+use generic_array::{ArrayLength, GenericArray};
 use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
-use crate::component::ComponentRegistry;
+use crate::component::TypeRegistry;
 use crate::query::{Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
@@ -108,76 +109,20 @@ macro_rules! impl_bundle {
             #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             #[allow(unused_parens)]
             pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> {
-                world: &'w World,
-                cache_index: usize,
-                /// The remaining cached tables that this iterator will hop to.
-                // cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
-                cache: &'w [TableCache<Q::AccessCount>],
-                /// The subarrays that this iterator will iterate over.
-                /// These do not have to be columns, anything that implements [`RandomAccessArray`]
-                /// works.
-                ///
-                /// Safety: This must always be some when `self.len != 0`.
-                sub: ($($gen::Iter<'w, FA>),*),
-                /// The current index in the subarrays.
                 index: usize,
-                /// The total length of the first subarray.
-                ///
-                /// Every subarray has the same length.
-                len: usize,
-                /// The current tick.
-                current_tick: u32,
-                /// The previous tick that this iterator was used in.
-                last_tick: u32,
-                /// Ensures that the type parameters live for at least `'w`.
-                _marker: PhantomData<&'w ($($gen),*)>
+                cache: std::slice::Iter<'w, TableCache<Q>>,
+                base_ptrs: Q::BasePtrs,
+                filters: FA::IterState<'w>
             }
 
             impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> JumpingIterator<'w, Q, FA> for [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
                 fn from_cache(world: &'w World, meta: &'w QueryState<Q, FA>) -> Self {
-                    #[cfg(debug_assertions)]
-                    {
-                        for cached in &meta.cache {
-                            let table = world.archetypes.get_by_index(cached.table);
-                            let cols = table.columns();
-                            debug_assert!(
-                                // Do not use the `len` method here it tries to acquire read access and we already have write access.
-                                cols.iter().all(|c| c.len == cols[0].len),
-                                "not all columns are of equal length"
-                            );
-                        }
-                    }
+                    // Look up all column base pointers.
 
-                    let cache = &meta.cache;
-                    if cache.is_empty() {
-                        // There are no cached tables, just return an empty iterator.
-                        return Self::empty(world)
-                    }
-
-                    let mut counter = 0;
-                    #[allow(unused)]
-                    let sub = ($(
-                        {
-                            let it = $gen::iter(world, cache[0].table, cache[0].cols[counter], meta.last_tick, meta.current_tick);
-                            counter += 1;
-                            it
-                        }
-                    ),*);
-
-                    let ($($gen),*) = &sub;
-                    // Find the length of the first subarray. All subarrays have the same length.
-                    let len = get_head!($($gen),*).len();
 
                     Self {
-                        world,
-                        cache_index: 1,
-                        cache,
-                        sub,
                         index: 0,
-                        len,
-                        last_tick: meta.last_tick,
-                        current_tick: meta.current_tick,
-                        _marker: PhantomData
+                        filters:
                     }
                 }
             }
@@ -189,52 +134,27 @@ macro_rules! impl_bundle {
                 /// [`Empty`]: std::iter::Empty
                 pub fn empty(world: &'w World) -> Self {
                     Self {
-                        world,
-                        cache_index: 0,
-                        current_tick: 0,
-                        last_tick: 0,
                         index: 0,
-                        len: 0,
-                        cache: &[],
-                        sub: ($($gen::Iter::<'w, FA>::empty()),*),
-                        _marker: PhantomData
+                        cache: [].iter(),
+                        base_ptrs: todo!(),
+                        filters: todo!()
                     }
-                }
-
-                /// The length of the full iterator if it were unfiltered.
-                fn unfiltered_len(&self) -> usize {
-                    let cache = self.cache;
-
-                    // Compute lengths of all remaining tables...
-                    let full = cache.iter().map(|c| self.world.archetypes.get_by_index(c.table).len()).sum::<usize>();
-
-                    // and add the remaining length of the current table.
-                    full + self.len
                 }
 
                 /// Jumps to the next table, returning whether the jump was successful
                 /// or whether the end of the query has been reached.
                 fn jump(&mut self) -> bool {
-                    if self.cache_index >= self.cache.len() {
-                        self.len = 0;
-                        false
-                    } else {
-                        let cache = &self.cache[self.cache_index];
-
-                        let mut offset = 0;
-                        self.sub = (
+                    if let Some(next_cache) = self.cache.next() {
+                        self.base_ptrs = (
                             $(
-                                {
-                                    let it = $gen::iter(self.world, cache.table, cache.cols[offset], self.last_tick, self.current_tick);
-                                    offset += 1;
-                                    self.len = it.len();
-                                    it
-                                }
+                                $gen::get_base_ptr()
                             ),*
                         );
                         self.index = 0;
 
                         true
+                    } else {
+                        false
                     }
                 }
 
@@ -293,219 +213,6 @@ macro_rules! impl_bundle {
             }
 
             impl<'t, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> FusedIterator for [< IteratorBundle $count >]<'t, Q, FA, $($gen),*> {}
-
-            #[allow(unused_parens)]
-            #[diagnostic::do_not_recommend]
-            unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
-                type AccessCount = generic_array::typenum::[< U $count >];
-                type Output<'t> = ($($gen::Output<'t>),*) where
-                    Self: 't,
-                    ($($gen),*): 't;
-                type Iter<'t, FA: Filter> = [< IteratorBundle $count >]<'t, ($($gen),*), FA, $($gen),*> where Self: 't;
-
-                const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
-
-                fn signature(reg: &mut ComponentRegistry) -> Signature {
-                    let mut sig = Signature::new();
-
-                    $(
-                        if $gen::TY == QueryType::Component {
-                            let id = $gen::component_id(reg);
-                            sig.set(*id);
-                        }
-                    )*
-
-                    sig
-                }
-
-                fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: ColumnRow) -> Option<Self::Output<'t>> where Self: 't {
-                    Some(($(
-                        {
-                            let col = match $gen::TY {
-                                QueryType::Component => Some($gen::map_column(&table)),
-                                _ => None
-                            };
-
-                            $gen::get(
-                                world,
-                                state,
-                                table,
-                                row,
-                                col
-                            )?
-                        }
-                    ),*))
-                }
-
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
-                )]
-                fn access(reg: &mut ComponentRegistry) -> GenericArray<AccessDesc, Self::AccessCount> {
-                    GenericArray::from(
-                        ($(
-                           $gen::access(reg),
-                        )*)
-                    )
-                }
-
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
-                )]
-                fn map_columns(table: &Table) -> GenericArray<Option<NonMaxUsize>, Self::AccessCount> {
-                    GenericArray::from(
-                        ($(
-                            (match $gen::TY {
-                                QueryType::Component => Some($gen::map_column(table)),
-                                QueryType::Entity | QueryType::Has => None,
-                            }),
-                        )*)
-                    )
-                }
-            }
-        }
-    }
-}
-
-#[cfg(not(feature = "generics"))]
-macro_rules! impl_bundle {
-    ($count:expr, $($gen:ident),*) => {
-        paste::paste! {
-            #[allow(unused_parens)]
-            pub struct [< IteratorBundle $count >]<'w, $($gen: ParamRef + Send),*> {
-                world: &'w World,
-                cache: std::slice::Iter<'w, TableCache>,
-                iters: ($($gen::Iter<'w>),*),
-                _marker: PhantomData<&'w ($($gen),*)>
-            }
-
-            impl<'w, $($gen: ParamRef + Send),*> [< IteratorBundle $count >]<'w, $($gen),*> {
-                pub fn empty(world: &'w World) -> Self {
-                    Self {
-                        world,
-                        cache: [].iter(),
-                        iters: ($($gen::Iter::empty(world)),*),
-                        _marker: PhantomData
-                    }
-                }
-            }
-
-            impl<'w, $($gen: ParamRef + Send),*> HoppingIterator<'w> for [< IteratorBundle $count >]<'w, $($gen),*> {
-                fn new(world: &'w World, cache: &'w [TableCache]) -> Self {
-                    #[cfg(debug_assertions)]
-                    {
-                        for cached in cache {
-                            let table = world.archetypes.get_by_index(cached.table);
-                            let cols = table.columns();
-                            debug_assert!(
-                                cols.iter().all(|c| c.len() == cols[0].len()),
-                                "not all columns are of equal length"
-                            );
-                        }
-                    }
-
-                    let mut cache = cache.iter();
-                    let Some(first_cache) = cache.next() else {
-                        // There are no cached tables, just return an empty iterator.
-                        return Self::empty(world)
-                    };
-
-                    tracing::trace!("starting iterator at table {}", first_cache.table);
-
-                    let mut counter = 0;
-                    #[allow(unused)]
-                    let iters = ($(
-                        {
-                            let table = first_cache.table;
-                            let col = first_cache.cols[counter];
-
-                            let it = $gen::iter(world, first_cache.table, first_cache.cols[counter]);
-                            counter += 1;
-                            it
-                        }
-                    ),*);
-
-                    Self {
-                        world,
-                        cache,
-                        iters,
-                        _marker: PhantomData
-                    }
-                }
-
-                #[allow(unused, non_snake_case)]
-                fn current_len(&self) -> usize {
-                    let ($($gen),*) = &self.iters;
-                    iter_len!($($gen),*)
-                }
-            }
-
-            #[allow(unused_parens)]
-            impl<'t, $($gen: ParamRef + Send),*> Iterator for [< IteratorBundle $count >]<'t, $($gen),*> {
-                type Item = <($($gen),*) as QueryBundle>::Output<'t>;
-
-                fn next(&mut self) -> Option<Self::Item> {
-                    #[allow(non_snake_case)]
-                    let ($($gen),*) = &mut self.iters;
-
-                    Some(($(
-                        $gen.next()?
-                    ),*))
-                }
-            }
-
-            impl<'t, $($gen: ParamRef + Send),*> FusedIterator for [< IteratorBundle $count >]<'t, $($gen),*> {}
-
-            #[allow(unused_parens)]
-            #[diagnostic::do_not_recommend]
-            unsafe impl<$($gen: ParamRef + Send),*> QueryBundle for ($($gen),*) {
-                type Output<'t> = ($($gen::Output<'t>),*) where Self: 't;
-                type Iter<'t> = [< IteratorBundle $count >]<'t, $($gen),*> where Self: 't;
-
-                const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
-
-                fn signature(reg: &mut ComponentRegistry) -> Signature {
-                    let mut sig = Signature::new();
-
-                    $(
-                        if !$gen::IS_ENTITY {
-                            let id = $gen::component_id(reg);
-                            sig.set(*id);
-                        }
-                    )*
-
-                    sig
-                }
-
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
-                )]
-                fn access(reg: &mut ComponentRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
-                    smallvec![
-                        $(
-                            $gen::access(reg)
-                        ),*
-                    ]
-                }
-
-                #[cfg_attr(
-                    feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
-                )]
-                fn cache_columns(table: &Table) -> SmallVec<[usize; param::INLINE_SIZE]> {
-                    const COUNT: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
-
-                    let mut cache = SmallVec::with_capacity(COUNT);
-                    $(
-                        if !$gen::IS_ENTITY {
-                            cache.push($gen::cache_column(lookup));
-                        }
-                    )*
-                    cache
-                }
-            }
         }
     }
 }

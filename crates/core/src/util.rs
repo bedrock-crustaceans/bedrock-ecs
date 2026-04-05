@@ -1,4 +1,4 @@
-use std::alloc::Layout;
+use std::{alloc::Layout, ptr::NonNull};
 
 /// Creates an array of type system integers.
 #[cfg(feature = "generics")]
@@ -9,6 +9,72 @@ macro_rules! create_tarray {
     };
     ($head:ty, $($tail:ty),*) => {
         generic_array::typenum::TArr<$head, $crate::create_tarray!($($tail),*)>
+    }
+}
+
+pub trait AsConstNonNull<T: ?Sized> {
+    fn as_const_non_null(&self) -> ConstNonNull<T>;
+}
+
+impl<T> AsConstNonNull<T> for Vec<T> {
+    #[inline]
+    fn as_const_non_null(&self) -> ConstNonNull<T> {
+        unsafe { ConstNonNull::new_unchecked(self.as_ptr()) }
+    }
+}
+
+/// [`NonNull`] but wrapping a `const` pointer instead.
+///
+/// Internally this is just a [`NonNull`] to make use of niche optimisations,
+/// but the public API only allows const usage.
+///
+/// [`NonNull`]: std::ptr::NonNull
+pub struct ConstNonNull<T: ?Sized>(NonNull<T>);
+
+impl<T: ?Sized> ConstNonNull<T> {
+    /// Creates a new [`ConstNonNull`], returning `None` if the pointer is null.
+    #[inline]
+    pub const fn new(ptr: *const T) -> Option<Self> {
+        // `?` is not `const`-stable.
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self(unsafe { NonNull::new_unchecked(ptr.cast_mut()) }))
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `ptr` must be non-null.
+    #[inline]
+    pub const unsafe fn new_unchecked(ptr: *const T) -> Self {
+        Self(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
+    }
+
+    #[inline]
+    pub const fn as_ptr(&self) -> *const T {
+        self.0.as_ptr()
+    }
+}
+
+impl<T> ConstNonNull<T> {
+    /// # Safety
+    ///
+    /// Same conditions as [`ptr::add`].
+    ///
+    /// [`ptr::add`]: std::ptr::add
+    #[inline]
+    pub const unsafe fn add(&self, n: usize) -> Self {
+        debug_assert!(n < isize::MAX as usize);
+
+        Self(unsafe { self.0.add(n) })
+    }
+}
+
+impl<T> From<NonNull<T>> for ConstNonNull<T> {
+    #[inline]
+    fn from(value: NonNull<T>) -> Self {
+        Self(value)
     }
 }
 

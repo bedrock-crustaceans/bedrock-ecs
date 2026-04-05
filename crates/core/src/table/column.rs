@@ -6,8 +6,8 @@ use std::num::NonZero;
 use std::ptr::NonNull;
 
 use crate::query::Filter;
-use crate::table::{ChangeTracker, ColumnArray, ColumnIterMut};
-use crate::util::LayoutExt;
+use crate::table::ChangeTracker;
+use crate::util::{ConstNonNull, LayoutExt};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -235,86 +235,25 @@ impl Column {
     }
 
     #[inline]
-    pub fn tracker_ptr(&self) -> NonNull<ChangeTracker> {
-        // Safety: References are never null.
-        unsafe { NonNull::new_unchecked(self.tracker.get()) }
+    pub fn added_base_ptr(&self) -> ConstNonNull<u32> {
+        todo!()
+        // self.tracker.
     }
 
-    /// Creates an iterator over this column. Optional filters can be applied using the `F` generic.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
-    /// to `Column::new`.
-    pub fn iter<T: 'static, F: Filter>(&self, current_tick: u32) -> ColumnArray<'_, T, F> {
-        #[cfg(debug_assertions)]
-        let guard = self.enforcer.read();
+    #[inline]
+    pub fn change_base_ptr(&self) -> ConstNonNull<u32> {
+        todo!()
+    }
 
+    #[inline]
+    pub fn base_ptr<T: 'static>(&self) -> NonNull<T> {
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
-            "attempt to create column iter with wrong type"
+            "attempt to obtain base pointer with incorrect type"
         );
 
-        if let Some(base) = self.data {
-            ColumnArray {
-                current_tick,
-                tracker: unsafe { &*self.tracker.get() },
-                len: self.len,
-                base: base.cast::<T>(),
-                _marker: PhantomData,
-
-                #[cfg(debug_assertions)]
-                _guard: Some(guard),
-            }
-        } else {
-            let dangling = NonNull::<T>::dangling();
-
-            todo!("empty column iter");
-
-            // ColumnIter {
-            //     current_tick,
-            //     tracker: ChangeTracker::empty(),
-            //     base: dangling,
-            //     _marker: PhantomData,
-
-            //     #[cfg(debug_assertions)]
-            //     _guard: None
-            // }
-        }
-    }
-
-    /// Creates a mutable iterator over this column. Optional filters can be applied using the `F` generic.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
-    /// to `Column::new`.
-    pub fn iter_mut<T: 'static, F: Filter>(&self, current_tick: u32) -> ColumnIterMut<'_, T, F> {
-        #[cfg(debug_assertions)]
-        let guard = self.enforcer.write();
-
-        assert_eq!(
-            TypeId::of::<T>(),
-            self.ty,
-            "attempt to create column iter with wrong type"
-        );
-
-        // Safety: This is safe because we are guaranteed to have unique access to this entire column.
-        if let Some(base) = self.data {
-            ColumnIterMut {
-                tracker: self.tracker.get(),
-                current_tick,
-                len: self.len,
-                base: base.cast::<T>(),
-                _marker: PhantomData,
-
-                #[cfg(debug_assertions)]
-                _guard: Some(guard),
-            }
-        } else {
-            todo!()
-        }
+        self.data.unwrap().cast::<T>()
     }
 
     /// Reserves capacity for at least `n` additional entries.

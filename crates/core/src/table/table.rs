@@ -7,7 +7,7 @@ use crate::archetype::Signature;
 use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMeta};
 use crate::query::Filter;
-use crate::table::{Column, ColumnRow, EntityIter};
+use crate::table::{Column, ColumnRow};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 #[cfg(debug_assertions)]
@@ -209,23 +209,6 @@ impl Table {
 
         let idx = *self.lookup.get(&ty_id)?;
         Some(&self.columns[idx])
-    }
-
-    /// Creates an iterator over all entities in this table.
-    pub fn iter_entities<'w, F: Filter>(&'w self, world: &'w World) -> EntityIter<'w, F> {
-        #[cfg(debug_assertions)]
-        let guard = self.enforcer.read();
-
-        EntityIter {
-            tracker: todo!(),
-            slice: &self.entities,
-            current_tick: world.current_tick,
-
-            _marker: PhantomData,
-
-            #[cfg(debug_assertions)]
-            _guard: Some(guard),
-        }
     }
 
     #[inline]

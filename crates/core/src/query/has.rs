@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     archetype::Signature,
-    component::{Component, ComponentId, ComponentRegistry},
+    component::{Component, ComponentId, TypeRegistry},
     prelude::ComponentBundle,
     query::{ArrayLike, Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
@@ -38,23 +38,27 @@ pub struct Has<T: ComponentBundle> {
 
 unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     type Output<'w> = bool;
-    type Iter<'t, F: Filter> = HasIter<'t>;
+    type BasePtr = bool;
 
     const TY: QueryType = QueryType::Has;
 
-    fn access(_reg: &mut ComponentRegistry) -> AccessDesc {
+    fn access(_reg: &mut TypeRegistry) -> AccessDesc {
         AccessDesc {
             ty: AccessType::None,
             mutable: false,
         }
     }
 
-    fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-        unimplemented!()
-    }
+    // fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
+    //     unimplemented!()
+    // }
 
-    fn map_column(_table: &Table) -> NonMaxUsize {
-        unimplemented!()
+    // fn map_column(_table: &Table) -> NonMaxUsize {
+    //     unimplemented!()
+    // }
+
+    fn get_base_ptr() -> Self::BasePtr {
+        todo!()
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
@@ -66,26 +70,6 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     ) -> Option<Self::Output<'w>> {
         let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
         Some(table.signature.contains(&signature))
-    }
-
-    fn iter<F: Filter>(
-        world: &World,
-        table: usize,
-        col: Option<NonMaxUsize>,
-        _last_tick: u32,
-        _current_tick: u32,
-    ) -> HasIter<'_> {
-        debug_assert!(col.is_none(), "column index passed to `Has` iterator");
-
-        let signature = T::try_get_signature(&world.archetypes.component_registry).unwrap();
-        let table = world.archetypes.get_by_index(table);
-
-        let matches = table.signature.contains(&signature);
-        HasIter {
-            matches,
-            len: table.width(),
-            _marker: PhantomData,
-        }
     }
 }
 

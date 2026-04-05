@@ -1,3 +1,6 @@
+#[cfg(feature = "generics")]
+use std::ptr::NonNull;
+
 use generic_array::{ArrayLength, GenericArray};
 use nonmax::NonMaxUsize;
 use smallvec::SmallVec;
@@ -121,11 +124,11 @@ unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q
 /// A collection of columns in a table.
 #[cfg(feature = "generics")]
 #[derive(Debug, Clone)]
-pub struct TableCache<N: ArrayLength> {
+pub struct TableCache<Q: QueryBundle> {
     /// The index of the table in the archetypes container.
     pub table: usize,
     /// The columns within this table that should be queried.
-    pub cols: GenericArray<Option<NonMaxUsize>, N>,
+    pub cols: Q::BasePtrs,
 }
 
 /// A collection of columns in a table.
@@ -142,12 +145,9 @@ pub struct TableCache {
 ///
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
-#[derive(Debug)]
 pub struct QueryState<Q: QueryBundle, F: Filter> {
     #[cfg(feature = "generics")]
-    pub(crate) cache: SmallVec<[TableCache<Q::AccessCount>; 8]>,
-    #[cfg(not(feature = "generics"))]
-    pub(crate) cache: SmallVec<[TableCache; param::INLINE_SIZE]>,
+    pub(crate) cache: SmallVec<[TableCache<Q>; 8]>,
 
     /// The index of the next table that should be scanned if this state is updated. We only need to check
     /// tables that have an index greater than or equal to this one.
@@ -261,7 +261,7 @@ impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
     /// iterate over when calling [`Query::iter`].
     #[inline]
     #[cfg(feature = "generics")]
-    pub fn cache(&self) -> &[TableCache<Q::AccessCount>] {
+    pub fn cache(&self) -> &[TableCache<Q>] {
         &self.cache
     }
 
