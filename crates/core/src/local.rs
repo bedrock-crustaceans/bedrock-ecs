@@ -42,9 +42,11 @@ unsafe impl<T: Default + Send> SysArg for Local<'_, T> {
         SmallVec::new()
     }
 
-    fn fetch<'w, S: Sealed>(_world: &'w World, state: &'w mut LocalState<T>) -> Local<'w, T> {
+    fn before_update<'w>(_world: &'w World, state: &'w mut LocalState<T>) -> Local<'w, T> {
         Local(&mut state.0)
     }
+
+    fn after_update(_world: &World, _state: &mut Self::State) {}
 
     #[cfg_attr(
         feature = "tracing",

@@ -121,8 +121,7 @@ unsafe impl<R: Resource> SysArg for Res<'_, R> {
         }
     }
 
-    #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> Res<'w, R> {
+    fn before_update<'w>(world: &'w World, _state: &'w mut Self::State) -> Res<'w, R> {
         let Some(res) = world.resources.get::<R>() else {
             let full_name = std::any::type_name::<R>();
             // Attempt to extract type name.
@@ -135,6 +134,8 @@ unsafe impl<R: Resource> SysArg for Res<'_, R> {
 
         Res(res)
     }
+
+    fn after_update(world: &World, state: &mut Self::State) {}
 }
 
 pub struct ResMut<'s, R: Resource>(&'s mut R);
@@ -194,8 +195,7 @@ unsafe impl<R: Resource> SysArg for ResMut<'_, R> {
         }
     }
 
-    #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> ResMut<'w, R> {
+    fn before_update<'w>(world: &'w World, _state: &'w mut Self::State) -> ResMut<'w, R> {
         let Some(ptr) = world.resources.get_ptr::<R>() else {
             let full_name = std::any::type_name::<R>();
             // Attempt to extract type name.
@@ -212,4 +212,6 @@ unsafe impl<R: Resource> SysArg for ResMut<'_, R> {
         // It is also `NonNull` and the scheduler ensures that this is the only system with access to this resource.
         ResMut(unsafe { &mut *ptr.as_ptr() })
     }
+
+    fn after_update(_world: &World, _state: &mut Self::State) {}
 }

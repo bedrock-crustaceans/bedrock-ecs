@@ -3,7 +3,7 @@ use bedrock_ecs::{
     entity::{Entity, EntityGeneration, EntityIndex},
     plugins::PluginRegistry,
     prelude::{Res, ResMut, ScheduleBuilder},
-    query::{Query, Without},
+    query::{Added, Query, Without},
     world::World,
 };
 use bedrock_ecs_derive::{Component, Resource, ScheduleLabel};
@@ -361,7 +361,7 @@ fn massive_world_stress_test() {
     // let ticks = 1;
 
     for i in 0..ticks {
-        schedule.run(&world);
+        schedule.run(&mut world);
         // CRITICAL: Apply commands to trigger the archetype migrations
         world.apply_commands();
 
@@ -398,7 +398,7 @@ fn massive_world_stress_test() {
 #[derive(Component, Debug)]
 struct Counter(i32);
 
-fn counter_system1(query: Query<&mut Counter>) {
+fn counter_system1(query: Query<&mut Counter, Added<Counter>>) {
     for mut counter in &query {
         println!("+1");
         counter.0 += 1;

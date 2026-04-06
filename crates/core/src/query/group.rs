@@ -143,7 +143,7 @@ pub unsafe trait QueryGroup: Sized {
 ///
 /// - `IS_ENTITY` must only be set to true when implementing this trait for [`Entity`].
 ///
-/// - `access` must return the correct descriptor, indicating which resources this SysArgeter uses.
+/// - `access` must return the correct descriptor, indicating which resources this system argument uses.
 ///   Incorrect descriptors will cause undefined behaviour through mutable reference aliasing.
 ///
 /// - `component_id` must return the correct ID for `Self::Unref`. Incorrect component IDs will cause the query
@@ -174,7 +174,7 @@ pub unsafe trait QueryData {
 
     const TY: QueryType;
 
-    /// Returns the resource that this SysArgeter accessess.
+    /// Returns the resource that this system argument accessess.
     fn access(reg: &mut TypeRegistry) -> AccessDesc;
 
     // /// Finds the index of the column that contains this type, in the given table.

@@ -171,7 +171,7 @@ impl Scheduler {
         });
     }
 
-    pub fn run(&mut self, world: &World) {
+    pub fn run(&mut self, world: &mut World) {
         // Reset the in degrees.
         self.reset_in_degrees();
 
@@ -207,6 +207,8 @@ impl Scheduler {
                 self.run_system(id, world, s);
             }
         });
+
+        world.current_tick += 1;
     }
 
     #[cfg(feature = "inspect")]

@@ -12,7 +12,7 @@ use crate::world::World;
 #[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
 
-/// Implemented by all types that can used as SysArgeters in a system.
+/// Implemented by all types that can used as system arguments in a system.
 ///
 /// # Safety
 ///
@@ -20,75 +20,77 @@ pub const INLINE_SIZE: usize = 8;
 /// lead to reference aliasing and immediate UB.
 #[diagnostic::on_unimplemented(message = "{Self} is not a valid system argument")]
 pub unsafe trait SysArg {
-    /// The amount of resources that this SysArgeter needs to access.
+    /// The amount of resources that this system argument needs to access.
     ///
-    /// Most SysArgeters will only access one, but a query requesting `n` components will access `n` for example.
+    /// Most system arguments will only access one, but a query requesting `n` components will access `n` for example.
     /// One for each query.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
 
-    /// The internal state of this SysArgeter. This state is saved by the system and is persistent
-    /// across calls, unlike the SysArgeter itself.
+    /// The internal state of this system argument. This state is saved by the system and is persistent
+    /// across calls, unlike the system argument itself.
     type State;
 
-    /// The output of the SysArgeter. This controls what the system receives.
+    /// The output of the system argument. This controls what the system receives.
     ///
     /// The main use of this is for types containing lifetimes.
-    /// These will have arbitrary lifetimes when declared as SysArgeters in the systems. Using this output type
+    /// These will have arbitrary lifetimes when declared as system arguments in the systems. Using this output type
     /// the lifetimes will be bounded to the world.
     type Output<'w>;
 
-    /// Declares which resources this SysArgeter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// Declares which resources this system argument requires. This is used by the scheduler to schedule non-conflicting systems
     /// in parallel.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    /// Declares which resources this SysArgeter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// Declares which resources this system argument requires. This is used by the scheduler to schedule non-conflicting systems
     /// in parallel.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
-    /// Fetches this SysArgeter. Right before executing a system, the ECS will fetch all SysArgeters and pass them
+    /// Fetches this system argument. Right before executing a system, the ECS will fetch all system arguments and pass them
     /// to the system.
-    #[doc(hidden)]
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
+    fn before_update<'w>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
-    /// Initialises the state of this SysArgeter.
+    /// Called right after running the system. This can be used for clean up.
+    fn after_update(world: &World, state: &mut Self::State);
+
+    /// Initialises the state of this system argument.
     fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
-/// A collection of SysArgeters.
+/// A collection of system arguments.
 ///
-/// A system collects all of its SysArgeters into a tuple that implements this trait.
-/// This allows easy access to all of the SysArgeters at once.
+/// A system collects all of its system arguments into a tuple that implements this trait.
+/// This allows easy access to all of the system arguments at once.
 ///
 /// # Safety
 ///
-/// - `AccessCount` must return the exact amount of resources accessed by all SysArgeters combined.
-///   For example, if the bundle consists of two SysArgeters that each access one resource, then `AccessCount` must
+/// - `AccessCount` must return the exact amount of resources accessed by all system arguments combined.
+///   For example, if the bundle consists of two system arguments that each access one resource, then `AccessCount` must
 ///   equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
 ///
-/// - `access` must correctly return each of the components that the SysArgeters use, including
+/// - `access` must correctly return each of the components that the system arguments use, including
 ///   correct mutability information. Incorrect access descriptors will give wrong information to the scheduler
 ///   and cause mutable reference aliasing.
 pub unsafe trait SysArgGroup {
-    /// The amount of resources that this SysArgeter collection requires.
+    /// The amount of resources that this system argument collection requires.
     /// This is used to compute, at compile time, how large the system metadata must be.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength;
 
-    /// A collection of all individual SysArgeter states in the collection.
+    /// A collection of all individual system argument states in the collection.
     type State;
 
-    /// Returns the resources that this collection of SysArgeters accesses.
+    /// Returns the resources that this collection of system arguments accesses.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    /// Returns the resources that this collection of SysArgeters accesses.
+    /// Returns the resources that this collection of system arguments accesses.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
-    /// Initializes the internal states of all SysArgeters in this collection.
+    /// Initializes the internal states of all system arguments in this collection.
     fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
@@ -126,12 +128,12 @@ macro_rules! impl_bundle {
                 crate::create_tarray!($($gen::AccessCount),*): FoldAdd,
                 <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output: ArrayLength
             {
-                /// The total amount of resources accessed by this SysArgeter collection.
-                /// This is computed by collecting the individual counts from each SysArgeter into a
+                /// The total amount of resources accessed by this system argument collection.
+                /// This is computed by collecting the individual counts from each system argument into a
                 /// typenum array and then summing them all.
                 type AccessCount = <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
 
-                /// The states of all the SysArgeters, this is simply a tuple of all of them.
+                /// The states of all the system arguments, this is simply a tuple of all of them.
                 type State = ($($gen::State),*);
 
                 #[allow(unused)]
@@ -170,9 +172,9 @@ macro_rules! impl_bundle {
                     tracing::instrument(name = "SysArgGroup::init", skip_all)
                 )]
                 fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
-                    tracing::trace!("initialising {} system SysArgeter state(s)", Self::AccessCount::USIZE);
+                    tracing::trace!("initialising {} system system argument state(s)", Self::AccessCount::USIZE);
 
-                    // Run init on all SysArgeters in the bundle.
+                    // Run init on all system arguments in the bundle.
                     ($($gen::init(world, meta)),*)
                 }
             }

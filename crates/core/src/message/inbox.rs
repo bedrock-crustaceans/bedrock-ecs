@@ -87,7 +87,7 @@ unsafe impl<T: Message> SysArg for Inbox<'_, T> {
         }]
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut InboxState) -> Inbox<'w, T> {
+    fn before_update<'w>(world: &'w World, state: &'w mut Self::State) -> Inbox<'w, T> {
         let bus = world.resources.get::<Mailbox<T>>().unwrap_or_else(|| {
             panic!(
                 "event bus for type {} does not exist",
@@ -99,6 +99,10 @@ unsafe impl<T: Message> SysArg for Inbox<'_, T> {
             mailbox: bus,
             state,
         }
+    }
+
+    fn after_update(_world: &World, _state: &mut Self::State) {
+        todo!()
     }
 
     fn init(world: &mut World, _meta: &SystemMeta) -> InboxState {
@@ -149,7 +153,7 @@ unsafe impl<T: Message> SysArg for Outbox<'_, T> {
         }]
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut OutboxState) -> Outbox<'w, T> {
+    fn before_update<'w>(world: &'w World, state: &'w mut Self::State) -> Outbox<'w, T> {
         let bus_ptr = world.resources.get_ptr::<Mailbox<T>>().unwrap_or_else(|| {
             panic!(
                 "mailbox for type {} does not exist",
@@ -165,6 +169,10 @@ unsafe impl<T: Message> SysArg for Outbox<'_, T> {
             mailbox: bus,
             state,
         }
+    }
+
+    fn after_update(_world: &World, _state: &mut Self::State) {
+        todo!()
     }
 
     fn init(world: &mut World, _meta: &SystemMeta) -> OutboxState {

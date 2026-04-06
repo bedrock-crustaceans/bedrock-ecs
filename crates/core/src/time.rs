@@ -29,7 +29,8 @@ impl SystemTick {
         self.this_run
     }
 
-    /// The world tick from the last time this system ran.
+    /// The world tick from the last time this system ran. If the system has never run before, this
+    /// will be 0.
     #[inline]
     pub fn last_run(&self) -> Tick {
         self.last_run
@@ -53,12 +54,14 @@ unsafe impl SysArg for SystemTick {
         SmallVec::new()
     }
 
-    #[inline]
-    fn fetch<'a, S: Sealed>(world: &'a World, state: &'a mut SystemTick) -> SystemTick {
-        state.last_run = state.this_run;
+    fn before_update<'w>(world: &'w World, state: &'w mut SystemTick) -> SystemTick {
         state.this_run = Tick(world.current_tick);
 
         *state
+    }
+
+    fn after_update(world: &World, state: &mut Self::State) {
+        state.last_run = state.this_run;
     }
 
     fn init(world: &mut World, _meta: &crate::system::SystemMeta) -> SystemTick {

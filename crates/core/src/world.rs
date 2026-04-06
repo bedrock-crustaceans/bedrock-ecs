@@ -37,7 +37,9 @@ impl World {
             commands: Some(CommandPool::new()),
             deferred_entities: FxHashMap::default(),
 
-            current_tick: 0,
+            // World tick starts at 1 so all `last_ran` ticks for systems can be set to 0.
+            // This ensures that `Added` filters trigger on first run.
+            current_tick: 1,
         }
     }
 
@@ -164,6 +166,7 @@ impl Default for World {
     }
 }
 
+// TODO: This should be &mut World
 unsafe impl SysArg for &World {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
@@ -188,12 +191,11 @@ unsafe impl SysArg for &World {
         }]
     }
 
-    fn fetch<'w, S: crate::sealed::Sealed>(
-        world: &'w World,
-        _state: &'w mut Self::State,
-    ) -> Self::Output<'w> {
+    fn before_update<'w>(world: &'w World, _state: &'w mut Self::State) -> Self::Output<'w> {
         world
     }
+
+    fn after_update<'w>(_world: &World, _state: &mut Self::State) {}
 
     fn init(_world: &mut World, _meta: &SystemMeta) {}
 }

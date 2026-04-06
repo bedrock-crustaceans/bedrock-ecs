@@ -112,12 +112,14 @@ unsafe impl<Q: QueryGroup + 'static, F: Filter + 'static> SysArg for Query<'_, Q
         Q::access(&mut world.archetypes.registry)
     }
 
-    fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut QueryState<Q, F>) -> Query<'w, Q, F> {
-        // Update the tick
-        state.last_tick = state.current_tick;
+    fn before_update<'w>(world: &'w World, state: &'w mut QueryState<Q, F>) -> Query<'w, Q, F> {
         state.current_tick = world.current_tick;
 
         Query::new(world, state)
+    }
+
+    fn after_update(world: &World, state: &mut QueryState<Q, F>) {
+        state.last_run_tick = state.current_tick;
     }
 
     fn init(world: &mut World, _meta: &SystemMeta) -> QueryState<Q, F> {
@@ -159,7 +161,7 @@ pub struct QueryState<Q: QueryGroup, F: Filter> {
     /// The current tick.
     pub(crate) current_tick: u32,
     /// The last tick that this query was used.
-    pub(crate) last_tick: u32,
+    pub(crate) last_run_tick: u32,
     /// The state of the filters being used by this query.
     pub(crate) filter_state: F,
     /// The generation of the cache. If this does not equal the archetype generation, the cache should
@@ -191,7 +193,7 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
 
         QueryState {
             current_tick,
-            last_tick: 0,
+            last_run_tick: 0,
             next_scan,
             filter_state,
             generation: archetypes.generation(),
@@ -206,8 +208,6 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
         tracing::instrument(name = "QueryCache::update", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
     pub(crate) fn update(&mut self, archetypes: &Archetypes) {
-        self.last_tick = self.current_tick;
-
         if self.generation != archetypes.generation() {
             // Rather than iterating over every single table again, just store the index where iteration stopped last generation
             // and only check the newly added tables. The old tables have not changed anyways.

@@ -143,12 +143,13 @@ unsafe impl SysArg for Commands<'_> {
 
     fn init(_world: &mut World, _meta: &SystemMeta) {}
 
-    #[inline]
-    fn fetch<'w, S: Sealed>(world: &'w World, _state: &'w mut ()) -> Commands<'w> {
+    fn before_update<'w>(world: &'w World, _state: &'w mut Self::State) -> Commands<'w> {
         let Some(commands) = &world.commands else {
             panic!("World::commands was none when system tried to access");
         };
 
         unsafe { commands.get_buffer() }
     }
+
+    fn after_update(_world: &World, _state: &mut Self::State) {}
 }

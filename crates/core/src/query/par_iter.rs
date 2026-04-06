@@ -24,7 +24,7 @@ macro_rules! impl_bundle {
             //     current_tick: u32,
             //     /// The previous tick that this iterator was used in.
             //     last_tick: u32,
-            //     /// Ensures that the type SysArgeters live for at least `'w`.
+            //     /// Ensures that the type system arguments live for at least `'w`.
             //     _marker: PhantomData<&'w ($($gen),*)>
             // }
 

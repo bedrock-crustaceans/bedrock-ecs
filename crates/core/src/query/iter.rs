@@ -97,11 +97,12 @@ pub trait HoppingIterator<'t>: Sized {
 }
 
 pub struct QueryIter<'w, Q: QueryGroup, F: Filter> {
+    last_run_tick: u32,
     current_tick: u32,
     remaining: usize,
     cache: std::slice::Iter<'w, TableCache<Q>>,
     base_ptrs: Q::BasePtrs,
-    filters: F::IterState,
+    filters: F::DynamicState,
 }
 
 impl<'w, Q: QueryGroup, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q, F> {
@@ -115,11 +116,12 @@ impl<'w, Q: QueryGroup, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q
 
         let table = unsafe { &*first_cache.table.as_ptr() };
         Self {
+            last_run_tick: meta.last_run_tick,
             current_tick: world.current_tick,
             remaining: table.len(),
             cache,
             base_ptrs: Q::get_base_ptrs(table),
-            filters: F::new_iter_state(table),
+            filters: F::set_dynamic_state(table),
         }
     }
 }
@@ -131,6 +133,7 @@ impl<'w, Q: QueryGroup, F: Filter> QueryIter<'w, Q, F> {
     /// [`Empty`]: std::iter::Empty
     pub fn empty() -> Self {
         Self {
+            last_run_tick: 0,
             current_tick: 0,
             remaining: 0,
             cache: [].iter(),
@@ -167,22 +170,20 @@ impl<'w, Q: QueryGroup, F: Filter> QueryIter<'w, Q, F> {
     }
 }
 
-#[allow(unused_parens)]
 impl<'t, Q: QueryGroup, F: Filter> Iterator for QueryIter<'t, Q, F> {
     type Item = Q::Output<'t>;
 
     #[allow(non_snake_case, unused)]
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // println!("checking index {} < {}", self.index, self.len);
-
         // Check whether iterator is empty
         if self.remaining == 0 && !self.jump() {
             return None;
         }
 
         if const { F::METHOD.is_dynamic() } {
-            todo!("dynamic filters");
+            let should_return = F::apply_dynamic(&self.filters, self.last_run_tick);
+            assert!(should_return);
         }
 
         let item = unsafe { Q::fetch_from_base(&mut self.base_ptrs, self.current_tick) };

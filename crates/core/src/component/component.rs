@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::fmt;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
@@ -53,12 +54,20 @@ pub trait Component: 'static + Send {
     const STORAGE: StorageType = StorageType::Table;
 }
 
+/// Implements the functionality to compare ticks in the [`Added`] and [`Changed`] filters.
+///
+/// [`Added`]: crate::query::Added
+/// [`Changed`]: crate::query::Changed
+pub trait TrackerFilterImpl {
+    fn filter<T: Component>(&self, last_run_tick: u32) -> bool;
+}
+
 /// A collection of components used in a filter. This trait makes it possible to use tuples
 /// of components inside of filters rather than just a single component.
 ///
 /// It enables filters such as `With<(Health, Transform)>`.
 pub trait ComponentBundle: 'static + Send {
-    type TrackerPtrs;
+    type TrackerPtrs: TrackerFilterImpl;
 
     const LEN: usize;
 
@@ -127,15 +136,35 @@ macro_rules! replace_with {
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
 macro_rules! impl_component_bundle {
-    ($($gen:ident),*) => {
+    ($count:literal, $($gen:ident),*) => {
         paste::paste! {
+            pub struct [< ComponentTracker $count >]<$($gen:Component),*>($(ConstNonNull<replace_with!($gen, u32)>),*, PhantomData<($($gen),*)>);
+
+            impl<$($gen:Component),*> TrackerFilterImpl for [< ComponentTracker $count >]<$($gen),*> {
+                #[inline]
+                fn filter<T: Component>(&self, last_run_tick: u32) -> bool {
+                    let [< ComponentTracker $count >]($($gen),*, ..) = self;
+
+                    // Only try filtering if the given `T` is actually in this filter.
+                    $(
+                        if TypeId::of::<T>() == TypeId::of::<$gen>() {
+                            println!("{} vs. {}", unsafe { *$gen.as_ptr() }, last_run_tick);
+                            return unsafe { *$gen.as_ptr() } > last_run_tick
+                        }
+                    )*
+
+                    true
+                }
+            }
+
             #[allow(unused)]
             impl<$($gen:Component),*> ComponentBundle for ($($gen),*) {
                 // Using the `map_u32` macro to use `$gen` inside the repetition.
-                type TrackerPtrs = ($(ConstNonNull<replace_with!($gen, u32)>),*);
+                type TrackerPtrs = [< ComponentTracker $count >]<$($gen),*>;
 
                 const LEN: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
+                #[inline]
                 fn contains(ty_id: TypeId) -> bool {
                     $(TypeId::of::<$gen>() == ty_id)||*
                 }
@@ -249,40 +278,40 @@ macro_rules! impl_component_bundle {
                 }
 
                 fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
-                    ($(
+                    [< ComponentTracker $count >]($(
                         {
                             let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
                             col.added_base_ptr()
                         }
-                    ),*)
+                    ),*, PhantomData)
                 }
 
                 fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
-                    ($(
+                    [< ComponentTracker $count >]($(
                         {
                             let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
                             col.changed_base_ptr()
                         }
-                    ),*)
+                    ),*, PhantomData)
                 }
 
                 fn dangling_tracker_ptrs() -> Self::TrackerPtrs {
-                    ($(
+                    [< ComponentTracker $count >]($(
                         replace_with!($gen, { ConstNonNull::dangling() })
-                    ),*)
+                    ),*, PhantomData)
                 }
             }
         }
     }
 }
 
-impl_component_bundle!(A);
-impl_component_bundle!(A, B);
-impl_component_bundle!(A, B, C);
-impl_component_bundle!(A, B, C, D);
-impl_component_bundle!(A, B, C, D, E);
-impl_component_bundle!(A, B, C, D, E, F);
-impl_component_bundle!(A, B, C, D, E, F, G);
-impl_component_bundle!(A, B, C, D, E, F, G, H);
-impl_component_bundle!(A, B, C, D, E, F, G, H, I);
-impl_component_bundle!(A, B, C, D, E, F, G, H, I, J);
+impl_component_bundle!(1, A);
+impl_component_bundle!(2, A, B);
+impl_component_bundle!(3, A, B, C);
+impl_component_bundle!(4, A, B, C, D);
+impl_component_bundle!(5, A, B, C, D, E);
+impl_component_bundle!(6, A, B, C, D, E, F);
+impl_component_bundle!(7, A, B, C, D, E, F, G);
+impl_component_bundle!(8, A, B, C, D, E, F, G, H);
+impl_component_bundle!(9, A, B, C, D, E, F, G, H, I);
+impl_component_bundle!(10, A, B, C, D, E, F, G, H, I, J);

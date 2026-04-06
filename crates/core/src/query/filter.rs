@@ -6,7 +6,8 @@ use std::ptr::NonNull;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
-use crate::component::ComponentBundle;
+use crate::component::{ComponentBundle, TrackerFilterImpl};
+use crate::prelude::Component;
 use crate::table::{ChangeTracker, Changes, Table};
 
 /// The possible methods of filtering used by queries.
@@ -73,7 +74,7 @@ pub trait Filter: 'static {
     ///
     /// This is important because an older version of the ECS stored all state in the iterator regardless,
     /// which caused performance issues due to register pressure.
-    type IterState;
+    type DynamicState;
 
     /// Which filtering method this filter uses.
     ///
@@ -123,13 +124,13 @@ pub trait Filter: 'static {
     /// Dynamic filters run during iteration and therefore incur a slight cost.
     ///
     /// See [`FilterMethod`] for more information.
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool;
 
     /// Creates a new iterator state.
-    fn new_iter_state(table: &Table) -> Self::IterState;
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState;
 
     /// Creates a dangling but still aligned iterator state.
-    fn dangling() -> Self::IterState;
+    fn dangling() -> Self::DynamicState;
 }
 
 /// A wrapper around `[bool; N]` that provides a method to create an array. This makes it possible for filter
@@ -159,7 +160,7 @@ impl<const N: usize> FilterIterable for [bool; N] {
 
 /// This is simply an empty filter that matches everything. It is the default filter used by queries.
 impl Filter for () {
-    type IterState = ();
+    type DynamicState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
     const TRIVIAL: bool = true;
@@ -173,15 +174,15 @@ impl Filter for () {
     }
 
     #[inline]
-    fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
+    fn apply_dynamic(_state: &Self::DynamicState, _last_run_tick: u32) -> bool {
         true
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) {}
+    fn set_dynamic_state(table: &Table) {}
 
     #[inline]
-    fn dangling() -> Self::IterState {}
+    fn dangling() -> Self::DynamicState {}
 }
 
 /// A tuple of [`Filter`]s.
@@ -191,7 +192,7 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterBundle: 'static {
-    type IterState;
+    type DynamicState;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
@@ -215,17 +216,20 @@ pub trait FilterBundle: 'static {
     /// perform a logical AND, use [`apply_dynamic`] instead.
     ///
     /// [`apply_dynamic`]: Self::apply_dynamic
-    fn apply_dynamic_iterable(changes: Changes, last_tick: u32) -> impl FilterIterable;
+    fn apply_dynamic_iterable(
+        state: &Self::DynamicState,
+        last_run_tick: u32,
+    ) -> impl FilterIterable;
 
     /// Apply all coarse filters and AND them together.
     fn apply_coarse(&self, signature: &Signature) -> bool;
 
     /// Apply all dynamic filters and AND them together.
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool;
 
-    fn new_iter_state(table: &Table) -> Self::IterState;
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState;
 
-    fn dangling() -> Self::IterState;
+    fn dangling() -> Self::DynamicState;
 }
 
 /// Implements [`FilterBundle`] for several sizes of tuples.
@@ -234,7 +238,7 @@ macro_rules! impl_filter_bundle {
         #[allow(non_snake_case)] // Because we use `$gen` as a variable name to avoid having to create custom identifiers.
         #[allow(unused_parens)] // Using this macro on a single type will result in `(A)`, this suppresses that warning.
         impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
-            type IterState = ($($gen::IterState),*);
+            type DynamicState = ($($gen::DynamicState),*);
 
             // Set method to dynamic (true) if at least one of the filters in the bundle is dynamic.
             // Otherwise it is set to coarse.
@@ -263,26 +267,26 @@ macro_rules! impl_filter_bundle {
             }
 
             #[inline]
-            fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+            fn apply_dynamic(($($gen),*): &Self::DynamicState, last_run_tick: u32) -> bool {
                 // This does not take `self`, so we do not need to destructure.
                 // Just call the method on every filter in this bundle.
-                $($gen::apply_dynamic(changes, last_tick))&&*
+                $($gen::apply_dynamic($gen, last_run_tick))&&*
             }
 
             #[inline]
-            fn apply_dynamic_iterable(changes: Changes, last_tick: u32) -> impl FilterIterable {
+            fn apply_dynamic_iterable(($($gen),*): &Self::DynamicState, last_run_tick: u32) -> impl FilterIterable {
                 // This does not take `self`, so we do not need to destructure.
                 // Just call the method on every filter in this bundle and collect into an array.
-                [$($gen::apply_dynamic(changes, last_tick)),*]
+                [$($gen::apply_dynamic($gen, last_run_tick)),*]
             }
 
             #[inline]
-            fn new_iter_state(table: &Table) -> Self::IterState {
-                ($($gen::new_iter_state(table)),*)
+            fn set_dynamic_state(table: &Table) -> Self::DynamicState {
+                ($($gen::set_dynamic_state(table)),*)
             }
 
             #[inline]
-            fn dangling() -> Self::IterState {
+            fn dangling() -> Self::DynamicState {
                 ($($gen::dangling()),*)
             }
         }
@@ -308,7 +312,7 @@ impl_filter_bundle!(A, B, C, D, E);
 pub struct Xor<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Xor<B> {
-    type IterState = B::IterState;
+    type DynamicState = B::DynamicState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -318,10 +322,10 @@ impl<B: FilterBundle> Filter for Xor<B> {
     }
 
     #[inline]
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
         if B::METHOD.is_dynamic() {
             // Only apply dynamic filters if at least one of the contained filters is dynamic.
-            let out = B::apply_dynamic(changes, last_tick);
+            let out = B::apply_dynamic(state, last_run_tick);
             let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
             truthy % 2 == 1
         } else {
@@ -340,12 +344,12 @@ impl<B: FilterBundle> Filter for Xor<B> {
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) -> Self::IterState {
-        B::new_iter_state(table)
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState {
+        B::set_dynamic_state(table)
     }
 
     #[inline]
-    fn dangling() -> Self::IterState {
+    fn dangling() -> Self::DynamicState {
         B::dangling()
     }
 }
@@ -360,7 +364,7 @@ impl<B: FilterBundle> Filter for Xor<B> {
 pub struct Or<B: FilterBundle>(B);
 
 impl<B: FilterBundle> Filter for Or<B> {
-    type IterState = B::IterState;
+    type DynamicState = B::DynamicState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -370,9 +374,9 @@ impl<B: FilterBundle> Filter for Or<B> {
     }
 
     #[inline]
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
         if B::METHOD.is_dynamic() {
-            let out = B::apply_dynamic_iterable(changes, last_tick);
+            let out = B::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| b)
         } else {
             // Skip the filter application altogether if there are no dynamic filters.
@@ -387,12 +391,12 @@ impl<B: FilterBundle> Filter for Or<B> {
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) -> Self::IterState {
-        B::new_iter_state(table)
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState {
+        B::set_dynamic_state(table)
     }
 
     #[inline]
-    fn dangling() -> Self::IterState {
+    fn dangling() -> Self::DynamicState {
         B::dangling()
     }
 }
@@ -407,7 +411,7 @@ impl<B: FilterBundle> Filter for Or<B> {
 pub struct Not<B>(B);
 
 impl<B: FilterBundle> Filter for Not<B> {
-    type IterState = B::IterState;
+    type DynamicState = B::DynamicState;
 
     const METHOD: FilterMethod = B::METHOD;
 
@@ -417,9 +421,9 @@ impl<B: FilterBundle> Filter for Not<B> {
     }
 
     #[inline]
-    fn apply_dynamic(changes: Changes, last_tick: u32) -> bool {
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
         if B::METHOD.is_dynamic() {
-            let out = B::apply_dynamic_iterable(changes, last_tick);
+            let out = B::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| !b)
         } else {
             // Skip the filter application altogether if there are no dynamic filters.
@@ -434,12 +438,12 @@ impl<B: FilterBundle> Filter for Not<B> {
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) -> Self::IterState {
-        B::new_iter_state(table)
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState {
+        B::set_dynamic_state(table)
     }
 
     #[inline]
-    fn dangling() -> Self::IterState {
+    fn dangling() -> Self::DynamicState {
         B::dangling()
     }
 }
@@ -462,7 +466,7 @@ pub struct With<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for With<T> {
-    type IterState = ();
+    type DynamicState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
@@ -483,13 +487,13 @@ impl<T: ComponentBundle> Filter for With<T> {
     }
 
     #[inline]
-    fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
+    fn apply_dynamic(_state: &Self::DynamicState, _last_run_tick: u32) -> bool {
         // This filter only filters at the table level.
         true
     }
 
     #[inline]
-    fn new_iter_state(_table: &Table) {}
+    fn set_dynamic_state(_table: &Table) {}
 
     #[inline]
     fn dangling() {}
@@ -510,7 +514,7 @@ pub struct Without<T: ComponentBundle> {
 }
 
 impl<T: ComponentBundle> Filter for Without<T> {
-    type IterState = ();
+    type DynamicState = ();
 
     const METHOD: FilterMethod = FilterMethod::Coarse;
 
@@ -530,26 +534,26 @@ impl<T: ComponentBundle> Filter for Without<T> {
     }
 
     #[inline]
-    fn apply_dynamic(_changes: Changes, _last_tick: u32) -> bool {
+    fn apply_dynamic(_state: &Self::DynamicState, _last_run_tick: u32) -> bool {
         true
     }
 
     #[inline]
-    fn new_iter_state(_table: &Table) {}
+    fn set_dynamic_state(_table: &Table) {}
 
     #[inline]
     fn dangling() {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Added<T: ComponentBundle> {
+pub struct Added<T: Component> {
     signature: Signature,
     _marker: PhantomData<T>,
 }
 
-impl<T: ComponentBundle> Filter for Added<T> {
+impl<T: Component> Filter for Added<T> {
     /// A base pointer to the start of the change tracker.
-    type IterState = T::TrackerPtrs;
+    type DynamicState = <T as ComponentBundle>::TrackerPtrs;
 
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
@@ -570,31 +574,31 @@ impl<T: ComponentBundle> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_dynamic(changes: Changes, current_tick: u32) -> bool {
-        changes.added_tick >= current_tick
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
+        state.filter::<T>(last_run_tick)
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) -> Self::IterState {
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState {
         T::get_added_tracker_ptrs(table)
     }
 
     #[inline]
-    fn dangling() -> Self::IterState {
+    fn dangling() -> Self::DynamicState {
         T::dangling_tracker_ptrs()
     }
 }
 
 /// Queries using a `Changed` filter will always return everything the first time the system runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Changed<T: ComponentBundle> {
+pub struct Changed<T: Component> {
     signature: Signature,
     _marker: PhantomData<T>,
 }
 
-impl<T: ComponentBundle> Filter for Changed<T> {
+impl<T: Component> Filter for Changed<T> {
     /// A base pointer to the start of the change tracker.
-    type IterState = T::TrackerPtrs;
+    type DynamicState = <T as ComponentBundle>::TrackerPtrs;
 
     const METHOD: FilterMethod = FilterMethod::Dynamic;
 
@@ -615,17 +619,17 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_dynamic(changes: Changes, current_tick: u32) -> bool {
-        changes.changed_tick >= current_tick
+    fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
+        state.filter::<T>(last_run_tick)
     }
 
     #[inline]
-    fn new_iter_state(table: &Table) -> Self::IterState {
+    fn set_dynamic_state(table: &Table) -> Self::DynamicState {
         T::get_changed_tracker_ptrs(table)
     }
 
     #[inline]
-    fn dangling() -> Self::IterState {
+    fn dangling() -> Self::DynamicState {
         T::dangling_tracker_ptrs()
     }
 }

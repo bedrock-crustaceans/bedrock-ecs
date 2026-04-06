@@ -1,4 +1,4 @@
-use std::{alloc::Layout, ptr::NonNull};
+use std::{alloc::Layout, marker::PhantomData, ptr::NonNull};
 
 /// Creates an array of type system integers.
 #[cfg(feature = "generics")]

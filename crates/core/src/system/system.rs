@@ -57,7 +57,7 @@ pub trait SysArgetrizedSystem<P: SysArgGroup>: Sized {
 
         let access = P::access(world);
         let meta = SystemMeta {
-            last_ran: world.current_tick,
+            last_ran: 0, // World tick starts at 1, so this system will always run every single one of its change triggers.
             name: name.to_owned(),
         };
 
@@ -149,8 +149,12 @@ macro_rules! impl_system {
             fn call(&self, world: &World, state: &mut <($($gen),*) as SysArgGroup>::State) {
                 let ($($gen),*) = state;
                 self($(
-                    $gen::fetch::<Sealer>(world, $gen)
-                ),*)
+                    $gen::before_update(world, $gen)
+                ),*);
+
+                $(
+                    $gen::after_update(world, $gen);
+                )*
             }
         }
 
@@ -207,16 +211,17 @@ where
 
 impl<F: Fn(P::Output<'_>) + Sync, P: SysArg> SysArgetrizedSystem<P> for F {
     fn call(&self, world: &World, state: &mut P::State) {
-        let p = P::fetch::<Sealer>(world, state);
+        let p = P::before_update(world, state);
         self(p);
+        P::after_update(world, state);
     }
 }
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid system",
-    label = "this system has invalid SysArgeters",
-    note = "check the SysArgeters of the system, are they all valid?",
-    note = "examples of valid SysArgeters are `Query`, `Local`, `Res`, etc..."
+    label = "this system has invalid system arguments",
+    note = "check the system arguments of the system, are they all valid?",
+    note = "examples of valid system arguments are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
     fn into_system(self, world: &mut World) -> impl System + 'static;
