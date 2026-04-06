@@ -7,10 +7,10 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::entity::Entity;
-use crate::query::{Filter, JumpingIterator, QueryBundle};
+use crate::query::{Filter, JumpingIterator, QueryGroup};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
-use crate::system::{Param, SystemMeta};
+use crate::system::{SysArg, SystemMeta};
 #[cfg(feature = "generics")]
 use crate::table::Table;
 #[cfg(feature = "generics")]
@@ -25,21 +25,21 @@ use crate::world::World;
 ///
 /// [`QueryData`]: crate::query::QueryData
 /// [`Filter`]: crate::query::Filter
-pub struct Query<'w, Q: QueryBundle, F: Filter = ()> {
+pub struct Query<'w, Q: QueryGroup, F: Filter = ()> {
     /// The world that this query was created in.
     world: &'w World,
     /// The query's associated cache. This cache tells the query where to find its data.
     state: &'w mut QueryState<Q, F>,
 }
 
-impl<'w, Q: QueryBundle> Query<'w, Q, ()> {
+impl<'w, Q: QueryGroup> Query<'w, Q, ()> {
     #[inline]
     pub fn len(&self) -> usize {
         self.len_upper_bound()
     }
 }
 
-impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
+impl<'w, Q: QueryGroup, F: Filter> Query<'w, Q, F> {
     /// Creates a new query.
     ///
     /// A new query is created every time a system runs, while the
@@ -64,7 +64,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
         self.state
             .cache
             .iter()
-            .map(|c| unsafe { &*c.table.as_ptr() }.width())
+            .map(|c| unsafe { &*c.table.as_ptr() }.len())
             .sum::<usize>()
     }
 
@@ -96,7 +96,7 @@ impl<'w, Q: QueryBundle, F: Filter> Query<'w, Q, F> {
     }
 }
 
-unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q, F> {
+unsafe impl<Q: QueryGroup + 'static, F: Filter + 'static> SysArg for Query<'_, Q, F> {
     #[cfg(feature = "generics")]
     type AccessCount = Q::AccessCount;
     type State = QueryState<Q, F>;
@@ -108,7 +108,7 @@ unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         Q::access(&mut world.archetypes.registry)
     }
 
@@ -128,7 +128,7 @@ unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q
 /// A collection of columns in a table.
 #[cfg(feature = "generics")]
 #[derive(Clone)]
-pub struct TableCache<Q: QueryBundle> {
+pub struct TableCache<Q: QueryGroup> {
     /// The index of the table in the archetypes container.
     pub table: ConstNonNull<Table>,
     /// The columns within this table that should be queried.
@@ -142,14 +142,14 @@ pub struct TableCache {
     /// The table that contains the components.
     pub table: usize,
     /// The columns from this table that contain the components for this query.
-    pub cols: SmallVec<[Option<NonMaxUsize>; param::INLINE_SIZE]>,
+    pub cols: SmallVec<[Option<NonMaxUsize>; SysArg::INLINE_SIZE]>,
 }
 
 /// The metadata of the query.
 ///
 /// This caches the locations of desired components in the database. It also keeps track of the state of the
 /// filters, if the query has any.
-pub struct QueryState<Q: QueryBundle, F: Filter> {
+pub struct QueryState<Q: QueryGroup, F: Filter> {
     #[cfg(feature = "generics")]
     pub(crate) cache: SmallVec<[TableCache<Q>; 8]>,
 
@@ -169,7 +169,7 @@ pub struct QueryState<Q: QueryBundle, F: Filter> {
     pub(crate) signature: Signature,
 }
 
-impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
+impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
     /// Creates a new query cache. This is only called when a system is first constructed.
     #[cfg_attr(
         feature = "tracing",
@@ -285,7 +285,7 @@ impl<Q: QueryBundle, F: Filter> QueryState<Q, F> {
 }
 
 #[diagnostic::do_not_recommend]
-impl<'q, Q: QueryBundle, F: Filter> IntoIterator for &'q Query<'_, Q, F> {
+impl<'q, Q: QueryGroup, F: Filter> IntoIterator for &'q Query<'_, Q, F> {
     type Item = Q::Output<'q>;
     type IntoIter = Q::Iter<'q, F>;
 

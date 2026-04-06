@@ -30,10 +30,10 @@ pub mod prelude {
     pub use crate::entity::{Entity, EntityRef};
     pub use crate::local::Local;
     pub use crate::query::{Added, Changed, Filter, FilterBundle, With, Without};
-    pub use crate::query::{Query, QueryBundle};
+    pub use crate::query::{Query, QueryGroup};
     pub use crate::resource::{Res, ResMut, Resource, ResourceId};
     pub use crate::scheduler::{ScheduleBuilder, ScheduleLabel};
-    pub use crate::system::{Param, ParamBundle};
+    pub use crate::system::{SysArg, SysArgGroup};
     pub use crate::world::World;
 }
 

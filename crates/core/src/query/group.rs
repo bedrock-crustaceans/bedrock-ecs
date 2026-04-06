@@ -1,4 +1,4 @@
-//! Implements the [`QueryBundle`] and [`ParamRef`] related traits.
+//! Implements the [`QueryGroup`] trait.
 
 use std::any::TypeId;
 #[cfg(feature = "generics")]
@@ -36,7 +36,7 @@ use crate::world::World;
     note = "components in a query must be wrapped in a reference, e.g. `&{Self}` or `&mut {Self}`",
     note = "if `{Self}` is a component, do not forget to implement the `Component` trait"
 )]
-pub unsafe trait QueryBundle: Sized {
+pub unsafe trait QueryGroup: Sized {
     #[cfg(feature = "generics")]
     /// The amount of resources that this query accesses.
     type AccessCount: ArrayLength + Add + Debug;
@@ -115,7 +115,7 @@ pub unsafe trait QueryBundle: Sized {
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
-    fn access(reg: &mut TypeRegistry) -> SmallVec<[AccessDesc; param::INLINE_SIZE]>;
+    fn access(reg: &mut TypeRegistry) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]>;
 
     #[cfg(not(feature = "generics"))]
     /// Finds all required columns from a lookup table.
@@ -123,7 +123,7 @@ pub unsafe trait QueryBundle: Sized {
     /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
     /// It however is not aware of the columns. This function then figures out which columns are useful
     /// and in which order they should be queried.
-    fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> SmallVec<[usize; param::INLINE_SIZE]>;
+    fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> SmallVec<[usize; SysArg::INLINE_SIZE]>;
 }
 
 /// A reference that can be used in a query. This is either [`Entity`], or a mutable/immutable reference
@@ -143,7 +143,7 @@ pub unsafe trait QueryBundle: Sized {
 ///
 /// - `IS_ENTITY` must only be set to true when implementing this trait for [`Entity`].
 ///
-/// - `access` must return the correct descriptor, indicating which resources this parameter uses.
+/// - `access` must return the correct descriptor, indicating which resources this SysArgeter uses.
 ///   Incorrect descriptors will cause undefined behaviour through mutable reference aliasing.
 ///
 /// - `component_id` must return the correct ID for `Self::Unref`. Incorrect component IDs will cause the query
@@ -174,7 +174,7 @@ pub unsafe trait QueryData {
 
     const TY: QueryType;
 
-    /// Returns the resource that this parameter accessess.
+    /// Returns the resource that this SysArgeter accessess.
     fn access(reg: &mut TypeRegistry) -> AccessDesc;
 
     // /// Finds the index of the column that contains this type, in the given table.
@@ -196,7 +196,7 @@ pub unsafe trait QueryData {
     /// This is used by [`Query::get`] to fetch a single entity.
     ///
     /// [`Query::get`]: crate::query::Query::get
-    fn get<'w, Q: QueryBundle, F: Filter>(
+    fn get<'w, Q: QueryGroup, F: Filter>(
         world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
@@ -262,7 +262,7 @@ unsafe impl QueryData for Entity {
         item
     }
 
-    fn get<'w, Q: QueryBundle, F: Filter>(
+    fn get<'w, Q: QueryGroup, F: Filter>(
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
@@ -326,7 +326,7 @@ unsafe impl<T: Component> QueryData for &T {
         ConstNonNull::dangling()
     }
 
-    fn get<'w, Q: QueryBundle, F: Filter>(
+    fn get<'w, Q: QueryGroup, F: Filter>(
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,
@@ -400,7 +400,7 @@ unsafe impl<T: Component> QueryData for &mut T {
         }
     }
 
-    fn get<'w, Q: QueryBundle, F: Filter>(
+    fn get<'w, Q: QueryGroup, F: Filter>(
         _world: &'w World,
         state: &'w QueryState<Q, F>,
         table: &'w Table,
@@ -428,7 +428,7 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
-            unsafe impl<$($gen: QueryData),*> QueryBundle for ($($gen),*) {
+            unsafe impl<$($gen: QueryData),*> QueryGroup for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
                 type Output<'t> = ($($gen::Output<'t>),*) where
                     Self: 't,
@@ -454,7 +454,7 @@ macro_rules! impl_bundle {
                 }
 
                 fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: ColumnRow) -> Option<Self::Output<'t>> where Self: 't {
-                    todo!("QueryBundle::get");
+                    todo!("QueryGroup::get");
                 }
 
                 unsafe fn fetch_from_base<'w>(ptrs: &mut ($($gen::BasePtr),*), current_tick: u32) -> Self::Output<'w> where Self: 'w {
@@ -467,7 +467,7 @@ macro_rules! impl_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::access", fields(size = $count), skip_all)
+                    tracing::instrument(name = "QueryGroup::access", fields(size = $count), skip_all)
                 )]
                 #[inline]
                 fn access(reg: &mut TypeRegistry) -> GenericArray<AccessDesc, Self::AccessCount> {
@@ -489,7 +489,7 @@ macro_rules! impl_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
-                    tracing::instrument(name = "QueryBundle::cache_columns", fields(size = $count), skip_all)
+                    tracing::instrument(name = "QueryGroup::cache_columns", fields(size = $count), skip_all)
                 )]
                 #[inline]
                 fn get_base_ptrs(table: &Table) -> Self::BasePtrs {

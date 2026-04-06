@@ -6,7 +6,7 @@ use generic_array::GenericArray;
 
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealer;
-use crate::system::{Param, ParamBundle};
+use crate::system::{SysArg, SysArgGroup};
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 use crate::world::World;
@@ -48,7 +48,7 @@ pub trait System: Sync {
     unsafe fn call(&self, world: &World);
 }
 
-pub trait ParametrizedSystem<P: ParamBundle>: Sized {
+pub trait SysArgetrizedSystem<P: SysArgGroup>: Sized {
     fn into_container(self, world: &mut World) -> SystemContainer<P, Self> {
         let mut name = std::any::type_name::<Self>();
         if !name.contains('{') {
@@ -80,7 +80,7 @@ pub trait ParametrizedSystem<P: ParamBundle>: Sized {
 /// Wraps the system and all of its metadata.
 ///
 /// This is where the the states and metadata are stored.
-pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
+pub struct SystemContainer<P: SysArgGroup, F: SysArgetrizedSystem<P>> {
     pub(crate) meta: UnsafeCell<SystemMeta>,
     pub(crate) system: F,
     pub(crate) state: UnsafeCell<P::State>,
@@ -91,20 +91,20 @@ pub struct SystemContainer<P: ParamBundle, F: ParametrizedSystem<P>> {
     #[cfg(feature = "generics")]
     pub(crate) access: GenericArray<AccessDesc, P::AccessCount>,
     #[cfg(not(feature = "generics"))]
-    pub(crate) access: SmallVec<[AccessDesc; param::INLINE_SIZE]>,
+    pub(crate) access: SmallVec<[AccessDesc; SysArg::INLINE_SIZE]>,
 }
 
 unsafe impl<P, F> Send for SystemContainer<P, F>
 where
-    P: ParamBundle,
-    F: ParametrizedSystem<P>,
+    P: SysArgGroup,
+    F: SysArgetrizedSystem<P>,
 {
 }
 
 unsafe impl<P, F> Sync for SystemContainer<P, F>
 where
-    P: ParamBundle,
-    F: ParametrizedSystem<P>,
+    P: SysArgGroup,
+    F: SysArgetrizedSystem<P>,
 {
 }
 
@@ -112,9 +112,9 @@ macro_rules! impl_system {
     ($($gen:ident),*) => {
         impl<$($gen),*, Sys> System for SystemContainer<($($gen),*), Sys>
         where
-            $($gen: Param),*,
-            ($($gen),*): ParamBundle,
-            Sys: ParametrizedSystem<($($gen),*)>
+            $($gen: SysArg),*,
+            ($($gen),*): SysArgGroup,
+            Sys: SysArgetrizedSystem<($($gen),*)>
         {
             #[inline]
             fn meta(&self) -> &SystemMeta {
@@ -140,13 +140,13 @@ macro_rules! impl_system {
             }
         }
 
-        impl<$($gen),*, Sys: Fn($($gen::Output<'_>),*)> ParametrizedSystem<($($gen),*)> for Sys
+        impl<$($gen),*, Sys: Fn($($gen::Output<'_>),*)> SysArgetrizedSystem<($($gen),*)> for Sys
         where
-            $($gen: Param),*,
-            ($($gen),*): ParamBundle<State = ($($gen::State),*)>
+            $($gen: SysArg),*,
+            ($($gen),*): SysArgGroup<State = ($($gen::State),*)>
         {
             #[allow(non_snake_case)]
-            fn call(&self, world: &World, state: &mut <($($gen),*) as ParamBundle>::State) {
+            fn call(&self, world: &World, state: &mut <($($gen),*) as SysArgGroup>::State) {
                 let ($($gen),*) = state;
                 self($(
                     $gen::fetch::<Sealer>(world, $gen)
@@ -156,9 +156,9 @@ macro_rules! impl_system {
 
         impl<$($gen),*, Sys> IntoSystem<($($gen),*)> for Sys
         where
-            $($gen: Param + 'static),*,
-            ($($gen),*): ParamBundle,
-            Sys: ParametrizedSystem<($($gen),*)>,
+            $($gen: SysArg + 'static),*,
+            ($($gen),*): SysArgGroup,
+            Sys: SysArgetrizedSystem<($($gen),*)>,
             Sys: Fn($($gen),*) + 'static
         {
             fn into_system(self, world: &mut World) -> impl System + 'static {
@@ -184,8 +184,8 @@ impl_system!(A, B, C, D, E, F, G, H, I, J);
 
 impl<P, F> System for SystemContainer<P, F>
 where
-    P: Param,
-    F: ParametrizedSystem<P>,
+    P: SysArg,
+    F: SysArgetrizedSystem<P>,
 {
     #[inline]
     fn meta(&self) -> &SystemMeta {
@@ -205,7 +205,7 @@ where
     }
 }
 
-impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
+impl<F: Fn(P::Output<'_>) + Sync, P: SysArg> SysArgetrizedSystem<P> for F {
     fn call(&self, world: &World, state: &mut P::State) {
         let p = P::fetch::<Sealer>(world, state);
         self(p);
@@ -214,9 +214,9 @@ impl<F: Fn(P::Output<'_>) + Sync, P: Param> ParametrizedSystem<P> for F {
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid system",
-    label = "this system has invalid parameters",
-    note = "check the parameters of the system, are they all valid?",
-    note = "examples of valid parameters are `Query`, `Local`, `Res`, etc..."
+    label = "this system has invalid SysArgeters",
+    note = "check the SysArgeters of the system, are they all valid?",
+    note = "examples of valid SysArgeters are `Query`, `Local`, `Res`, etc..."
 )]
 pub trait IntoSystem<P> {
     fn into_system(self, world: &mut World) -> impl System + 'static;
@@ -226,9 +226,9 @@ pub trait IntoSystem<P> {
 #[diagnostic::do_not_recommend]
 impl<F, P> IntoSystem<P> for F
 where
-    P: Param + 'static,
+    P: SysArg + 'static,
     F: Fn(P) + 'static,
-    F: ParametrizedSystem<P>,
+    F: SysArgetrizedSystem<P>,
 {
     // static lifetime is required to tell Rust that the returned system does not borrow the world.
     fn into_system(self, world: &mut World) -> impl System + 'static {

@@ -2,16 +2,21 @@ use bedrock_ecs::{entity::Entity, query::Query, world::World};
 use bedrock_ecs_derive::Component;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
-#[repr(align(64))]
+// #[repr(align(64))]
 #[derive(Component, bevy_ecs::component::Component)]
 struct Comp {
-    data: [f32; 3],
+    data: [f64; 3],
 }
 
-#[repr(align(64))]
+#[derive(Component, bevy_ecs::component::Component)]
+struct Comp3 {
+    data: [f64; 3],
+}
+
+// #[repr(align(64))]
 #[derive(Component, bevy_ecs::component::Component)]
 struct Comp2 {
-    data: [f32; 3],
+    data: [f64; 3],
 }
 
 fn bench_system(query: Query<(&Comp, &mut Comp2)>) {
@@ -23,7 +28,7 @@ fn bench_system(query: Query<(&Comp, &mut Comp2)>) {
     }
 }
 
-fn bevy_bench_system(query: bevy_ecs::prelude::Query<(&Comp, &mut Comp2)>) {
+fn bevy_bench_system(query: bevy_ecs::prelude::Query<(&Comp, &mut Comp2, &Comp3)>) {
     // let iter = query.iter();
     // println!("iter size is: {}", std::mem::size_of_val(&iter));
 
@@ -31,6 +36,9 @@ fn bevy_bench_system(query: bevy_ecs::prelude::Query<(&Comp, &mut Comp2)>) {
         std::hint::black_box(v);
     }
 }
+
+#[derive(bedrock_ecs_derive::ScheduleLabel)]
+struct Label;
 
 fn iter_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("iter");

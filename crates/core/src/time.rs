@@ -4,7 +4,7 @@ use generic_array::typenum::U0;
 
 #[cfg(feature = "generics")]
 use crate::world::World;
-use crate::{scheduler::AccessDesc, sealed::Sealed, system::Param};
+use crate::{scheduler::AccessDesc, sealed::Sealed, system::SysArg};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(pub(crate) u32);
@@ -36,7 +36,7 @@ impl SystemTick {
     }
 }
 
-unsafe impl Param for SystemTick {
+unsafe impl SysArg for SystemTick {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
 
@@ -49,7 +49,7 @@ unsafe impl Param for SystemTick {
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         SmallVec::new()
     }
 

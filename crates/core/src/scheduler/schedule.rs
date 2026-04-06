@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::plugins::WasmSystem;
 use crate::scheduler::{AccessDesc, AccessType, ScheduleGraph, Scheduler};
-use crate::system::{IntoSystem, ParamBundle, System, SystemId, SystemMeta};
+use crate::system::{IntoSystem, SysArgGroup, System, SystemId, SystemMeta};
 use crate::world::World;
 
 #[diagnostic::on_unimplemented(
@@ -31,7 +31,7 @@ macro_rules! impl_bundle {
             impl<$([<$gen Fun>]),*, $($gen),*> SystemBundle<($($gen),*)> for ($([<$gen Fun>]),*)
             where
                 $([<$gen Fun>]: IntoSystem<$gen> + 'static),*,
-                $($gen: ParamBundle),*
+                $($gen: SysArgGroup),*
             {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;

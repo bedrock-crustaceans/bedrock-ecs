@@ -11,7 +11,7 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, TypeRegistry},
     prelude::ComponentBundle,
-    query::{ArrayLike, Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache},
+    query::{ArrayLike, Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
     table::{ColumnRow, Table},
     world::World,
@@ -66,7 +66,7 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         *base
     }
 
-    fn get<'w, Q: QueryBundle, F: Filter>(
+    fn get<'w, Q: QueryGroup, F: Filter>(
         world: &'w World,
         _state: &'w QueryState<Q, F>,
         table: &'w Table,

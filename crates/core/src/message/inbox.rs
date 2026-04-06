@@ -10,7 +10,7 @@ use crate::message::{Mailbox, Message, MessageIndex};
 use crate::resource::ResourceId;
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::sealed::Sealed;
-use crate::system::{Param, SystemMeta};
+use crate::system::{SysArg, SystemMeta};
 use crate::world::World;
 
 #[derive(Debug, Default)]
@@ -64,7 +64,7 @@ impl<T: Message> ExactSizeIterator for Inbox<'_, T> {
 // Messages cannot be sent to the mailbox while this iterator exists.
 impl<T: Message> FusedIterator for Inbox<'_, T> {}
 
-unsafe impl<T: Message> Param for Inbox<'_, T> {
+unsafe impl<T: Message> SysArg for Inbox<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
 
@@ -80,7 +80,7 @@ unsafe impl<T: Message> Param for Inbox<'_, T> {
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         smallvec![AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<Events<T>>()),
             exclusive: false
@@ -126,7 +126,7 @@ impl<T: Message> Outbox<'_, T> {
     }
 }
 
-unsafe impl<T: Message> Param for Outbox<'_, T> {
+unsafe impl<T: Message> SysArg for Outbox<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
 
@@ -142,7 +142,7 @@ unsafe impl<T: Message> Param for Outbox<'_, T> {
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         smallvec![AccessDesc {
             ty: AccessType::Resource(ResourceId::of::<Events<T>>()),
             exclusive: true

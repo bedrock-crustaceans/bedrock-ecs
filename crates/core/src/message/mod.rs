@@ -1,5 +1,5 @@
+mod inbox;
 mod mailbox;
-mod params;
 
+pub use inbox::*;
 pub use mailbox::*;
-pub use params::*;

@@ -8,7 +8,7 @@ use crate::entity::{Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
-use crate::system::{Param, SystemMeta};
+use crate::system::{SysArg, SystemMeta};
 #[cfg(debug_assertions)]
 use crate::util::debug::{BorrowEnforcer, ReadGuard, WriteGuard};
 use crate::world::World;
@@ -121,7 +121,7 @@ impl Drop for Commands<'_> {
     fn drop(&mut self) {}
 }
 
-unsafe impl Param for Commands<'_> {
+unsafe impl SysArg for Commands<'_> {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
 
@@ -137,7 +137,7 @@ unsafe impl Param for Commands<'_> {
 
     #[cfg(not(feature = "generics"))]
     #[inline]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         SmallVec::new()
     }
 

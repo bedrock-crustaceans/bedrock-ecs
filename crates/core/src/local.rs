@@ -6,11 +6,11 @@ use std::ops::{Deref, DerefMut};
 use smallvec::SmallVec;
 
 #[cfg(not(feature = "generics"))]
-use crate::param;
+use crate::SysArg;
 use crate::scheduler::AccessDesc;
 
 use crate::sealed::Sealed;
-use crate::system::{Param, SystemMeta};
+use crate::system::{SysArg, SystemMeta};
 use crate::world::World;
 
 /// Simple container around the state of a [`Local`].
@@ -22,7 +22,7 @@ pub struct LocalState<T: Default + Send + 'static>(T);
 /// This does not overlap with any other data, and can therefore be scheduled in parallel with any other system.
 pub struct Local<'s, T: Default + Send + 'static>(&'s mut T);
 
-unsafe impl<T: Default + Send> Param for Local<'_, T> {
+unsafe impl<T: Default + Send> SysArg for Local<'_, T> {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
     type State = LocalState<T>;
@@ -38,7 +38,7 @@ unsafe impl<T: Default + Send> Param for Local<'_, T> {
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         SmallVec::new()
     }
 

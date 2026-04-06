@@ -12,87 +12,87 @@ use crate::world::World;
 #[cfg(not(feature = "generics"))]
 pub const INLINE_SIZE: usize = 8;
 
-/// Implemented by all types that can used as parameters in a system.
+/// Implemented by all types that can used as SysArgeters in a system.
 ///
 /// # Safety
 ///
 /// The `access` method must correctly return the types it accesses. Incorrect implementation will
 /// lead to reference aliasing and immediate UB.
-#[diagnostic::on_unimplemented(message = "{Self} is not a valid system parameter")]
-pub unsafe trait Param {
-    /// The amount of resources that this parameter needs to access.
+#[diagnostic::on_unimplemented(message = "{Self} is not a valid system argument")]
+pub unsafe trait SysArg {
+    /// The amount of resources that this SysArgeter needs to access.
     ///
-    /// Most parameters will only access one, but a query requesting `n` components will access `n` for example.
+    /// Most SysArgeters will only access one, but a query requesting `n` components will access `n` for example.
     /// One for each query.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength + Add;
 
-    /// The internal state of this parameter. This state is saved by the system and is persistent
-    /// across calls, unlike the parameter itself.
+    /// The internal state of this SysArgeter. This state is saved by the system and is persistent
+    /// across calls, unlike the SysArgeter itself.
     type State;
 
-    /// The output of the parameter. This controls what the system receives.
+    /// The output of the SysArgeter. This controls what the system receives.
     ///
     /// The main use of this is for types containing lifetimes.
-    /// These will have arbitrary lifetimes when declared as parameters in the systems. Using this output type
+    /// These will have arbitrary lifetimes when declared as SysArgeters in the systems. Using this output type
     /// the lifetimes will be bounded to the world.
     type Output<'w>;
 
-    /// Declares which resources this parameter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// Declares which resources this SysArgeter requires. This is used by the scheduler to schedule non-conflicting systems
     /// in parallel.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    /// Declares which resources this parameter requires. This is used by the scheduler to schedule non-conflicting systems
+    /// Declares which resources this SysArgeter requires. This is used by the scheduler to schedule non-conflicting systems
     /// in parallel.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
-    /// Fetches this parameter. Right before executing a system, the ECS will fetch all parameters and pass them
+    /// Fetches this SysArgeter. Right before executing a system, the ECS will fetch all SysArgeters and pass them
     /// to the system.
     #[doc(hidden)]
     fn fetch<'w, S: Sealed>(world: &'w World, state: &'w mut Self::State) -> Self::Output<'w>;
 
-    /// Initialises the state of this parameter.
+    /// Initialises the state of this SysArgeter.
     fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
-/// A collection of parameters.
+/// A collection of SysArgeters.
 ///
-/// A system collects all of its parameters into a tuple that implements this trait.
-/// This allows easy access to all of the parameters at once.
+/// A system collects all of its SysArgeters into a tuple that implements this trait.
+/// This allows easy access to all of the SysArgeters at once.
 ///
 /// # Safety
 ///
-/// - `AccessCount` must return the exact amount of resources accessed by all parameters combined.
-///   For example, if the bundle consists of two parameters that each access one resource, then `AccessCount` must
+/// - `AccessCount` must return the exact amount of resources accessed by all SysArgeters combined.
+///   For example, if the bundle consists of two SysArgeters that each access one resource, then `AccessCount` must
 ///   equal two. Setting this incorrectly will either cause uninitialised memory to be read, or a buffer overflow.
 ///
-/// - `access` must correctly return each of the components that the parameters use, including
+/// - `access` must correctly return each of the components that the SysArgeters use, including
 ///   correct mutability information. Incorrect access descriptors will give wrong information to the scheduler
 ///   and cause mutable reference aliasing.
-pub unsafe trait ParamBundle {
-    /// The amount of resources that this parameter collection requires.
+pub unsafe trait SysArgGroup {
+    /// The amount of resources that this SysArgeter collection requires.
     /// This is used to compute, at compile time, how large the system metadata must be.
     #[cfg(feature = "generics")]
     type AccessCount: ArrayLength;
 
-    /// A collection of all individual parameter states in the collection.
+    /// A collection of all individual SysArgeter states in the collection.
     type State;
 
-    /// Returns the resources that this collection of parameters accesses.
+    /// Returns the resources that this collection of SysArgeters accesses.
     #[cfg(feature = "generics")]
     fn access(world: &mut World) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    /// Returns the resources that this collection of parameters accesses.
+    /// Returns the resources that this collection of SysArgeters accesses.
     #[cfg(not(feature = "generics"))]
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
-    /// Initializes the internal states of all parameters in this collection.
+    /// Initializes the internal states of all SysArgeters in this collection.
     fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
 }
 
-unsafe impl ParamBundle for () {
+unsafe impl SysArgGroup for () {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
 
@@ -120,18 +120,18 @@ macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         paste::paste! {
             #[allow(unused_parens)]
-            unsafe impl<$($gen: Param),*> ParamBundle for ($($gen),*)
+            unsafe impl<$($gen: SysArg),*> SysArgGroup for ($($gen),*)
             where
                 // Ensure that we can sum the array of lengths.
                 crate::create_tarray!($($gen::AccessCount),*): FoldAdd,
                 <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output: ArrayLength
             {
-                /// The total amount of resources accessed by this parameter collection.
-                /// This is computed by collecting the individual counts from each parameter into a
+                /// The total amount of resources accessed by this SysArgeter collection.
+                /// This is computed by collecting the individual counts from each SysArgeter into a
                 /// typenum array and then summing them all.
                 type AccessCount = <crate::create_tarray!($($gen::AccessCount),*) as FoldAdd>::Output;
 
-                /// The states of all the parameters, this is simply a tuple of all of them.
+                /// The states of all the SysArgeters, this is simply a tuple of all of them.
                 type State = ($($gen::State),*);
 
                 #[allow(unused)]
@@ -167,12 +167,12 @@ macro_rules! impl_bundle {
 
                 #[cfg_attr(
                     feature = "tracing",
-                    tracing::instrument(name = "ParamBundle::init", skip_all)
+                    tracing::instrument(name = "SysArgGroup::init", skip_all)
                 )]
                 fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
-                    tracing::trace!("initialising {} system parameter state(s)", Self::AccessCount::USIZE);
+                    tracing::trace!("initialising {} system SysArgeter state(s)", Self::AccessCount::USIZE);
 
-                    // Run init on all parameters in the bundle.
+                    // Run init on all SysArgeters in the bundle.
                     ($($gen::init(world, meta)),*)
                 }
             }
@@ -184,7 +184,7 @@ macro_rules! impl_bundle {
 macro_rules! impl_bundle {
     ($count:expr, $($gen:ident),*) => {
         #[allow(unused_parens)]
-        unsafe impl<$($gen: Param),*> ParamBundle for ($($gen),*) {
+        unsafe impl<$($gen: SysArg),*> SysArgGroup for ($($gen),*) {
             type State = ($($gen::State),*);
 
             fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]> {

@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 
 #[cfg(not(feature = "generics"))]
-use crate::param;
+use crate::SysArg;
 
 use crate::archetype::Archetypes;
 use crate::command::{CommandPool, DeferredEntity};
@@ -14,7 +14,7 @@ use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
-use crate::system::{IntoSystem, Param, System, SystemContainer, SystemMeta};
+use crate::system::{IntoSystem, SysArg, System, SystemContainer, SystemMeta};
 
 pub struct World {
     pub(crate) archetypes: Archetypes,
@@ -164,7 +164,7 @@ impl Default for World {
     }
 }
 
-unsafe impl Param for &World {
+unsafe impl SysArg for &World {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
 
@@ -181,7 +181,7 @@ unsafe impl Param for &World {
     }
 
     #[cfg(not(feature = "generics"))]
-    fn access(_world: &mut World) -> SmallVec<[AccessDesc; param::INLINE_SIZE]> {
+    fn access(_world: &mut World) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]> {
         smallvec![AccessDesc {
             ty: AccessType::World,
             exclusive: false

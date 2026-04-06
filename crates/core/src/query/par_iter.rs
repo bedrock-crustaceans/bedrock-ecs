@@ -3,7 +3,7 @@ macro_rules! impl_bundle {
         paste::paste! {
             // #[doc = concat("A parallel iterator that can iterate over ", stringify!($count), " components at a time")]
             // #[allow(unused_parens)]
-            // pub struct [< ParIteratorBundle $count >]<Q: QueryBundle, FA: Filter, $($gen:QueryData),*> {
+            // pub struct [< ParIteratorBundle $count >]<Q: QueryGroup, FA: Filter, $($gen:QueryData),*> {
             //     world: &'w World,
             //     cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
             //     iters
@@ -14,7 +14,7 @@ macro_rules! impl_bundle {
 
             // #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
             // #[allow(unused_parens)]
-            // pub struct [< IteratorBundle $count >]<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> {
+            // pub struct [< IteratorBundle $count >]<'w, Q: QueryGroup, FA: Filter, $($gen: QueryData),*> {
             //     world: &'w World,
             //     /// The remaining cached tables that this iterator will hop to.
             //     cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
@@ -24,11 +24,11 @@ macro_rules! impl_bundle {
             //     current_tick: u32,
             //     /// The previous tick that this iterator was used in.
             //     last_tick: u32,
-            //     /// Ensures that the type parameters live for at least `'w`.
+            //     /// Ensures that the type SysArgeters live for at least `'w`.
             //     _marker: PhantomData<&'w ($($gen),*)>
             // }
 
-            // impl<'w, Q: QueryBundle, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
+            // impl<'w, Q: QueryGroup, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
             //     /// Creates an empty iterator that always returns `None`. This exists because
             //     /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
             //     ///

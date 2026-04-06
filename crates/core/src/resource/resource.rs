@@ -8,7 +8,7 @@ use generic_array::typenum::U1;
 use crate::resource::Resources;
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::sealed::Sealed;
-use crate::system::{Param, SystemMeta};
+use crate::system::{SysArg, SystemMeta};
 use crate::world::World;
 
 #[cfg(not(feature = "generics"))]
@@ -80,7 +80,7 @@ impl<R: Resource> Deref for Res<'_, R> {
     }
 }
 
-unsafe impl<R: Resource> Param for Res<'_, R> {
+unsafe impl<R: Resource> SysArg for Res<'_, R> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
     type Output<'s> = Res<'s, R>;
@@ -153,7 +153,7 @@ impl<R: Resource> DerefMut for ResMut<'_, R> {
     }
 }
 
-unsafe impl<R: Resource> Param for ResMut<'_, R> {
+unsafe impl<R: Resource> SysArg for ResMut<'_, R> {
     #[cfg(feature = "generics")]
     type AccessCount = U1;
     type Output<'s> = ResMut<'s, R>;

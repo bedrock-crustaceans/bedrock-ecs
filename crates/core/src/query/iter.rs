@@ -12,7 +12,7 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::TypeRegistry;
-use crate::query::{Filter, QueryBundle, QueryData, QueryState, QueryType, TableCache};
+use crate::query::{Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache};
 use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
 use crate::world::World;
@@ -66,7 +66,7 @@ pub unsafe trait ArrayLike {
 /// This is useful when querying a component that is contained in multiple archetypes.
 ///
 #[cfg(feature = "generics")]
-pub trait JumpingIterator<'t, Q: QueryBundle + 't, F: Filter>:
+pub trait JumpingIterator<'t, Q: QueryGroup + 't, F: Filter>:
     Iterator<Item = Q::Output<'t>>
 {
     /// Creates a new iterator over the given cache.
@@ -96,7 +96,7 @@ pub trait HoppingIterator<'t>: Sized {
     fn current_len(&self) -> usize;
 }
 
-pub struct QueryIter<'w, Q: QueryBundle, F: Filter> {
+pub struct QueryIter<'w, Q: QueryGroup, F: Filter> {
     current_tick: u32,
     remaining: usize,
     cache: std::slice::Iter<'w, TableCache<Q>>,
@@ -104,7 +104,7 @@ pub struct QueryIter<'w, Q: QueryBundle, F: Filter> {
     filters: F::IterState,
 }
 
-impl<'w, Q: QueryBundle, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q, F> {
+impl<'w, Q: QueryGroup, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q, F> {
     fn from_cache(world: &'w World, meta: &'w QueryState<Q, F>) -> Self {
         let mut cache = meta.cache.iter();
 
@@ -124,7 +124,7 @@ impl<'w, Q: QueryBundle, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, 
     }
 }
 
-impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
+impl<'w, Q: QueryGroup, F: Filter> QueryIter<'w, Q, F> {
     /// Creates an empty iterator that always returns `None`. This exists because
     /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
     ///
@@ -168,7 +168,7 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
 }
 
 #[allow(unused_parens)]
-impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
+impl<'t, Q: QueryGroup, F: Filter> Iterator for QueryIter<'t, Q, F> {
     type Item = Q::Output<'t>;
 
     #[allow(non_snake_case, unused)]
@@ -205,11 +205,11 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
     }
 }
 
-impl<'t, Q: QueryBundle> ExactSizeIterator for QueryIter<'t, Q, ()> {
+impl<'t, Q: QueryGroup> ExactSizeIterator for QueryIter<'t, Q, ()> {
     #[inline]
     fn len(&self) -> usize {
         self.unfiltered_len()
     }
 }
 
-impl<'t, Q: QueryBundle, F: Filter> FusedIterator for QueryIter<'t, Q, F> {}
+impl<'t, Q: QueryGroup, F: Filter> FusedIterator for QueryIter<'t, Q, F> {}
