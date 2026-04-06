@@ -142,6 +142,18 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
         }
     }
 
+    /// Computes the remaining length of the query iterator if it had no filters.
+    fn unfiltered_len(&self) -> usize {
+        let tables = self
+            .cache
+            .as_slice()
+            .iter()
+            .map(|c| unsafe { &*c.table.as_ptr() }.len())
+            .sum::<usize>();
+
+        tables + (self.len - self.index)
+    }
+
     /// Jumps to the next table, returning whether the jump was successful
     /// or whether the end of the query has been reached.
     fn jump(&mut self) -> bool {
@@ -185,8 +197,7 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let upper_bound = todo!();
-        // let upper_bound = self.unfiltered_len();
+        let upper_bound = self.unfiltered_len();
 
         if const { F::TRIVIAL } {
             // If this query performs no filtering, we know the exact size.
@@ -201,8 +212,7 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
 impl<'t, Q: QueryBundle> ExactSizeIterator for QueryIter<'t, Q, ()> {
     #[inline]
     fn len(&self) -> usize {
-        todo!();
-        // self.unfiltered_len()
+        self.unfiltered_len()
     }
 }
 
