@@ -57,7 +57,7 @@ pub unsafe trait QueryBundle: Sized {
     ///
     /// [`IteratorBundle1`]: crate::query::IteratorBundle1
     /// [`IteratorBundle2`]: crate::query::IteratorBundle2
-    type Iter<'a, F: Filter>: JumpingIterator<'a, Self, F> + Iterator<Item = Self::Output<'a>>
+    type Iter<'a, F: Filter>: JumpingIterator<'a, Self, F>
     where
         Self: 'a;
 

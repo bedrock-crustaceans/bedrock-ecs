@@ -66,7 +66,9 @@ pub unsafe trait ArrayLike {
 /// This is useful when querying a component that is contained in multiple archetypes.
 ///
 #[cfg(feature = "generics")]
-pub trait JumpingIterator<'t, Q: QueryBundle, F: Filter>: Sized {
+pub trait JumpingIterator<'t, Q: QueryBundle + 't, F: Filter>:
+    Iterator<Item = Q::Output<'t>>
+{
     /// Creates a new iterator over the given cache.
     fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 }
