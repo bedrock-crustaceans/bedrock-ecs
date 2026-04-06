@@ -107,11 +107,8 @@ pub unsafe trait QueryBundle: Sized {
     /// [`map_column`]: QueryData::map_column
     fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
-    unsafe fn fetch_from_base<'w>(
-        ptrs: Self::BasePtrs,
-        index: usize,
-        current_tick: u32,
-    ) -> Self::Output<'w>;
+    unsafe fn fetch_from_base<'w>(ptrs: &mut Self::BasePtrs, current_tick: u32)
+    -> Self::Output<'w>;
 
     fn dangling() -> Self::BasePtrs;
 
@@ -192,11 +189,7 @@ pub unsafe trait QueryData {
 
     fn dangling() -> Self::BasePtr;
 
-    unsafe fn fetch_from_base<'w>(
-        base: Self::BasePtr,
-        index: usize,
-        current_tick: u32,
-    ) -> Self::Output<'w>;
+    unsafe fn fetch_from_base<'w>(base: &mut Self::BasePtr, current_tick: u32) -> Self::Output<'w>;
 
     /// Attempts to fetch the component of type `Self` that is contained in the given table, column and row.
     ///
@@ -261,11 +254,12 @@ unsafe impl QueryData for Entity {
 
     #[inline]
     unsafe fn fetch_from_base<'w>(
-        base: Self::BasePtr,
-        index: usize,
+        base: &mut Self::BasePtr,
         _current_tick: u32,
     ) -> Self::Output<'w> {
-        unsafe { *base.add(index).as_ptr() }
+        let item = unsafe { *base.as_ptr() };
+        *base = unsafe { base.add(1) };
+        item
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
@@ -320,11 +314,12 @@ unsafe impl<T: Component> QueryData for &T {
 
     #[inline]
     unsafe fn fetch_from_base<'w>(
-        base: Self::BasePtr,
-        index: usize,
-        _current_index: u32,
+        base: &mut Self::BasePtr,
+        _current_tick: u32,
     ) -> Self::Output<'w> {
-        unsafe { &*base.add(index).as_ptr() }
+        let item = unsafe { &*base.as_ptr() };
+        *base = unsafe { base.add(1) };
+        item
     }
 
     fn dangling() -> Self::BasePtr {
@@ -392,15 +387,16 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    unsafe fn fetch_from_base<'w>(
-        base: Self::BasePtr,
-        index: usize,
-        current_tick: u32,
-    ) -> Self::Output<'w> {
+    unsafe fn fetch_from_base<'w>(base: &mut Self::BasePtr, current_tick: u32) -> Self::Output<'w> {
+        let inner = unsafe { &mut *base.0.as_ptr() };
+        let tracker = unsafe { &mut *base.1.as_ptr() };
+
+        *base = (unsafe { base.0.add(1) }, unsafe { base.1.add(1) });
+
         Mut {
             current_tick,
-            tracker: unsafe { &mut *base.1.add(index).as_ptr() },
-            inner: unsafe { &mut *base.0.add(index).as_ptr() },
+            tracker,
+            inner,
         }
     }
 
@@ -461,11 +457,11 @@ macro_rules! impl_bundle {
                     todo!("QueryBundle::get");
                 }
 
-                unsafe fn fetch_from_base<'w>(ptrs: ($($gen::BasePtr),*), index: usize, current_tick: u32) -> Self::Output<'w> where Self: 'w {
+                unsafe fn fetch_from_base<'w>(ptrs: &mut ($($gen::BasePtr),*), current_tick: u32) -> Self::Output<'w> where Self: 'w {
                     #[allow(non_snake_case)]
                     let ($($gen),*) = ptrs;
                     ($(
-                        unsafe { $gen::fetch_from_base($gen, index, current_tick) }
+                        unsafe { $gen::fetch_from_base($gen, current_tick) }
                     ),*)
                 }
 

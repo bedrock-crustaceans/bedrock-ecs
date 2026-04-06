@@ -24,8 +24,8 @@ fn bench_system(query: Query<(&Comp, &mut Comp2)>) {
 }
 
 fn bevy_bench_system(query: bevy_ecs::prelude::Query<(&Comp, &mut Comp2)>) {
-    let iter = query.iter();
-    println!("iter size is: {}", std::mem::size_of_val(&iter));
+    // let iter = query.iter();
+    // println!("iter size is: {}", std::mem::size_of_val(&iter));
 
     for v in query {
         std::hint::black_box(v);

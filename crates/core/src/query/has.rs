@@ -60,11 +60,10 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
 
     #[inline]
     unsafe fn fetch_from_base<'w>(
-        base: Self::BasePtr,
-        _index: usize,
+        base: &mut Self::BasePtr,
         _current_tick: u32,
     ) -> Self::Output<'w> {
-        base
+        *base
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(

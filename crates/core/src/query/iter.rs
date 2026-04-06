@@ -98,8 +98,7 @@ pub trait HoppingIterator<'t>: Sized {
 
 pub struct QueryIter<'w, Q: QueryBundle, F: Filter> {
     current_tick: u32,
-    len: usize,
-    index: usize,
+    remaining: usize,
     cache: std::slice::Iter<'w, TableCache<Q>>,
     base_ptrs: Q::BasePtrs,
     filters: F::IterState,
@@ -117,8 +116,7 @@ impl<'w, Q: QueryBundle, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, 
         let table = unsafe { &*first_cache.table.as_ptr() };
         Self {
             current_tick: world.current_tick,
-            len: table.len(),
-            index: 0,
+            remaining: table.len(),
             cache,
             base_ptrs: Q::get_base_ptrs(table),
             filters: F::new_iter_state(table),
@@ -134,8 +132,7 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
     pub fn empty() -> Self {
         Self {
             current_tick: 0,
-            len: 0,
-            index: 0,
+            remaining: 0,
             cache: [].iter(),
             base_ptrs: Q::dangling(),
             filters: F::dangling(),
@@ -151,7 +148,7 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
             .map(|c| unsafe { &*c.table.as_ptr() }.len())
             .sum::<usize>();
 
-        tables + (self.len - self.index)
+        tables + self.remaining
     }
 
     /// Jumps to the next table, returning whether the jump was successful
@@ -159,13 +156,12 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
     fn jump(&mut self) -> bool {
         if let Some(next_cache) = self.cache.next() {
             let table = unsafe { &*next_cache.table.as_ptr() };
-            self.index = 0;
             self.base_ptrs = Q::get_base_ptrs(table);
-            self.len = table.len();
+            self.remaining = table.len();
 
             true
         } else {
-            self.len = 0;
+            self.remaining = 0;
             false
         }
     }
@@ -181,7 +177,7 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
         // println!("checking index {} < {}", self.index, self.len);
 
         // Check whether iterator is empty
-        if self.index >= self.len && !self.jump() {
+        if self.remaining == 0 && !self.jump() {
             return None;
         }
 
@@ -189,9 +185,9 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
             todo!("dynamic filters");
         }
 
-        let item = unsafe { Q::fetch_from_base(self.base_ptrs, self.index, self.current_tick) };
+        let item = unsafe { Q::fetch_from_base(&mut self.base_ptrs, self.current_tick) };
 
-        self.index += 1;
+        self.remaining -= 1;
         return Some(item);
     }
 
