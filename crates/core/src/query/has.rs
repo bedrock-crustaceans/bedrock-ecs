@@ -54,6 +54,19 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         todo!()
     }
 
+    fn dangling() -> Self::BasePtr {
+        false
+    }
+
+    #[inline]
+    unsafe fn fetch_from_base<'w>(
+        base: Self::BasePtr,
+        _index: usize,
+        _current_tick: u32,
+    ) -> Self::Output<'w> {
+        base
+    }
+
     fn get<'w, Q: QueryBundle, F: Filter>(
         world: &'w World,
         _state: &'w QueryState<Q, F>,

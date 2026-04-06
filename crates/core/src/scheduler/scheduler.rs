@@ -50,6 +50,9 @@ pub struct SchedulerTiming {
 impl Default for SchedulerTiming {
     fn default() -> Self {
         Self {
+            #[cfg(miri)]
+            total_threads: usize::MAX,
+            #[cfg(not(miri))]
             total_threads: rayon::current_num_threads(),
             start_time: Instant::now(),
             timing: Vec::new(),
@@ -114,7 +117,7 @@ impl Scheduler {
                 lock.timing[id] = ExecutionInfo {
                     start,
                     finish,
-                    thread: rayon::current_thread_index().unwrap(),
+                    thread: 0,
                 };
             }
 

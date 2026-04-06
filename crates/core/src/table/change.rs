@@ -102,11 +102,11 @@ pub struct ChangeTracker {
     /// Keeps track of the tick when a component was added.
     ///
     /// Parallel queries will use `split_at_mut` to split this vec into multiple mutable references.
-    pub(crate) added: Vec<u32>,
+    pub(crate) added: UnsafeCell<Vec<u32>>,
     /// Keeps track of the tick when a component was added.
     ///
     /// Parallel queries will use `split_at_mut` to split this vec into multiple mutable references.
-    pub(crate) changed: Vec<u32>,
+    pub(crate) changed: UnsafeCell<Vec<u32>>,
 }
 
 impl ChangeTracker {
@@ -116,62 +116,42 @@ impl ChangeTracker {
             #[cfg(debug_assertions)]
             enforcer: BorrowEnforcer::new(),
 
-            added: Vec::new(),
-            changed: Vec::new(),
+            added: UnsafeCell::new(Vec::new()),
+            changed: UnsafeCell::new(Vec::new()),
         }
     }
 
     pub fn added_base_ptr(&self) -> ConstNonNull<u32> {
-        assert!(!self.changed.is_empty());
+        let inner = unsafe { &*self.added.get() };
+
+        assert!(!inner.is_empty());
 
         // Safety: Vec never returns a null pointer.
-        unsafe { ConstNonNull::new_unchecked(self.added.as_ptr()) }
+        unsafe { ConstNonNull::new_unchecked(inner.as_ptr()) }
     }
 
     pub fn changed_base_ptr(&self) -> ConstNonNull<u32> {
-        assert!(!self.changed.is_empty());
+        let inner = unsafe { &*self.changed.get() };
+
+        assert!(!inner.is_empty());
 
         // Safety: Vec never returns a null pointer.
-        unsafe { ConstNonNull::new_unchecked(self.changed.as_ptr()) }
-    }
-
-    /// Sets the component at `index` as changed in `current_tick`.
-    ///
-    /// This causes queries using the [`Changed`] filter to return this specific component.
-    ///
-    /// [`Changed`]: crate::query::Changed
-    pub fn set_changed(&mut self, index: usize, current_tick: u32) {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.write();
-
-        self.changed[index] = current_tick;
-    }
-
-    /// Sets the component at `index` as added in `current_tick`.
-    ///
-    /// This causes queries using the [`Added`] filter to return this specific component.
-    ///
-    /// [`Added`]: crate::query::Added
-    pub fn set_added(&mut self, index: usize, current_tick: u32) {
-        #[cfg(debug_assertions)]
-        let _guard = self.enforcer.write();
-
-        self.added[index] = current_tick;
+        unsafe { ConstNonNull::new_unchecked(inner.as_ptr()) }
     }
 
     pub fn reserve(&mut self, n: usize) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
-        self.added.reserve(n);
-        self.changed.reserve(n);
+        self.added.get_mut().reserve(n);
+        self.changed.get_mut().reserve(n);
     }
 
     pub fn resize(&mut self, n: usize, current_tick: u32) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
-        self.added.resize(n, current_tick);
-        self.changed.resize(n, current_tick);
+        self.added.get_mut().resize(n, current_tick);
+        self.changed.get_mut().resize(n, current_tick);
     }
 }

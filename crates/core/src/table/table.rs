@@ -21,7 +21,6 @@ use crate::world::World;
 /// two columns: one for `Health` and another for `Transform`.
 ///
 /// Table structure is immutable, i.e. once a table exists, no columns can be added to or removed from it.
-#[derive(Debug)]
 pub struct Table {
     #[cfg(debug_assertions)]
     pub(crate) enforcer: BorrowEnforcer,

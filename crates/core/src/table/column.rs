@@ -44,12 +44,11 @@ unsafe fn drop_wrapper<T>(ptr: *mut u8, len: usize) {
 pub struct ColumnRow(pub(crate) usize);
 
 /// Stores a collection of a single component type.
-#[derive(Debug)]
 pub struct Column {
     #[cfg(debug_assertions)]
     enforcer: BorrowEnforcer,
     /// Tracks which components have changed in this Column.
-    tracker: UnsafeCell<ChangeTracker>,
+    tracker: ChangeTracker,
     /// The type ID of the item contained in this Column.
     pub(crate) ty: TypeId,
     /// The layout of the component type.
@@ -136,7 +135,7 @@ impl Column {
         self.len += 1;
 
         // Add space for this new row in the change tracker.
-        self.tracker.get_mut().resize(self.len, current_tick);
+        self.tracker.resize(self.len, current_tick);
     }
 
     /// Create an empty copy of self.
@@ -149,7 +148,7 @@ impl Column {
             #[cfg(debug_assertions)]
             enforcer: BorrowEnforcer::new(),
 
-            tracker: UnsafeCell::new(ChangeTracker::new()),
+            tracker: ChangeTracker::new(),
 
             layout: self.layout,
             ty: self.ty,
@@ -183,7 +182,7 @@ impl Column {
             None
         };
 
-        let layout = Layout::new::<T>().align_to(64).unwrap();
+        let layout = Layout::new::<T>();
 
         if std::mem::size_of::<T>() == 0 {
             // The allocator does not support "allocating" zero-sized types so we
@@ -203,7 +202,7 @@ impl Column {
                 #[cfg(debug_assertions)]
                 enforcer: BorrowEnforcer::new(),
 
-                tracker: UnsafeCell::new(ChangeTracker::new()),
+                tracker: ChangeTracker::new(),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -223,7 +222,7 @@ impl Column {
                 #[cfg(debug_assertions)]
                 enforcer: BorrowEnforcer::new(),
 
-                tracker: UnsafeCell::new(ChangeTracker::new()),
+                tracker: ChangeTracker::new(),
                 ty: TypeId::of::<T>(),
                 layout,
                 len: 0,
@@ -236,13 +235,24 @@ impl Column {
 
     #[inline]
     pub fn added_base_ptr(&self) -> ConstNonNull<u32> {
-        todo!()
-        // self.tracker.
+        self.tracker.added_base_ptr()
     }
 
     #[inline]
     pub fn changed_base_ptr(&self) -> ConstNonNull<u32> {
-        todo!()
+        self.tracker.changed_base_ptr()
+    }
+
+    #[inline]
+    pub fn added_base_ptr_mut(&self) -> NonNull<u32> {
+        let vec = unsafe { &*self.tracker.added.get() };
+        unsafe { NonNull::new_unchecked(vec.as_ptr().cast_mut()) }
+    }
+
+    #[inline]
+    pub fn changed_base_ptr_mut(&self) -> NonNull<u32> {
+        let vec = unsafe { &*self.tracker.changed.get() };
+        unsafe { NonNull::new_unchecked(vec.as_ptr().cast_mut()) }
     }
 
     #[inline]
@@ -272,7 +282,7 @@ impl Column {
             return;
         }
 
-        self.tracker.get_mut().reserve(n);
+        self.tracker.reserve(n);
 
         let cap = self.cap + n;
 
@@ -359,7 +369,7 @@ impl Column {
         }
 
         self.len += 1;
-        self.tracker.get_mut().resize(self.len, current_tick);
+        self.tracker.resize(self.len, current_tick);
     }
 
     /// Obtains a pointer to a row in the column, without being aware of the underlying component type.

@@ -127,7 +127,7 @@ unsafe impl<Q: QueryBundle + 'static, F: Filter + 'static> Param for Query<'_, Q
 
 /// A collection of columns in a table.
 #[cfg(feature = "generics")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TableCache<Q: QueryBundle> {
     /// The index of the table in the archetypes container.
     pub table: ConstNonNull<Table>,

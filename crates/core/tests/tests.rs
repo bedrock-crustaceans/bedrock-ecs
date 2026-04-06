@@ -400,6 +400,7 @@ struct Counter(i32);
 
 fn counter_system1(query: Query<&mut Counter>) {
     for mut counter in &query {
+        println!("+1");
         counter.0 += 1;
     }
 }

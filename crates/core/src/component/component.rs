@@ -115,11 +115,13 @@ pub trait ComponentBundle: 'static + Send {
     fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
 
     fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
+
+    fn dangling_tracker_ptrs() -> Self::TrackerPtrs;
 }
 
-macro_rules! map_u32 {
-    ($x:tt) => {
-        u32
+macro_rules! replace_with {
+    ($x:tt, $to:tt) => {
+        $to
     };
 }
 
@@ -130,7 +132,7 @@ macro_rules! impl_component_bundle {
             #[allow(unused)]
             impl<$($gen:Component),*> ComponentBundle for ($($gen),*) {
                 // Using the `map_u32` macro to use `$gen` inside the repetition.
-                type TrackerPtrs = ($(ConstNonNull<map_u32!($gen)>),*);
+                type TrackerPtrs = ($(ConstNonNull<replace_with!($gen, u32)>),*);
 
                 const LEN: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
@@ -261,6 +263,12 @@ macro_rules! impl_component_bundle {
                             let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
                             col.changed_base_ptr()
                         }
+                    ),*)
+                }
+
+                fn dangling_tracker_ptrs() -> Self::TrackerPtrs {
+                    ($(
+                        replace_with!($gen, { ConstNonNull::dangling() })
                     ),*)
                 }
             }

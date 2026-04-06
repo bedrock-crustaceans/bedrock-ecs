@@ -107,7 +107,13 @@ pub unsafe trait QueryBundle: Sized {
     /// [`map_column`]: QueryData::map_column
     fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
-    fn fetch_from_base<'w>(ptrs: Self::BasePtrs, index: usize) -> Self::Output<'w>;
+    unsafe fn fetch_from_base<'w>(
+        ptrs: Self::BasePtrs,
+        index: usize,
+        current_tick: u32,
+    ) -> Self::Output<'w>;
+
+    fn dangling() -> Self::BasePtrs;
 
     #[cfg(not(feature = "generics"))]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
@@ -184,6 +190,14 @@ pub unsafe trait QueryData {
 
     fn get_base_ptr(table: &Table) -> Self::BasePtr;
 
+    fn dangling() -> Self::BasePtr;
+
+    unsafe fn fetch_from_base<'w>(
+        base: Self::BasePtr,
+        index: usize,
+        current_tick: u32,
+    ) -> Self::Output<'w>;
+
     /// Attempts to fetch the component of type `Self` that is contained in the given table, column and row.
     ///
     /// This is used by [`Query::get`] to fetch a single entity.
@@ -241,13 +255,18 @@ unsafe impl QueryData for Entity {
         table.entities.as_const_non_null()
     }
 
-    // fn component_id(_reg: &mut ComponentRegistry) -> ComponentId {
-    //     unimplemented!("cannot call `component_id` on `Entity`")
-    // }
+    fn dangling() -> Self::BasePtr {
+        ConstNonNull::dangling()
+    }
 
-    // fn map_column(_table: &Table) -> NonMaxUsize {
-    //     unimplemented!("cannot call `cache_column` on `Entity`")
-    // }
+    #[inline]
+    unsafe fn fetch_from_base<'w>(
+        base: Self::BasePtr,
+        index: usize,
+        _current_tick: u32,
+    ) -> Self::Output<'w> {
+        unsafe { *base.add(index).as_ptr() }
+    }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
         _world: &'w World,
@@ -299,6 +318,19 @@ unsafe impl<T: Component> QueryData for &T {
         ConstNonNull::from(col.base_ptr())
     }
 
+    #[inline]
+    unsafe fn fetch_from_base<'w>(
+        base: Self::BasePtr,
+        index: usize,
+        _current_index: u32,
+    ) -> Self::Output<'w> {
+        unsafe { &*base.add(index).as_ptr() }
+    }
+
+    fn dangling() -> Self::BasePtr {
+        ConstNonNull::dangling()
+    }
+
     fn get<'w, Q: QueryBundle, F: Filter>(
         _world: &'w World,
         _state: &'w QueryState<Q, F>,
@@ -332,7 +364,8 @@ unsafe impl<T: Component> QueryData for &T {
 unsafe impl<T: Component> QueryData for &mut T {
     type Deref = T;
     type Output<'w> = Mut<'w, T>;
-    type BasePtr = NonNull<T>;
+    // base pointer for column + change detection
+    type BasePtr = (NonNull<T>, NonNull<u32>);
 
     const TY: QueryType = QueryType::Component;
 
@@ -350,7 +383,25 @@ unsafe impl<T: Component> QueryData for &mut T {
             .get_column_by_type(&TypeId::of::<T>())
             .expect("expected column not found in table");
 
-        col.base_ptr()
+        (col.base_ptr(), col.changed_base_ptr_mut())
+    }
+
+    #[inline]
+    fn dangling() -> Self::BasePtr {
+        (NonNull::dangling(), NonNull::dangling())
+    }
+
+    #[inline]
+    unsafe fn fetch_from_base<'w>(
+        base: Self::BasePtr,
+        index: usize,
+        current_tick: u32,
+    ) -> Self::Output<'w> {
+        Mut {
+            current_tick,
+            tracker: unsafe { &mut *base.1.add(index).as_ptr() },
+            inner: unsafe { &mut *base.0.add(index).as_ptr() },
+        }
     }
 
     fn get<'w, Q: QueryBundle, F: Filter>(
@@ -407,11 +458,15 @@ macro_rules! impl_bundle {
                 }
 
                 fn get<'t, T: Filter>(world: &'t World, state: &'t QueryState<Self, T>, table: &'t Table, row: ColumnRow) -> Option<Self::Output<'t>> where Self: 't {
-                    todo!();
+                    todo!("QueryBundle::get");
                 }
 
-                fn fetch_from_base<'w>(ptrs: ($($gen::BasePtr),*), index: usize) -> Self::Output<'w> where Self: 'w {
-                    todo!()
+                unsafe fn fetch_from_base<'w>(ptrs: ($($gen::BasePtr),*), index: usize, current_tick: u32) -> Self::Output<'w> where Self: 'w {
+                    #[allow(non_snake_case)]
+                    let ($($gen),*) = ptrs;
+                    ($(
+                        unsafe { $gen::fetch_from_base($gen, index, current_tick) }
+                    ),*)
                 }
 
                 #[cfg_attr(
@@ -424,6 +479,15 @@ macro_rules! impl_bundle {
                         ($(
                             $gen::access(reg),
                         )*)
+                    )
+                }
+
+                #[inline]
+                fn dangling() -> Self::BasePtrs {
+                    (
+                        $(
+                            $gen::dangling()
+                        ),*
                     )
                 }
 

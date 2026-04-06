@@ -97,6 +97,7 @@ pub trait HoppingIterator<'t>: Sized {
 }
 
 pub struct QueryIter<'w, Q: QueryBundle, F: Filter> {
+    current_tick: u32,
     len: usize,
     index: usize,
     cache: std::slice::Iter<'w, TableCache<Q>>,
@@ -115,6 +116,7 @@ impl<'w, Q: QueryBundle, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, 
 
         let table = unsafe { &*first_cache.table.as_ptr() };
         Self {
+            current_tick: world.current_tick,
             len: table.len(),
             index: 0,
             cache,
@@ -131,11 +133,12 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
     /// [`Empty`]: std::iter::Empty
     pub fn empty() -> Self {
         Self {
+            current_tick: 0,
             len: 0,
             index: 0,
             cache: [].iter(),
-            base_ptrs: todo!(),
-            filters: todo!(),
+            base_ptrs: Q::dangling(),
+            filters: F::dangling(),
         }
     }
 
@@ -146,18 +149,13 @@ impl<'w, Q: QueryBundle, F: Filter> QueryIter<'w, Q, F> {
             let table = unsafe { &*next_cache.table.as_ptr() };
             self.index = 0;
             self.base_ptrs = Q::get_base_ptrs(table);
+            self.len = table.len();
 
             true
         } else {
             self.len = 0;
             false
         }
-    }
-
-    /// Returns the next entity, while applying the query's dynamic filter.
-    #[inline]
-    fn next_filtered(&mut self) -> Option<<Self as Iterator>::Item> {
-        todo!("next_filtered")
     }
 }
 
@@ -168,12 +166,18 @@ impl<'t, Q: QueryBundle, F: Filter> Iterator for QueryIter<'t, Q, F> {
     #[allow(non_snake_case, unused)]
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
+        // println!("checking index {} < {}", self.index, self.len);
+
         // Check whether iterator is empty
         if self.index >= self.len && !self.jump() {
             return None;
         }
 
-        let item = Q::fetch_from_base(self.base_ptrs, self.index);
+        if const { F::METHOD.is_dynamic() } {
+            todo!("dynamic filters");
+        }
+
+        let item = unsafe { Q::fetch_from_base(self.base_ptrs, self.index, self.current_tick) };
 
         self.index += 1;
         return Some(item);

@@ -76,6 +76,10 @@ impl<T: ?Sized> ConstNonNull<T> {
 }
 
 impl<T> ConstNonNull<T> {
+    pub const fn dangling() -> Self {
+        Self(NonNull::<T>::dangling())
+    }
+
     /// # Safety
     ///
     /// Same conditions as [`ptr::add`].

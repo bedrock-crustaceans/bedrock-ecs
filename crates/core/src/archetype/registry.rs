@@ -27,7 +27,7 @@ use crate::util::debug::BorrowEnforcer;
 //
 // Tables cannot be removed because query caching currently relies on tables only being added to skip
 // checking most of the tables.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct Archetypes {
     #[cfg(debug_assertions)]
     enforcer: BorrowEnforcer,
@@ -187,20 +187,23 @@ impl Archetypes {
         let sig = B::get_or_assign_signature(&mut self.component_registry);
 
         // Check whether archetype already exists, otherwise create it
+        // Stacked borrows is too restrictive, create a `SharedReadWrite` tag instead of a `Unique`.
         let lookup = self.lookup.get(&sig);
-        let table = if let Some(index) = lookup {
-            &mut self.tables[*index]
+        let index = lookup.copied().unwrap_or_else(|| self.tables.len());
+
+        let row = if let Some(index) = lookup {
+            self.tables[*index].insert(handle, bundle, current_tick)
         } else {
             self.insert_table(Box::new(unsafe { Table::new::<B>(sig) }))
+                .insert(handle, bundle, current_tick)
         };
-
-        let row = table.insert(handle, bundle, current_tick);
 
         EntityMeta {
             handle,
             row,
             // Safety: This is safe. The pointer inside of a `Box<Table>` is guaranteed to be non-null.
-            table: NonNull::from_mut(table),
+            // We create a pointer directly to the
+            table: NonNull::new((&raw const *self.tables[index]).cast_mut()).unwrap(),
         }
     }
 
@@ -303,6 +306,8 @@ impl Archetypes {
 
         let removal_signature = B::get_or_assign_signature(&mut self.component_registry);
 
+        // Safety: Since the caller has unique access to this archetype registry, it has unique access to
+        // the world. This means there cannot be any other active references to this table.
         let src_table = unsafe { meta.table.as_ptr().as_mut_unchecked() };
 
         // Ensure that the entity actually has all these components

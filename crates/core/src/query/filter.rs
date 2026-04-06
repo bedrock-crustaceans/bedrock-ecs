@@ -125,7 +125,11 @@ pub trait Filter: 'static {
     /// See [`FilterMethod`] for more information.
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
 
+    /// Creates a new iterator state.
     fn new_iter_state(table: &Table) -> Self::IterState;
+
+    /// Creates a dangling but still aligned iterator state.
+    fn dangling() -> Self::IterState;
 }
 
 /// A wrapper around `[bool; N]` that provides a method to create an array. This makes it possible for filter
@@ -175,6 +179,9 @@ impl Filter for () {
 
     #[inline]
     fn new_iter_state(table: &Table) {}
+
+    #[inline]
+    fn dangling() -> Self::IterState {}
 }
 
 /// A tuple of [`Filter`]s.
@@ -217,6 +224,8 @@ pub trait FilterBundle: 'static {
     fn apply_dynamic(changes: Changes, last_tick: u32) -> bool;
 
     fn new_iter_state(table: &Table) -> Self::IterState;
+
+    fn dangling() -> Self::IterState;
 }
 
 /// Implements [`FilterBundle`] for several sizes of tuples.
@@ -270,6 +279,11 @@ macro_rules! impl_filter_bundle {
             #[inline]
             fn new_iter_state(table: &Table) -> Self::IterState {
                 ($($gen::new_iter_state(table)),*)
+            }
+
+            #[inline]
+            fn dangling() -> Self::IterState {
+                ($($gen::dangling()),*)
             }
         }
     }
@@ -329,6 +343,11 @@ impl<B: FilterBundle> Filter for Xor<B> {
     fn new_iter_state(table: &Table) -> Self::IterState {
         B::new_iter_state(table)
     }
+
+    #[inline]
+    fn dangling() -> Self::IterState {
+        B::dangling()
+    }
 }
 
 /// Performs a logical OR on the contained filters. In other words, this filter
@@ -371,6 +390,11 @@ impl<B: FilterBundle> Filter for Or<B> {
     fn new_iter_state(table: &Table) -> Self::IterState {
         B::new_iter_state(table)
     }
+
+    #[inline]
+    fn dangling() -> Self::IterState {
+        B::dangling()
+    }
 }
 
 /// Inverts the filter. For example `Not<With<T>>` is equivalent to `Without<T>`.
@@ -412,6 +436,11 @@ impl<B: FilterBundle> Filter for Not<B> {
     #[inline]
     fn new_iter_state(table: &Table) -> Self::IterState {
         B::new_iter_state(table)
+    }
+
+    #[inline]
+    fn dangling() -> Self::IterState {
+        B::dangling()
     }
 }
 
@@ -461,6 +490,9 @@ impl<T: ComponentBundle> Filter for With<T> {
 
     #[inline]
     fn new_iter_state(_table: &Table) {}
+
+    #[inline]
+    fn dangling() {}
 }
 
 /// Matches only entities that do not have the component `T`.
@@ -504,6 +536,9 @@ impl<T: ComponentBundle> Filter for Without<T> {
 
     #[inline]
     fn new_iter_state(_table: &Table) {}
+
+    #[inline]
+    fn dangling() {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -542,6 +577,11 @@ impl<T: ComponentBundle> Filter for Added<T> {
     #[inline]
     fn new_iter_state(table: &Table) -> Self::IterState {
         T::get_added_tracker_ptrs(table)
+    }
+
+    #[inline]
+    fn dangling() -> Self::IterState {
+        T::dangling_tracker_ptrs()
     }
 }
 
@@ -582,5 +622,10 @@ impl<T: ComponentBundle> Filter for Changed<T> {
     #[inline]
     fn new_iter_state(table: &Table) -> Self::IterState {
         T::get_changed_tracker_ptrs(table)
+    }
+
+    #[inline]
+    fn dangling() -> Self::IterState {
+        T::dangling_tracker_ptrs()
     }
 }
