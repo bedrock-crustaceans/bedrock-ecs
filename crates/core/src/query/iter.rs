@@ -31,12 +31,12 @@ pub trait FragmentIterator<'t, Q: QueryGroup + 't, F: Filter>:
 }
 
 pub struct QueryIter<'query, Q: QueryGroup, F: Filter> {
-    last_run_tick: u32,
-    current_tick: u32,
-    remaining: usize,
-    cache: std::slice::Iter<'query, TableCache<Q>>,
-    base_ptrs: Q::BasePtrs,
-    filters: F::DynamicState,
+    pub(crate) last_run_tick: u32,
+    pub(crate) current_tick: u32,
+    pub(crate) remaining: usize,
+    pub(crate) cache: std::slice::Iter<'query, TableCache<Q>>,
+    pub(crate) base_ptrs: Q::BasePtrs,
+    pub(crate) filters: F::DynamicState,
 }
 
 impl<'query, Q: QueryGroup, F: Filter> FragmentIterator<'query, Q, F> for QueryIter<'query, Q, F> {
@@ -116,6 +116,7 @@ impl<'query, Q: QueryGroup, F: Filter> Iterator for QueryIter<'query, Q, F> {
         }
 
         if !F::IS_ARCHETYPAL {
+            todo!("support double ended iteration and arbitrary splitting");
             let should_return = F::apply_dynamic(&self.filters, self.last_run_tick);
             assert!(should_return);
         }
@@ -157,6 +158,7 @@ impl<'query, Q: QueryGroup, F: Filter> DoubleEndedIterator for QueryIter<'query,
         }
 
         if !F::IS_ARCHETYPAL {
+            todo!("support double ended iteration and arbitrary splitting");
             let should_return = F::apply_dynamic(&self.filters, self.last_run_tick);
             assert!(should_return);
         }

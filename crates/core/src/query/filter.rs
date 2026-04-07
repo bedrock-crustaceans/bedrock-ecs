@@ -13,6 +13,9 @@ use crate::table::{ChangeTracker, Changes, Table};
 /// Marker trait for archetypal filters
 pub trait ArchetypalFilter: Filter {}
 
+/// Marker trait for groups of archetypal filters.
+pub trait ArchetypalFilterGroup: FilterGroup {}
+
 /// Implements the filtering functionality in queries.
 ///
 /// This allows queries to return only a subset of entities that match some predicate.
@@ -142,7 +145,7 @@ impl Filter for () {
 /// a logical AND, requiring all filters to match in order to yield the entity.
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
-pub trait FilterBundle: Send + 'static {
+pub trait FilterGroup: Send + 'static {
     type DynamicState: Send;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
@@ -186,9 +189,11 @@ pub trait FilterBundle: Send + 'static {
 /// Implements [`FilterBundle`] for several sizes of tuples.
 macro_rules! impl_filter_bundle {
     ($($gen:ident),*) => {
+        impl<$($gen:ArchetypalFilter),*> ArchetypalFilterGroup for ($($gen),*) {}
+
         #[allow(non_snake_case)] // Because we use `$gen` as a variable name to avoid having to create custom identifiers.
         #[allow(unused_parens)] // Using this macro on a single type will result in `(A)`, this suppresses that warning.
-        impl<$($gen:Filter),*> FilterBundle for ($($gen),*) {
+        impl<$($gen:Filter),*> FilterGroup for ($($gen),*) {
             type DynamicState = ($($gen::DynamicState),*);
 
             // Set method to dynamic (true) if at least one of the filters in the bundle is dynamic.
@@ -260,25 +265,27 @@ impl_filter_bundle!(A, B, C, D, E);
 /// If it contains more than two filters, it will match if and only if an odd
 /// number of filters match.
 #[repr(transparent)]
-pub struct Xor<B: FilterBundle>(B);
+pub struct Xor<G: FilterGroup>(G);
 
-impl<B: FilterBundle> Filter for Xor<B> {
-    type DynamicState = B::DynamicState;
+impl<G: ArchetypalFilterGroup> ArchetypalFilter for Xor<G> {}
 
-    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
+impl<G: FilterGroup> Filter for Xor<G> {
+    type DynamicState = G::DynamicState;
+
+    const IS_ARCHETYPAL: bool = G::IS_ARCHETYPAL;
 
     #[inline]
-    fn init(archetypes: &mut Archetypes) -> Xor<B> {
-        Xor(B::init(archetypes))
+    fn init(archetypes: &mut Archetypes) -> Xor<G> {
+        Xor(G::init(archetypes))
     }
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::IS_ARCHETYPAL {
+        if G::IS_ARCHETYPAL {
             true
         } else {
             // Only apply dynamic filters if at least one of the contained filters is dynamic.
-            let out = B::apply_dynamic(state, last_run_tick);
+            let out = G::apply_dynamic(state, last_run_tick);
             let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
             truthy % 2 == 1
         }
@@ -293,12 +300,12 @@ impl<B: FilterBundle> Filter for Xor<B> {
 
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
-        B::set_dynamic_state(table)
+        G::set_dynamic_state(table)
     }
 
     #[inline]
     fn dangling() -> Self::DynamicState {
-        B::dangling()
+        G::dangling()
     }
 }
 
@@ -309,24 +316,26 @@ impl<B: FilterBundle> Filter for Xor<B> {
 /// `Or<With<T>>`, or `Or<(With<T>, Without<U>)>`. Nested logical expressions are also permitted
 /// this makes it possible to make more complicated filters.
 #[repr(transparent)]
-pub struct Or<B: FilterBundle>(B);
+pub struct Or<G: FilterGroup>(G);
 
-impl<B: FilterBundle> Filter for Or<B> {
-    type DynamicState = B::DynamicState;
+impl<G: ArchetypalFilterGroup> ArchetypalFilter for Or<G> {}
 
-    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
+impl<G: FilterGroup> Filter for Or<G> {
+    type DynamicState = G::DynamicState;
+
+    const IS_ARCHETYPAL: bool = G::IS_ARCHETYPAL;
 
     #[inline]
-    fn init(archetypes: &mut Archetypes) -> Or<B> {
-        Or(B::init(archetypes))
+    fn init(archetypes: &mut Archetypes) -> Or<G> {
+        Or(G::init(archetypes))
     }
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::IS_ARCHETYPAL {
+        if G::IS_ARCHETYPAL {
             true
         } else {
-            let out = B::apply_dynamic_iterable(state, last_run_tick);
+            let out = G::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| b)
         }
     }
@@ -339,12 +348,12 @@ impl<B: FilterBundle> Filter for Or<B> {
 
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
-        B::set_dynamic_state(table)
+        G::set_dynamic_state(table)
     }
 
     #[inline]
     fn dangling() -> Self::DynamicState {
-        B::dangling()
+        G::dangling()
     }
 }
 
@@ -355,24 +364,26 @@ impl<B: FilterBundle> Filter for Or<B> {
 /// If multiple filters are used, such as `Not<(With<T>, With<U>)>` this filter will return
 /// `true` as long as at least one of the contained filters returns `false`.
 #[repr(transparent)]
-pub struct Not<B>(B);
+pub struct Not<G>(G);
 
-impl<B: FilterBundle> Filter for Not<B> {
-    type DynamicState = B::DynamicState;
+impl<G: ArchetypalFilterGroup> ArchetypalFilter for Not<G> {}
 
-    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
+impl<G: FilterGroup> Filter for Not<G> {
+    type DynamicState = G::DynamicState;
+
+    const IS_ARCHETYPAL: bool = G::IS_ARCHETYPAL;
 
     #[inline]
-    fn init(archetypes: &mut Archetypes) -> Not<B> {
-        Not(B::init(archetypes))
+    fn init(archetypes: &mut Archetypes) -> Not<G> {
+        Not(G::init(archetypes))
     }
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::IS_ARCHETYPAL {
+        if G::IS_ARCHETYPAL {
             true
         } else {
-            let out = B::apply_dynamic_iterable(state, last_run_tick);
+            let out = G::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| !b)
         }
     }
@@ -385,12 +396,12 @@ impl<B: FilterBundle> Filter for Not<B> {
 
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
-        B::set_dynamic_state(table)
+        G::set_dynamic_state(table)
     }
 
     #[inline]
     fn dangling() -> Self::DynamicState {
-        B::dangling()
+        G::dangling()
     }
 }
 
@@ -410,6 +421,8 @@ pub struct With<T: ComponentBundle> {
     signature: Signature,
     _marker: PhantomData<T>,
 }
+
+impl<T: ComponentBundle> ArchetypalFilter for With<T> {}
 
 impl<T: ComponentBundle> Filter for With<T> {
     type DynamicState = ();
@@ -456,6 +469,8 @@ pub struct Without<T: ComponentBundle> {
     signature: Signature,
     _marker: PhantomData<T>,
 }
+
+impl<T: ComponentBundle> ArchetypalFilter for Without<T> {}
 
 impl<T: ComponentBundle> Filter for Without<T> {
     type DynamicState = ();
