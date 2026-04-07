@@ -67,7 +67,8 @@ pub trait TrackerFilterImpl {
 ///
 /// It enables filters such as `With<(Health, Transform)>`.
 pub trait ComponentBundle: 'static + Send {
-    type TrackerPtrs: TrackerFilterImpl;
+    /// Requires `Send` to allow being sent to other threads in parallel iterators.
+    type TrackerPtrs: TrackerFilterImpl + Send;
 
     const LEN: usize;
 

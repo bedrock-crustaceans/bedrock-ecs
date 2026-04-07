@@ -16,7 +16,7 @@ use crate::entity::{Entity, EntityRef};
 use crate::query::{Filter, FragmentIterator, QueryIter, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnRow, Mut, Ref, Table};
-use crate::util::{AsConstNonNull, ConstNonNull};
+use crate::util::{AsConstNonNull, ConstNonNull, SendWrapper};
 use crate::world::World;
 
 /// A collection of types that can be queried.
@@ -47,7 +47,8 @@ pub unsafe trait QueryGroup: Sized {
     where
         Self: 'a;
 
-    type BasePtrs: Copy;
+    /// Needs to be `Send` to allow sending the base pointers to other threads in parallel iterators.
+    type BasePtrs: Copy + Send;
 
     /// The size of the tuple.
     const LEN: usize;
@@ -150,8 +151,10 @@ pub unsafe trait QueryData {
     ///
     /// For some specialized types (such as [`Has`]) this can also be non-pointer data.
     ///
+    /// Needs to be `Send` to allow sending to other threads in parallel iterators.
+    ///
     /// [`Has`]: crate::query::Has
-    type BasePtr: Copy;
+    type BasePtr: Copy + Send;
 
     const TY: QueryType;
 
@@ -341,7 +344,7 @@ unsafe impl<T: Component> QueryData for &mut T {
     type Deref = T;
     type Output<'w> = Mut<'w, T>;
     // base pointer for column + change detection
-    type BasePtr = (NonNull<T>, NonNull<u32>);
+    type BasePtr = SendWrapper<(NonNull<T>, NonNull<u32>)>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -359,20 +362,20 @@ unsafe impl<T: Component> QueryData for &mut T {
             .get_column_by_type(&TypeId::of::<T>())
             .expect("expected column not found in table");
 
-        (col.base_ptr(), col.changed_base_ptr_mut())
+        SendWrapper((col.base_ptr(), col.changed_base_ptr_mut()))
     }
 
     #[inline]
     fn dangling() -> Self::BasePtr {
-        (NonNull::dangling(), NonNull::dangling())
+        SendWrapper((NonNull::dangling(), NonNull::dangling()))
     }
 
     #[inline]
     unsafe fn fetch_from_base<'w>(base: &mut Self::BasePtr, current_tick: u32) -> Self::Output<'w> {
-        let inner = unsafe { &mut *base.0.as_ptr() };
+        let inner = unsafe { &mut *base.0.0.as_ptr() };
         let tracker = unsafe { &mut *base.1.as_ptr() };
 
-        *base = (unsafe { base.0.add(1) }, unsafe { base.1.add(1) });
+        *base = SendWrapper((unsafe { base.0.0.add(1) }, unsafe { base.0.1.add(1) }));
 
         Mut {
             current_tick,

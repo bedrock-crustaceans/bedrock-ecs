@@ -1,4 +1,9 @@
-use std::{alloc::Layout, marker::PhantomData, ptr::NonNull};
+use std::{
+    alloc::Layout,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
 /// Creates an array of type system integers.
 #[cfg(feature = "generics")]
@@ -11,6 +16,27 @@ macro_rules! create_tarray {
         generic_array::typenum::TArr<$head, $crate::create_tarray!($($tail),*)>
     }
 }
+
+/// Wraps a non-`Send` type to make it `Send`.
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SendWrapper<T>(pub T);
+
+impl<T> Deref for SendWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for SendWrapper<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+unsafe impl<T> Send for SendWrapper<T> {}
 
 pub trait AsConstNonNull<T: ?Sized> {
     fn as_const_non_null(&self) -> ConstNonNull<T>;
@@ -99,6 +125,8 @@ impl<T> From<NonNull<T>> for ConstNonNull<T> {
         Self(value)
     }
 }
+
+unsafe impl<T> Send for ConstNonNull<T> {}
 
 pub trait LayoutExt {
     fn repeat_packed_ext(&self, n: usize) -> Option<Layout>;

@@ -24,7 +24,7 @@ pub trait Filter: 'static {
     ///
     /// This is important because an older version of the ECS stored all state in the iterator regardless,
     /// which caused performance issues due to register pressure.
-    type DynamicState;
+    type DynamicState: Send;
 
     /// Which filtering method this filter uses.
     ///
@@ -140,7 +140,7 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterBundle: 'static {
-    type DynamicState;
+    type DynamicState: Send;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
