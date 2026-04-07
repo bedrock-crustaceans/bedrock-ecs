@@ -5,7 +5,7 @@ use rayon::iter::plumbing::{
     Consumer, Folder, Producer, ProducerCallback, UnindexedConsumer, UnindexedProducer, bridge,
     bridge_unindexed,
 };
-use rayon::iter::{IndexedParallelIterator, ParallelIterator};
+use rayon::iter::{FlatMap, IndexedParallelIterator, ParallelIterator};
 
 use crate::query::{
     ArchetypalFilter, ArchetypalProducer, Filter, QueryGroup, QueryIter, QueryState, TableCache,
@@ -23,13 +23,13 @@ pub struct ParallelQueryIter<'query, Q: QueryGroup, F: Filter> {
 }
 
 impl<'query, Q: QueryGroup, F: Filter> ParallelQueryIter<'query, Q, F> {
-    pub fn from_state(world: &'query World, state: &'query QueryState<Q, F>) -> Self {
-        Self {
+    pub fn from_state(world: &'query World, state: &'query QueryState<Q, F>) {
+        let iter = Self {
             current_tick: world.current_tick,
             last_run_tick: state.last_run_tick,
             tables: &state.cache,
             _marker: PhantomData,
-        }
+        };
     }
 
     fn unfiltered_len(&self) -> usize {
@@ -46,6 +46,21 @@ impl<'query, Q: QueryGroup, F: Filter> ParallelIterator for ParallelQueryIter<'q
     fn drive_unindexed<C: UnindexedConsumer<Self::Item>>(self, consumer: C) -> C::Result {
         let producer = ArchetypalProducer::new(self);
         bridge_unindexed(producer, consumer)
+    }
+}
+
+impl<'query, Q: QueryGroup, F: Filter> IndexedParallelIterator for ParallelQueryIter<'query, Q, F> {
+    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
+        bridge(self, consumer)
+    }
+
+    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
+        callback.callback(ArchetypalProducer::new(self))
+    }
+
+    /// The amount of tables that this iterator will iterate over.
+    fn len(&self) -> usize {
+        self.tables.len()
     }
 }
 
@@ -111,20 +126,5 @@ impl<'query, Q: QueryGroup, F: Filter> DoubleEndedIterator for TableIter<'query,
 impl<'query, Q: QueryGroup, F: ArchetypalFilter> ExactSizeIterator for TableIter<'query, Q, F> {
     fn len(&self) -> usize {
         todo!()
-    }
-}
-
-impl<'query, Q: QueryGroup, F: Filter> IndexedParallelIterator for ParallelQueryIter<'query, Q, F> {
-    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
-        callback.callback(ArchetypalProducer::new(self))
-    }
-
-    /// The amount of tables that this iterator will iterate over.
-    fn len(&self) -> usize {
-        self.tables.len()
     }
 }
