@@ -11,7 +11,7 @@ use crate::{
     archetype::Signature,
     component::{Component, ComponentId, TypeRegistry},
     prelude::ComponentBundle,
-    query::{ArrayLike, Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache},
+    query::{Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache},
     scheduler::{AccessDesc, AccessType},
     table::{ColumnRow, Table},
     world::World,
@@ -89,38 +89,4 @@ pub struct HasIter<'t> {
     // There is nothing preventing this iterator from outliving the query, but
     // the query iterators are required to not outlive the query for soundness reasons.
     _marker: PhantomData<&'t ()>,
-}
-
-// Safety: Out of bounds access is not a concern here since it always returns a constant bool.
-//
-// Nevertheless, this iterator keeps track of a fake "length" of the current table to ensure the query
-// does not iterate forever.
-//
-// This is only a concern for queries of the form `Query<Has<T>>` since normally other iterators are there
-// to stop iteration.
-unsafe impl ArrayLike for HasIter<'_> {
-    type Item = bool;
-
-    unsafe fn filter_unchecked(&self, index: usize) -> bool {
-        todo!()
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item {
-        self.matches
-    }
-
-    #[inline]
-    fn empty() -> Self {
-        Self {
-            len: 0,
-            matches: false,
-            _marker: PhantomData,
-        }
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len
-    }
 }

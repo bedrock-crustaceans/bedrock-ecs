@@ -10,67 +10,17 @@ use crate::component::{ComponentBundle, TrackerFilterImpl};
 use crate::prelude::Component;
 use crate::table::{ChangeTracker, Changes, Table};
 
-/// The possible methods of filtering used by queries.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum FilterMethod {
-    /// Coarse filters are used only when updating the query cache (i.e. when the archetype generation is increased
-    /// due to a newly added table.) Coarse filters are only able to filter out entire tables and do not support
-    /// entity-level filtering.
-    ///
-    /// The obvious examples of coarse filters are [`With`] and [`Without`], which simply match the table signature to check
-    /// whether the table contains the filtered components.
-    Coarse,
-    /// Dynamic filters are invoked per entity during iteration. Unlike coarse filters, these allow filtering for specific entities
-    /// within the table.
-    ///
-    /// The main use of these types of filters is in the [`Added`] and [`Changed`] filters.
-    ///
-    /// Dynamic filters can also have an associated coarse filter, in fact most do. The aforementioned [`Added`] and [`Changed`]
-    /// traits for example filter out tables that do not contain the components they are targeting.
-    Dynamic,
-}
-
-impl FilterMethod {
-    /// Whether this enum equals [`Dynamic`].
-    ///
-    /// [`Dynamic`]: FilterMethod::Dynamic.
-    ///
-    /// This function is separate from the [`PartialEq`] trait to allow filter methods
-    /// to be compared at compile time. Traits cannot currently have const functions.
-    #[inline]
-    pub const fn is_dynamic(&self) -> bool {
-        self.to_bool()
-    }
-
-    /// Convert the filter method to a bool.
-    ///
-    /// This is not implemented using [`Into`] since traits cannot have const functions.
-    #[inline]
-    pub const fn to_bool(self) -> bool {
-        // `PartialEq` is not const so we cannot use regular comparison
-        matches!(self, Self::Dynamic)
-    }
-
-    /// Converts a bool into a filter method.
-    ///
-    /// This is not implement using [`From`] since traits cannot have const functions.
-    #[inline]
-    pub const fn from_bool(v: bool) -> Self {
-        if v { Self::Dynamic } else { Self::Coarse }
-    }
-}
-
 /// Implements the filtering functionality in queries.
 ///
 /// This allows queries to return only a subset of entities that match some predicate.
 ///
-/// Examples of coarse filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
+/// Examples of archetypal filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
 /// dynamic filters.
 pub trait Filter: 'static {
     /// The state for the filter that is stored inside of the query.
     ///
     /// This is used by dynamic filters to keep track of the change columns.
-    /// Coarse filters will not use this at all, keeping the iterator bundle structs very small.
+    /// archetypal filters will not use this at all, keeping the iterator bundle structs very small.
     ///
     /// This is important because an older version of the ECS stored all state in the iterator regardless,
     /// which caused performance issues due to register pressure.
@@ -80,12 +30,10 @@ pub trait Filter: 'static {
     ///
     /// Please note that dynamic filters can impact performance since the [`apply_dynamic`]
     /// method must be called for every entity that is iterated over. If the query only uses
-    /// coarse filters, this entire check is removed by the Rust compiler.
-    ///
-    /// See [`FilterMethod`] for more information.
+    /// archetypal filters, this entire check is removed by the Rust compiler.
     ///
     /// [`apply_dynamic`]: Filter::apply_dynamic
-    const METHOD: FilterMethod;
+    const IS_ARCHETYPAL: bool;
 
     /// Whether this filter always returns `true`. This is used to detect when the `()` filter is being used in queries,
     /// since specialisation is unstable.
@@ -101,21 +49,21 @@ pub trait Filter: 'static {
     /// This state is stored inside of the query state and is persistent across system calls.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    /// Applies the coarse filter, returning whether the table matches the filter.
+    /// Applies the archetypal filter, returning whether the table matches the filter.
     ///
     /// Before a query fetches the requested data, it will cache the tables it intends to access.
     /// These tables are found by performing a bitwise AND of the query signature and table signature.
-    /// Coarse filters are only able to discard entire archetype tables, dynamic filters should be used to filter
+    /// archetypal filters are only able to discard entire archetype tables, dynamic filters should be used to filter
     /// individual entities within a table.
     ///
     /// If this returns false, the table is ignored, otherwise the table is added to the query cache.
     ///
-    /// Examples of coarse filters are [`With`] and [`Without`].
-    /// However, nearly all dynamic filters also have a coarse part.
+    /// Examples of archetypal filters are [`With`] and [`Without`].
+    /// However, nearly all dynamic filters also have a archetypal part.
     /// [`Changed`] filters for tables that include its component for example.
     ///
     /// See [`FilterMethod`] for more information.
-    fn apply_coarse(&self, archetype: &Signature) -> bool;
+    fn apply_archetypal(&self, archetype: &Signature) -> bool;
 
     /// Applies dynamic filters. If this function returns `true`, the component will be yielded
     /// by the iterator. Otherwise this component and any other components belonging to the same entity in the query
@@ -162,14 +110,14 @@ impl<const N: usize> FilterIterable for [bool; N] {
 impl Filter for () {
     type DynamicState = ();
 
-    const METHOD: FilterMethod = FilterMethod::Coarse;
+    const IS_ARCHETYPAL: bool = true;
     const TRIVIAL: bool = true;
 
     #[inline]
     fn init(_archetypes: &mut Archetypes) {}
 
     #[inline]
-    fn apply_coarse(&self, _archetype: &Signature) -> bool {
+    fn apply_archetypal(&self, _archetype: &Signature) -> bool {
         true
     }
 
@@ -196,18 +144,18 @@ pub trait FilterBundle: 'static {
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
-    const METHOD: FilterMethod;
+    const IS_ARCHETYPAL: bool;
 
     /// Initializes the state of all filters in this bundle.
     fn init(archetypes: &mut Archetypes) -> Self;
 
-    /// Applies coarse part of all filters in this collection and returns an iterators over the results.
+    /// Applies archetypal part of all filters in this collection and returns an iterators over the results.
     ///
     /// This iterator is ingested by the logical expressions such as [`Not`], [`Or`], etc. If you simply want to
-    /// perform a logical AND, use [`apply_coarse`] instead.
+    /// perform a logical AND, use [`apply_archetypal`] instead.
     ///
-    /// [`apply_coarse`]: Self::apply_coarse
-    fn apply_coarse_iterable(&self, archetype: &Signature) -> impl FilterIterable;
+    /// [`apply_archetypal`]: Self::apply_archetypal
+    fn apply_archetypal_iterable(&self, archetype: &Signature) -> impl FilterIterable;
 
     /// Applies the dynamic filter of all filters in this collection and returns an iterator over the
     /// results.
@@ -221,8 +169,8 @@ pub trait FilterBundle: 'static {
         last_run_tick: u32,
     ) -> impl FilterIterable;
 
-    /// Apply all coarse filters and AND them together.
-    fn apply_coarse(&self, signature: &Signature) -> bool;
+    /// Apply all archetypal filters and AND them together.
+    fn apply_archetypal(&self, signature: &Signature) -> bool;
 
     /// Apply all dynamic filters and AND them together.
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool;
@@ -241,8 +189,8 @@ macro_rules! impl_filter_bundle {
             type DynamicState = ($($gen::DynamicState),*);
 
             // Set method to dynamic (true) if at least one of the filters in the bundle is dynamic.
-            // Otherwise it is set to coarse.
-            const METHOD: FilterMethod = FilterMethod::from_bool($($gen::METHOD.to_bool())||*);
+            // Otherwise it is set to archetypal.
+            const IS_ARCHETYPAL: bool = $($gen::IS_ARCHETYPAL)&&*;
 
             #[inline]
             fn init(archetypes: &mut Archetypes) -> Self {
@@ -251,19 +199,19 @@ macro_rules! impl_filter_bundle {
             }
 
             #[inline]
-            fn apply_coarse(&self, sig: &Signature) -> bool {
+            fn apply_archetypal(&self, sig: &Signature) -> bool {
                 // Since `self` is a tuple, we destructure it like this...
                 let ($($gen),*) = &self;
                 // ...and then apply all filters and combine them.
-                $($gen.apply_coarse(sig))&&*
+                $($gen.apply_archetypal(sig))&&*
             }
 
             #[inline]
-            fn apply_coarse_iterable(&self, sig: &Signature) -> impl FilterIterable {
+            fn apply_archetypal_iterable(&self, sig: &Signature) -> impl FilterIterable {
                 // Since `self` is a tuple, we destructure it like this...
                 let ($($gen),*) = &self;
                 // ...and then return an array of the results.
-                [$($gen.apply_coarse(sig)),*]
+                [$($gen.apply_archetypal(sig)),*]
             }
 
             #[inline]
@@ -314,7 +262,7 @@ pub struct Xor<B: FilterBundle>(B);
 impl<B: FilterBundle> Filter for Xor<B> {
     type DynamicState = B::DynamicState;
 
-    const METHOD: FilterMethod = B::METHOD;
+    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
 
     #[inline]
     fn init(archetypes: &mut Archetypes) -> Xor<B> {
@@ -323,22 +271,19 @@ impl<B: FilterBundle> Filter for Xor<B> {
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::METHOD.is_dynamic() {
+        if B::IS_ARCHETYPAL {
+            true
+        } else {
             // Only apply dynamic filters if at least one of the contained filters is dynamic.
             let out = B::apply_dynamic(state, last_run_tick);
             let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
             truthy % 2 == 1
-        } else {
-            // Explicitly return true. This makes it easier for the compiler to see this code can be compiled away,
-            // but also prevents the issue where if no filters are dynamic, they will all return true and the xor filter
-            // would return false for every single entity it encounters.
-            true
         }
     }
 
     #[inline]
-    fn apply_coarse(&self, archetypes: &Signature) -> bool {
-        let out = self.0.apply_coarse(archetypes);
+    fn apply_archetypal(&self, archetypes: &Signature) -> bool {
+        let out = self.0.apply_archetypal(archetypes);
         let truthy = out.iter().map(|b| u8::from(b)).sum::<u8>();
         truthy % 2 == 1
     }
@@ -366,7 +311,7 @@ pub struct Or<B: FilterBundle>(B);
 impl<B: FilterBundle> Filter for Or<B> {
     type DynamicState = B::DynamicState;
 
-    const METHOD: FilterMethod = B::METHOD;
+    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
 
     #[inline]
     fn init(archetypes: &mut Archetypes) -> Or<B> {
@@ -375,18 +320,17 @@ impl<B: FilterBundle> Filter for Or<B> {
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::METHOD.is_dynamic() {
+        if B::IS_ARCHETYPAL {
+            true
+        } else {
             let out = B::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| b)
-        } else {
-            // Skip the filter application altogether if there are no dynamic filters.
-            true
         }
     }
 
     #[inline]
-    fn apply_coarse(&self, archetypes: &Signature) -> bool {
-        let out = self.0.apply_coarse_iterable(archetypes);
+    fn apply_archetypal(&self, archetypes: &Signature) -> bool {
+        let out = self.0.apply_archetypal_iterable(archetypes);
         out.iter().any(|b| b)
     }
 
@@ -413,7 +357,7 @@ pub struct Not<B>(B);
 impl<B: FilterBundle> Filter for Not<B> {
     type DynamicState = B::DynamicState;
 
-    const METHOD: FilterMethod = B::METHOD;
+    const IS_ARCHETYPAL: bool = B::IS_ARCHETYPAL;
 
     #[inline]
     fn init(archetypes: &mut Archetypes) -> Not<B> {
@@ -422,18 +366,17 @@ impl<B: FilterBundle> Filter for Not<B> {
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        if B::METHOD.is_dynamic() {
+        if B::IS_ARCHETYPAL {
+            true
+        } else {
             let out = B::apply_dynamic_iterable(state, last_run_tick);
             out.iter().any(|b| !b)
-        } else {
-            // Skip the filter application altogether if there are no dynamic filters.
-            true
         }
     }
 
     #[inline]
-    fn apply_coarse(&self, archetypes: &Signature) -> bool {
-        let out = self.0.apply_coarse_iterable(archetypes);
+    fn apply_archetypal(&self, archetypes: &Signature) -> bool {
+        let out = self.0.apply_archetypal_iterable(archetypes);
         out.iter().any(|b| !b)
     }
 
@@ -468,7 +411,7 @@ pub struct With<T: ComponentBundle> {
 impl<T: ComponentBundle> Filter for With<T> {
     type DynamicState = ();
 
-    const METHOD: FilterMethod = FilterMethod::Coarse;
+    const IS_ARCHETYPAL: bool = true;
 
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
@@ -482,13 +425,11 @@ impl<T: ComponentBundle> Filter for With<T> {
     }
 
     #[inline]
-    fn apply_coarse(&self, sig: &Signature) -> bool {
+    fn apply_archetypal(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 
-    #[inline]
     fn apply_dynamic(_state: &Self::DynamicState, _last_run_tick: u32) -> bool {
-        // This filter only filters at the table level.
         true
     }
 
@@ -516,7 +457,7 @@ pub struct Without<T: ComponentBundle> {
 impl<T: ComponentBundle> Filter for Without<T> {
     type DynamicState = ();
 
-    const METHOD: FilterMethod = FilterMethod::Coarse;
+    const IS_ARCHETYPAL: bool = true;
 
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
@@ -529,11 +470,10 @@ impl<T: ComponentBundle> Filter for Without<T> {
         }
     }
 
-    fn apply_coarse(&self, sig: &Signature) -> bool {
+    fn apply_archetypal(&self, sig: &Signature) -> bool {
         sig.is_disjoint(&self.signature)
     }
 
-    #[inline]
     fn apply_dynamic(_state: &Self::DynamicState, _last_run_tick: u32) -> bool {
         true
     }
@@ -555,7 +495,7 @@ impl<T: Component> Filter for Added<T> {
     /// A base pointer to the start of the change tracker.
     type DynamicState = <T as ComponentBundle>::TrackerPtrs;
 
-    const METHOD: FilterMethod = FilterMethod::Dynamic;
+    const IS_ARCHETYPAL: bool = false;
 
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
@@ -569,7 +509,7 @@ impl<T: Component> Filter for Added<T> {
     }
 
     #[inline]
-    fn apply_coarse(&self, sig: &Signature) -> bool {
+    fn apply_archetypal(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 
@@ -600,7 +540,7 @@ impl<T: Component> Filter for Changed<T> {
     /// A base pointer to the start of the change tracker.
     type DynamicState = <T as ComponentBundle>::TrackerPtrs;
 
-    const METHOD: FilterMethod = FilterMethod::Dynamic;
+    const IS_ARCHETYPAL: bool = false;
 
     fn init(archetypes: &mut Archetypes) -> Self {
         tracing::trace!(
@@ -614,7 +554,7 @@ impl<T: Component> Filter for Changed<T> {
     }
 
     #[inline]
-    fn apply_coarse(&self, sig: &Signature) -> bool {
+    fn apply_archetypal(&self, sig: &Signature) -> bool {
         sig.contains(&self.signature)
     }
 

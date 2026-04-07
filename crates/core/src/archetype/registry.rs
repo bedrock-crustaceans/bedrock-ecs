@@ -137,7 +137,7 @@ impl Archetypes {
                 if sig.contains(archetype) {
                     // This table matches the queried components. We now apply all passive filters.
                     // Dynamic filters will be applied during iteration.
-                    if !filter.apply_coarse(sig) {
+                    if !filter.apply_archetypal(sig) {
                         return None;
                     }
 

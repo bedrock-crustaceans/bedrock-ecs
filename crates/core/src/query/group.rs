@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::archetype::Signature;
 use crate::component::{Component, ComponentId, TypeRegistry};
 use crate::entity::{Entity, EntityRef};
-use crate::query::{ArrayLike, Filter, JumpingIterator, QueryIter, QueryState};
+use crate::query::{Filter, FragmentIterator, QueryIter, QueryState};
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::table::{ColumnRow, Mut, Ref, Table};
 use crate::util::{AsConstNonNull, ConstNonNull};
@@ -48,25 +48,6 @@ pub unsafe trait QueryGroup: Sized {
         Self: 'a;
 
     type BasePtrs: Copy;
-
-    #[cfg(feature = "generics")]
-    /// The type of iterator over the columns. Every collection size has a different iterator type
-    /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    ///
-    /// The `F` generic is the filter that should be applied to the iterators.
-    ///
-    /// [`IteratorBundle1`]: crate::query::IteratorBundle1
-    /// [`IteratorBundle2`]: crate::query::IteratorBundle2
-    type Iter<'a, F: Filter>: JumpingIterator<'a, Self, F>
-    where
-        Self: 'a;
-
-    #[cfg(not(feature = "generics"))]
-    /// The type of iterator over the columns. Every collection size has a different iterator type
-    /// specialised for its size. These iterators are [`IteratorBundle1`], [`IteratorBundle2`], ...
-    type Iter<'a>: JumpingIterator<'a> + Iterator<Item = Self::Output<'a>>
-    where
-        Self: 'a;
 
     /// The size of the tuple.
     const LEN: usize;
@@ -435,8 +416,6 @@ macro_rules! impl_bundle {
                     ($($gen),*): 't;
 
                 type BasePtrs = ($($gen::BasePtr),*);
-
-                type Iter<'t, FA: Filter> = QueryIter<'t, ($($gen),*), FA> where Self: 't;
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 

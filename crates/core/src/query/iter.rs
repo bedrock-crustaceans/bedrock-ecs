@@ -17,96 +17,28 @@ use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
 use crate::world::World;
 
-/// Queries do not care what a type is or contains, as long as it speaks the language of indices and filters.
-/// This trait encapsulates that logic, allowing any type implementing this trait to be queried.
-///
-/// This is a separate trait from [`Index`] to allow for access without bounds checking.
-/// Bounds checking is already performed by the query itself and should not be done by this trait.
-///
-/// It also moves the output type to an associated type rather than using a generic, since `Index<T>` would force
-/// every array-like object to return `T`.
-///
-/// # Safety
-///
-/// - `Self` must have exactly as many items as the query thinks it has. I.e. if
-///   there are five entities and we query `Query<(Entity, Has<Component>)>`, then
-///   the underlying array for `Has<Component>` must be able to return at least 5 items.
-///
-/// - [`len`] must return the exact size of the type. The type must support indexing via [`get_unchecked`]
-///   up to this length.
-///
-/// Queries perform their own bounds checking and then access all of the arrays without
-/// performing additional checks. This trait must be implemented correctly to prevent out of
-/// bounds access.
-///
-/// [`Index`]: std::ops::Index
-/// [`len`]: crate::query::ArrayLike::len
-/// [`get_unchecked`]: crate::query::ArrayLike::get_unchecked
-pub unsafe trait ArrayLike {
-    /// The item that this "array" contains.
-    type Item;
-
-    /// Returns the item at the given index.
-    ///
-    /// # Safety
-    ///
-    /// `index` should be within bounds for this array.
-    unsafe fn get_unchecked(&mut self, index: usize) -> Self::Item;
-
-    unsafe fn filter_unchecked(&self, index: usize) -> bool;
-
-    fn empty() -> Self;
-
-    /// The length of this array.
-    fn len(&self) -> usize;
-}
-
 /// An iterator that can jump from table to table.
 ///
 /// This is useful when querying a component that is contained in multiple archetypes.
-///
 #[cfg(feature = "generics")]
-pub trait JumpingIterator<'t, Q: QueryGroup + 't, F: Filter>:
+pub trait FragmentIterator<'t, Q: QueryGroup + 't, F: Filter>:
     Iterator<Item = Q::Output<'t>>
 {
     /// Creates a new iterator over the given cache.
-    fn from_cache(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
+    fn from_state(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
 }
 
-/// An iterator that can jump from table to table.
-///
-/// These iterators usually contain multiple subiterators that iterate over the columns in each table.
-#[cfg(not(feature = "generics"))]
-pub trait HoppingIterator<'t>: Sized {
-    /// Creates a new iterator over the given cache.
-    fn new(world: &'t World, cache: &'t [TableCache]) -> Self;
-
-    // /// Estimates the total amount of components remaining, including remaining tables.
-    // /// This estimate does not apply filters and will therefore always overestimate.
-    // ///
-    // /// Note that this iterator does not implement [`ExactSizeIterator`] due to the fact that
-    // /// computing the length isn't a simple operation. The query needs to look through all of the
-    // /// future tables and compute their lengths. Therefore, this method has a performance cost.
-    // fn estimate_len(&self) -> usize;
-
-    /// Returns the length of the iterator of the *current* table *without* filters.
-    ///
-    /// A hopping iterator jumps between tables and this function returns the remaining
-    /// components in the current table, *not* the total amount of components.
-    fn current_len(&self) -> usize;
-}
-
-pub struct QueryIter<'w, Q: QueryGroup, F: Filter> {
+pub struct QueryIter<'query, Q: QueryGroup, F: Filter> {
     last_run_tick: u32,
     current_tick: u32,
     remaining: usize,
-    cache: std::slice::Iter<'w, TableCache<Q>>,
+    cache: std::slice::Iter<'query, TableCache<Q>>,
     base_ptrs: Q::BasePtrs,
     filters: F::DynamicState,
 }
 
-impl<'w, Q: QueryGroup, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q, F> {
-    fn from_cache(world: &'w World, meta: &'w QueryState<Q, F>) -> Self {
+impl<'query, Q: QueryGroup, F: Filter> FragmentIterator<'query, Q, F> for QueryIter<'query, Q, F> {
+    fn from_state(world: &'query World, meta: &'query QueryState<Q, F>) -> Self {
         let mut cache = meta.cache.iter();
 
         // Look up all column base pointers.
@@ -126,7 +58,7 @@ impl<'w, Q: QueryGroup, F: Filter> JumpingIterator<'w, Q, F> for QueryIter<'w, Q
     }
 }
 
-impl<'w, Q: QueryGroup, F: Filter> QueryIter<'w, Q, F> {
+impl<'query, Q: QueryGroup, F: Filter> QueryIter<'query, Q, F> {
     /// Creates an empty iterator that always returns `None`. This exists because
     /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
     ///
@@ -170,8 +102,8 @@ impl<'w, Q: QueryGroup, F: Filter> QueryIter<'w, Q, F> {
     }
 }
 
-impl<'t, Q: QueryGroup, F: Filter> Iterator for QueryIter<'t, Q, F> {
-    type Item = Q::Output<'t>;
+impl<'query, Q: QueryGroup, F: Filter> Iterator for QueryIter<'query, Q, F> {
+    type Item = Q::Output<'query>;
 
     #[allow(non_snake_case, unused)]
     #[inline]
@@ -181,7 +113,7 @@ impl<'t, Q: QueryGroup, F: Filter> Iterator for QueryIter<'t, Q, F> {
             return None;
         }
 
-        if const { F::METHOD.is_dynamic() } {
+        if !F::IS_ARCHETYPAL {
             let should_return = F::apply_dynamic(&self.filters, self.last_run_tick);
             assert!(should_return);
         }

@@ -1,49 +1,33 @@
-macro_rules! impl_bundle {
-    ($count:literal, $($gen:ident),*) => {
-        paste::paste! {
-            // #[doc = concat("A parallel iterator that can iterate over ", stringify!($count), " components at a time")]
-            // #[allow(unused_parens)]
-            // pub struct [< ParIteratorBundle $count >]<Q: QueryGroup, FA: Filter, $($gen:QueryData),*> {
-            //     world: &'w World,
-            //     cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
-            //     iters
-            //     current_tick: u32,
-            //     last_tick: u32,
-            //     _marker: PhantomData<&'w
-            // }
+use rayon::iter::plumbing::{Consumer, ProducerCallback, UnindexedConsumer};
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 
-            // #[doc = concat!("An iterator that can iterate over ", stringify!($count), " components at a time")]
-            // #[allow(unused_parens)]
-            // pub struct [< IteratorBundle $count >]<'w, Q: QueryGroup, FA: Filter, $($gen: QueryData),*> {
-            //     world: &'w World,
-            //     /// The remaining cached tables that this iterator will hop to.
-            //     cache: std::slice::Iter<'w, TableCache<Q::AccessCount>>,
-            //     /// The subiterators of this iterator.
-            //     iters: ($($gen::Iter<'w, FA>),*),
-            //     /// The current tick.
-            //     current_tick: u32,
-            //     /// The previous tick that this iterator was used in.
-            //     last_tick: u32,
-            //     /// Ensures that the type system arguments live for at least `'w`.
-            //     _marker: PhantomData<&'w ($($gen),*)>
-            // }
+use crate::query::{Filter, QueryGroup, QueryState};
+use crate::world::World;
 
-            // impl<'w, Q: QueryGroup, FA: Filter, $($gen: QueryData),*> [< IteratorBundle $count >]<'w, Q, FA, $($gen),*> {
-            //     /// Creates an empty iterator that always returns `None`. This exists because
-            //     /// [`std::iter::empty()`] returns a concrete [`Empty`] type that is incompatible with the trait.
-            //     ///
-            //     /// [`Empty`]: std::iter::Empty
-            //     pub fn empty(world: &'w World) -> Self {
-            //         Self {
-            //             world,
-            //             current_tick: 0,
-            //             last_tick: 0,
-            //             cache: [].iter(),
-            //             iters: ($($gen::Iter::empty(world)),*),
-            //             _marker: PhantomData
-            //         }
-            //     }
-            // }
-        }
-    };
+pub struct ParallelQueryIter<'query, Q: QueryGroup, F: Filter> {}
+
+impl<'world, Q: QueryGroup, F: Filter> ParallelQueryIter<'world, Q, F> {
+    pub fn from_state(world: &'world World, state: &'world mut QueryState<Q, F>) {
+        todo!()
+    }
+}
+
+impl<'query, Q: QueryGroup, F: Filter> ParallelIterator for ParallelQueryIter<'query, Q, F> {
+    type Item: Q::Output<'query>;
+
+    fn drive_unindexed<C: UnindexedConsumer<Self::Item>>(self, consumer: C) -> C::Result {
+        rayon::iter::plumbing::bridge(self, consumer)
+    }
+}
+
+impl<'query, Q: QueryGroup> IndexedParallelIterator for ParallelQueryIter<'query, Q, ()> {
+    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {}
+
+    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
+        rayon::iter::plumbing::bridge(self, consumer)
+    }
+
+    fn len(&self) -> usize {
+        todo!()
+    }
 }

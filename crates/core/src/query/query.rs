@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
 use crate::entity::Entity;
-use crate::query::{Filter, JumpingIterator, QueryGroup};
+use crate::query::{Filter, FragmentIterator, ParallelQueryIter, QueryGroup, QueryIter};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
 use crate::system::{SysArg, SystemMeta};
@@ -91,8 +91,13 @@ impl<'w, Q: QueryGroup, F: Filter> Query<'w, Q, F> {
     /// Most of the query is cached, hence the query generally does not have to perform any look ups and will immediately
     /// retrieve items from the tables.
     #[inline]
-    pub fn iter(&self) -> Q::Iter<'_, F> {
-        self.state.iter(self.world)
+    pub fn iter(&self) -> QueryIter<'_, Q, F> {
+        QueryIter::from_state(self.world, self.state)
+    }
+
+    #[inline]
+    pub fn par_iter(&self) -> ParallelQueryIter<'_, Q, F> {
+        ParallelQueryIter::from_state(self.world, self.state)
     }
 }
 
@@ -234,12 +239,6 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
         }
     }
 
-    /// Creates an iterator that iterates over this cache.
-    #[inline]
-    pub(crate) fn iter<'w>(&'w self, world: &'w World) -> Q::Iter<'w, F> {
-        Q::Iter::from_cache(world, self)
-    }
-
     /// Returns the amount of components that this query requests.
     #[inline]
     pub const fn data_len(&self) -> usize {
@@ -287,7 +286,7 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
 #[diagnostic::do_not_recommend]
 impl<'q, Q: QueryGroup, F: Filter> IntoIterator for &'q Query<'_, Q, F> {
     type Item = Q::Output<'q>;
-    type IntoIter = Q::Iter<'q, F>;
+    type IntoIter = QueryIter<'q, Q, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
