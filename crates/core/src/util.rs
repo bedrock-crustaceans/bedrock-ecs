@@ -125,6 +125,11 @@ impl<T: Send + Sync> MutNonNull<T> {
 
         Self(unsafe { self.0.add(n) })
     }
+
+    #[inline]
+    pub const unsafe fn offset(&self, n: isize) -> Self {
+        Self(unsafe { self.0.offset(n) })
+    }
 }
 
 impl<T: Send + Sync> From<NonNull<T>> for MutNonNull<T> {
@@ -202,6 +207,11 @@ impl<T: Send + Sync> ConstNonNull<T> {
         debug_assert!(n < isize::MAX as usize);
 
         Self(unsafe { self.0.add(n) })
+    }
+
+    #[inline]
+    pub const unsafe fn offset(&self, n: isize) -> Self {
+        Self(unsafe { self.0.offset(n) })
     }
 }
 

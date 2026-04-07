@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
 use rayon::iter::plumbing::{
-    Consumer, Folder, ProducerCallback, UnindexedConsumer, UnindexedProducer, bridge_unindexed,
+    Consumer, Folder, Producer, ProducerCallback, UnindexedConsumer, UnindexedProducer, bridge,
+    bridge_unindexed,
 };
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 
-use crate::query::{Filter, QueryGroup, QueryState, TableCache};
+use crate::query::{ArchetypalFilter, Filter, QueryGroup, QueryIter, QueryState, TableCache};
 use crate::world::World;
 
 pub struct QueryFolder<'query, Q: QueryGroup, F: Filter> {
@@ -58,15 +59,25 @@ impl<'query, Q: QueryGroup, F: Filter> UnindexedProducer for UnindexedQueryProdu
 pub struct ParallelQueryIter<'query, Q: QueryGroup, F: Filter> {
     last_run_tick: u32,
     current_tick: u32,
-    remaining: usize,
-    cache: std::slice::Iter<'query, TableCache<Q>>,
-    base_ptrs: Q::BasePtrs,
-    filters: F::DynamicState,
+    cache: &'query [TableCache<Q>],
+    _marker: PhantomData<F>,
 }
 
-impl<'world, Q: QueryGroup, F: Filter> ParallelQueryIter<'world, Q, F> {
-    pub fn from_state(world: &'world World, state: &'world QueryState<Q, F>) -> Self {
-        todo!()
+impl<'query, Q: QueryGroup, F: Filter> ParallelQueryIter<'query, Q, F> {
+    pub fn from_state(world: &'query World, state: &'query QueryState<Q, F>) -> Self {
+        Self {
+            current_tick: world.current_tick,
+            last_run_tick: state.last_run_tick,
+            cache: &state.cache,
+            _marker: PhantomData,
+        }
+    }
+
+    fn unfiltered_len(&self) -> usize {
+        self.cache
+            .iter()
+            .map(|c| unsafe { &*c.table.as_ptr() }.len())
+            .sum::<usize>()
     }
 }
 
@@ -74,19 +85,44 @@ impl<'query, Q: QueryGroup, F: Filter> ParallelIterator for ParallelQueryIter<'q
     type Item = Q::Output<'query>;
 
     fn drive_unindexed<C: UnindexedConsumer<Self::Item>>(self, consumer: C) -> C::Result {
-        let producer = UnindexedQueryProducer::new(self);
+        let producer = UnindexedQueryProducer::<Q, F>::new(self);
         bridge_unindexed(producer, consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        F::IS_ARCHETYPAL.then(|| self.unfiltered_len())
     }
 }
 
-impl<'query, Q: QueryGroup> IndexedParallelIterator for ParallelQueryIter<'query, Q, ()> {
-    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {}
+pub struct QueryProducer<'query, Q: QueryGroup, F: ArchetypalFilter> {
+    _marker: PhantomData<(&'query Q, F)>,
+}
 
+impl<'query, Q: QueryGroup, F: ArchetypalFilter> Producer for QueryProducer<'query, Q, F> {
+    type Item = Q::Output<'query>;
+    type IntoIter = QueryIter<'query, Q, F>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        todo!()
+    }
+
+    fn split_at(self, index: usize) -> (Self, Self) {
+        todo!()
+    }
+}
+
+impl<'query, Q: QueryGroup, F: ArchetypalFilter> IndexedParallelIterator
+    for ParallelQueryIter<'query, Q, F>
+{
     fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
-        rayon::iter::plumbing::bridge(self, consumer)
+        bridge(self, consumer)
+    }
+
+    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
+        todo!()
     }
 
     fn len(&self) -> usize {
-        todo!()
+        self.unfiltered_len()
     }
 }

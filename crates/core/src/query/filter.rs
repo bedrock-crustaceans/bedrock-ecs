@@ -10,13 +10,16 @@ use crate::component::{ComponentBundle, TrackerFilterImpl};
 use crate::prelude::Component;
 use crate::table::{ChangeTracker, Changes, Table};
 
+/// Marker trait for archetypal filters
+pub trait ArchetypalFilter: Filter {}
+
 /// Implements the filtering functionality in queries.
 ///
 /// This allows queries to return only a subset of entities that match some predicate.
 ///
 /// Examples of archetypal filters are [`With`], [`Without`] while [`Changed`] and [`Added`] are examples of
 /// dynamic filters.
-pub trait Filter: 'static {
+pub trait Filter: Send + 'static {
     /// The state for the filter that is stored inside of the query.
     ///
     /// This is used by dynamic filters to keep track of the change columns.
@@ -139,7 +142,7 @@ impl Filter for () {
 /// a logical AND, requiring all filters to match in order to yield the entity.
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
-pub trait FilterBundle: 'static {
+pub trait FilterBundle: Send + 'static {
     type DynamicState: Send;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle

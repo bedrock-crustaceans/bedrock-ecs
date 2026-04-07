@@ -12,7 +12,9 @@ use rustc_hash::FxHashMap;
 
 use crate::archetype::Signature;
 use crate::component::TypeRegistry;
-use crate::query::{Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache};
+use crate::query::{
+    ArchetypalFilter, Filter, QueryData, QueryGroup, QueryState, QueryType, TableCache,
+};
 use crate::scheduler::AccessDesc;
 use crate::table::{ColumnRow, Table};
 use crate::world::World;
@@ -118,7 +120,8 @@ impl<'query, Q: QueryGroup, F: Filter> Iterator for QueryIter<'query, Q, F> {
             assert!(should_return);
         }
 
-        let item = unsafe { Q::fetch_from_base(&mut self.base_ptrs, self.current_tick) };
+        let item = unsafe { Q::fetch_relative(self.base_ptrs, 0, self.current_tick) };
+        unsafe { Q::offset_ptrs(&mut self.base_ptrs, 1) };
 
         self.remaining -= 1;
         return Some(item);
@@ -138,11 +141,35 @@ impl<'query, Q: QueryGroup, F: Filter> Iterator for QueryIter<'query, Q, F> {
     }
 }
 
-impl<'t, Q: QueryGroup> ExactSizeIterator for QueryIter<'t, Q, ()> {
+impl<'query, Q: QueryGroup, F: ArchetypalFilter> ExactSizeIterator for QueryIter<'query, Q, F> {
     #[inline]
     fn len(&self) -> usize {
         self.unfiltered_len()
     }
 }
 
-impl<'t, Q: QueryGroup, F: Filter> FusedIterator for QueryIter<'t, Q, F> {}
+impl<'query, Q: QueryGroup, F: Filter> FusedIterator for QueryIter<'query, Q, F> {}
+
+impl<'query, Q: QueryGroup, F: Filter> DoubleEndedIterator for QueryIter<'query, Q, F> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        if !F::IS_ARCHETYPAL {
+            let should_return = F::apply_dynamic(&self.filters, self.last_run_tick);
+            assert!(should_return);
+        }
+
+        let item = unsafe {
+            Q::fetch_relative(
+                self.base_ptrs,
+                self.remaining as isize - 1,
+                self.current_tick,
+            )
+        };
+
+        self.remaining -= 1;
+        Some(item)
+    }
+}

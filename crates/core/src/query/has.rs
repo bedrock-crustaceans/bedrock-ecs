@@ -54,16 +54,21 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         todo!()
     }
 
+    #[inline]
     fn dangling() -> Self::BasePtr {
         false
     }
 
     #[inline]
-    unsafe fn fetch_from_base<'w>(
-        base: &mut Self::BasePtr,
+    unsafe fn offset_ptr(_base: &mut Self::BasePtr, _n: isize) {}
+
+    #[inline]
+    unsafe fn fetch_relative<'w>(
+        base: Self::BasePtr,
+        _offset: isize,
         _current_tick: u32,
     ) -> Self::Output<'w> {
-        *base
+        base
     }
 
     fn get<'w, Q: QueryGroup, F: Filter>(

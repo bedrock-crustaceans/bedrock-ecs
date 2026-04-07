@@ -89,8 +89,15 @@ pub unsafe trait QueryGroup: Sized {
     /// [`map_column`]: QueryData::map_column
     fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
-    unsafe fn fetch_from_base<'w>(ptrs: &mut Self::BasePtrs, current_tick: u32)
-    -> Self::Output<'w>;
+    /// Offsets the base pointers by the given `n`. This is used to advance the iterator.
+    unsafe fn offset_ptrs(ptrs: &mut Self::BasePtrs, n: isize);
+
+    /// Fetches the elements at the specified `index` relative to the current pointers.
+    unsafe fn fetch_relative<'w>(
+        ptrs: Self::BasePtrs,
+        offset: isize,
+        current_tick: u32,
+    ) -> Self::Output<'w>;
 
     fn dangling() -> Self::BasePtrs;
 
@@ -173,7 +180,13 @@ pub unsafe trait QueryData {
 
     fn dangling() -> Self::BasePtr;
 
-    unsafe fn fetch_from_base<'w>(base: &mut Self::BasePtr, current_tick: u32) -> Self::Output<'w>;
+    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize);
+
+    unsafe fn fetch_relative<'w>(
+        base: Self::BasePtr,
+        offset: isize,
+        current_tick: u32,
+    ) -> Self::Output<'w>;
 
     /// Attempts to fetch the component of type `Self` that is contained in the given table, column and row.
     ///
@@ -237,13 +250,17 @@ unsafe impl QueryData for Entity {
     }
 
     #[inline]
-    unsafe fn fetch_from_base<'w>(
-        base: &mut Self::BasePtr,
+    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
+        *base = unsafe { base.offset(n) }
+    }
+
+    #[inline]
+    unsafe fn fetch_relative<'w>(
+        base: Self::BasePtr,
+        offset: isize,
         _current_tick: u32,
     ) -> Self::Output<'w> {
-        let item = unsafe { *base.as_ptr() };
-        *base = unsafe { base.add(1) };
-        item
+        unsafe { *base.offset(offset).as_ptr() }
     }
 
     fn get<'w, Q: QueryGroup, F: Filter>(
@@ -297,15 +314,20 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    unsafe fn fetch_from_base<'w>(
-        base: &mut Self::BasePtr,
-        _current_tick: u32,
-    ) -> Self::Output<'w> {
-        let item = unsafe { &*base.as_ptr() };
-        *base = unsafe { base.add(1) };
-        item
+    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
+        *base = unsafe { base.offset(n) }
     }
 
+    #[inline]
+    unsafe fn fetch_relative<'w>(
+        base: Self::BasePtr,
+        offset: isize,
+        _current_tick: u32,
+    ) -> Self::Output<'w> {
+        unsafe { &*base.offset(offset).as_ptr() }
+    }
+
+    #[inline]
     fn dangling() -> Self::BasePtr {
         ConstNonNull::dangling()
     }
@@ -371,11 +393,18 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    unsafe fn fetch_from_base<'w>(base: &mut Self::BasePtr, current_tick: u32) -> Self::Output<'w> {
-        let inner = unsafe { &mut *base.0.as_ptr() };
-        let tracker = unsafe { &mut *base.1.as_ptr() };
+    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
+        *base = (unsafe { base.0.offset(n) }, unsafe { base.1.offset(n) });
+    }
 
-        *base = (unsafe { base.0.add(1) }, unsafe { base.1.add(1) });
+    #[inline]
+    unsafe fn fetch_relative<'w>(
+        base: Self::BasePtr,
+        offset: isize,
+        current_tick: u32,
+    ) -> Self::Output<'w> {
+        let inner = unsafe { &mut *base.0.offset(offset).as_ptr() };
+        let tracker = unsafe { &mut *base.1.offset(offset).as_ptr() };
 
         Mut {
             current_tick,
@@ -439,11 +468,17 @@ macro_rules! impl_bundle {
                     todo!("QueryGroup::get");
                 }
 
-                unsafe fn fetch_from_base<'w>(ptrs: &mut ($($gen::BasePtr),*), current_tick: u32) -> Self::Output<'w> where Self: 'w {
-                    #[allow(non_snake_case)]
-                    let ($($gen),*) = ptrs;
+                #[inline]
+                unsafe fn offset_ptrs(($($gen),*): &mut ($($gen::BasePtr),*), n: isize) {
+                    $(
+                        unsafe { $gen::offset_ptr($gen, n) };
+                    )*
+                }
+
+                #[inline]
+                unsafe fn fetch_relative<'w>(($($gen),*): ($($gen::BasePtr),*), offset: isize, current_tick: u32) -> Self::Output<'w> where Self: 'w {
                     ($(
-                        unsafe { $gen::fetch_from_base($gen, current_tick) }
+                        unsafe { $gen::fetch_relative($gen, offset, current_tick) }
                     ),*)
                 }
 
