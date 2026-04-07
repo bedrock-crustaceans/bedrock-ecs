@@ -10,7 +10,7 @@ use crate::entity::Entity;
 use crate::query::{Filter, FragmentIterator, ParallelQueryIter, QueryGroup, QueryIter};
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
-use crate::system::{SysArg, SystemMeta};
+use crate::system::{SysArg, SysMeta};
 #[cfg(feature = "generics")]
 use crate::table::Table;
 #[cfg(feature = "generics")]
@@ -127,7 +127,7 @@ unsafe impl<Q: QueryGroup + 'static, F: Filter + 'static> SysArg for Query<'_, Q
         state.last_run_tick = state.current_tick;
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> QueryState<Q, F> {
+    fn init(world: &mut World, _meta: &SysMeta) -> QueryState<Q, F> {
         QueryState::new(&mut world.archetypes, world.current_tick)
     }
 }

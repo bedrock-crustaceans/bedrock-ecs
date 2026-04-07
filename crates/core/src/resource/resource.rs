@@ -8,7 +8,7 @@ use generic_array::typenum::U1;
 use crate::resource::Resources;
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::sealed::Sealed;
-use crate::system::{SysArg, SystemMeta};
+use crate::system::{SysArg, SysMeta};
 use crate::world::World;
 
 #[cfg(not(feature = "generics"))]
@@ -106,7 +106,7 @@ unsafe impl<R: Resource> SysArg for Res<'_, R> {
         }]
     }
 
-    fn init(world: &mut World, meta: &SystemMeta) {
+    fn init(world: &mut World, meta: &SysMeta) {
         if !world.resources.contains::<R>() {
             let full_name = std::any::type_name::<R>();
             // Attempt to extract type name.
@@ -180,7 +180,7 @@ unsafe impl<R: Resource> SysArg for ResMut<'_, R> {
         }]
     }
 
-    fn init(world: &mut World, meta: &SystemMeta) {
+    fn init(world: &mut World, meta: &SysMeta) {
         if !world.resources.contains::<R>() {
             let full_name = std::any::type_name::<R>();
             // Attempt to extract type name.

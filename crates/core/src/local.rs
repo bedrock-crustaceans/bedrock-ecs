@@ -10,7 +10,7 @@ use crate::SysArg;
 use crate::scheduler::AccessDesc;
 
 use crate::sealed::Sealed;
-use crate::system::{SysArg, SystemMeta};
+use crate::system::{SysArg, SysMeta};
 use crate::world::World;
 
 /// Simple container around the state of a [`Local`].
@@ -52,7 +52,7 @@ unsafe impl<T: Default + Send> SysArg for Local<'_, T> {
         feature = "tracing",
         tracing::instrument(name = "Local::init", skip_all)
     )]
-    fn init(_world: &mut World, _meta: &SystemMeta) -> LocalState<T> {
+    fn init(_world: &mut World, _meta: &SysMeta) -> LocalState<T> {
         tracing::trace!(
             "created internal state for `Local<{}>`",
             std::any::type_name::<T>()

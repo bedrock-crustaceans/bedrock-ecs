@@ -10,7 +10,7 @@ use crate::message::{Mailbox, Message, MessageIndex};
 use crate::resource::ResourceId;
 use crate::scheduler::{AccessDesc, AccessType};
 use crate::sealed::Sealed;
-use crate::system::{SysArg, SystemMeta};
+use crate::system::{SysArg, SysMeta};
 use crate::world::World;
 
 #[derive(Debug, Default)]
@@ -105,7 +105,7 @@ unsafe impl<T: Message> SysArg for Inbox<'_, T> {
         todo!()
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> InboxState {
+    fn init(world: &mut World, _meta: &SysMeta) -> InboxState {
         // Check whether the mailbox exists, otherwise create it.
         if !world.resources.contains::<Mailbox<T>>() {
             world.resources.insert(Mailbox::<T>::new());
@@ -175,7 +175,7 @@ unsafe impl<T: Message> SysArg for Outbox<'_, T> {
         todo!()
     }
 
-    fn init(world: &mut World, _meta: &SystemMeta) -> OutboxState {
+    fn init(world: &mut World, _meta: &SysMeta) -> OutboxState {
         if !world.resources.contains::<Mailbox<T>>() {
             world.resources.insert(Mailbox::<T>::new());
         }

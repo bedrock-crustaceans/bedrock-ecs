@@ -12,14 +12,14 @@ use crate::util::debug::BorrowEnforcer;
 use crate::world::World;
 
 #[derive(Debug)]
-pub struct SystemMeta {
+pub struct SysMeta {
     /// For the Rust-only side of the ECS, using a static str is fine here,
     /// but for systems coming from WebAssembly the names are loaded at runtime.
     pub(crate) name: String,
     pub(crate) last_ran: u32,
 }
 
-impl SystemMeta {
+impl SysMeta {
     #[inline]
     pub fn last_ran(&self) -> u32 {
         self.last_ran
@@ -35,11 +35,11 @@ impl SystemMeta {
 }
 
 // `System` must implement `Sync` such that rayon can run them on other threads.
-pub trait System: Sync {
+pub trait Sys: Sync {
     /// Returns the resources that this system accesses.
     fn access(&self) -> &[AccessDesc];
 
-    fn meta(&self) -> &SystemMeta;
+    fn meta(&self) -> &SysMeta;
     /// Executes the system.
     ///
     /// # Safety
@@ -48,22 +48,22 @@ pub trait System: Sync {
     unsafe fn call(&self, world: &World);
 }
 
-pub trait SysArgetrizedSystem<P: SysArgGroup>: Sized {
-    fn into_container(self, world: &mut World) -> SystemContainer<P, Self> {
+pub trait TypedSys<P: SysArgGroup>: Sized {
+    fn into_container(self, world: &mut World) -> SysContainer<P, Self> {
         let mut name = std::any::type_name::<Self>();
         if !name.contains('{') {
             name = name.split("::").last().unwrap_or(name);
         }
 
         let access = P::access(world);
-        let meta = SystemMeta {
+        let meta = SysMeta {
             last_ran: 0, // World tick starts at 1, so this system will always run every single one of its change triggers.
             name: name.to_owned(),
         };
 
         let state = P::init(world, &meta);
 
-        SystemContainer {
+        SysContainer {
             meta: UnsafeCell::new(meta),
             system: self,
             access,
@@ -80,8 +80,8 @@ pub trait SysArgetrizedSystem<P: SysArgGroup>: Sized {
 /// Wraps the system and all of its metadata.
 ///
 /// This is where the the states and metadata are stored.
-pub struct SystemContainer<P: SysArgGroup, F: SysArgetrizedSystem<P>> {
-    pub(crate) meta: UnsafeCell<SystemMeta>,
+pub struct SysContainer<P: SysArgGroup, F: TypedSys<P>> {
+    pub(crate) meta: UnsafeCell<SysMeta>,
     pub(crate) system: F,
     pub(crate) state: UnsafeCell<P::State>,
 
@@ -94,30 +94,30 @@ pub struct SystemContainer<P: SysArgGroup, F: SysArgetrizedSystem<P>> {
     pub(crate) access: SmallVec<[AccessDesc; SysArg::INLINE_SIZE]>,
 }
 
-unsafe impl<P, F> Send for SystemContainer<P, F>
+unsafe impl<P, F> Send for SysContainer<P, F>
 where
     P: SysArgGroup,
-    F: SysArgetrizedSystem<P>,
+    F: TypedSys<P>,
 {
 }
 
-unsafe impl<P, F> Sync for SystemContainer<P, F>
+unsafe impl<P, F> Sync for SysContainer<P, F>
 where
     P: SysArgGroup,
-    F: SysArgetrizedSystem<P>,
+    F: TypedSys<P>,
 {
 }
 
 macro_rules! impl_system {
     ($($gen:ident),*) => {
-        impl<$($gen),*, Sys> System for SystemContainer<($($gen),*), Sys>
+        impl<$($gen),*, S> Sys for SysContainer<($($gen),*), S>
         where
             $($gen: SysArg),*,
             ($($gen),*): SysArgGroup,
-            Sys: SysArgetrizedSystem<($($gen),*)>
+            S: TypedSys<($($gen),*)>
         {
             #[inline]
-            fn meta(&self) -> &SystemMeta {
+            fn meta(&self) -> &SysMeta {
                 unsafe { &*self.meta.get().cast_const() }
             }
 
@@ -140,7 +140,7 @@ macro_rules! impl_system {
             }
         }
 
-        impl<$($gen),*, Sys: Fn($($gen::Output<'_>),*)> SysArgetrizedSystem<($($gen),*)> for Sys
+        impl<$($gen),*, Sys: Fn($($gen::Output<'_>),*)> TypedSys<($($gen),*)> for Sys
         where
             $($gen: SysArg),*,
             ($($gen),*): SysArgGroup<State = ($($gen::State),*)>
@@ -158,18 +158,18 @@ macro_rules! impl_system {
             }
         }
 
-        impl<$($gen),*, Sys> IntoSystem<($($gen),*)> for Sys
+        impl<$($gen),*, S> IntoSys<($($gen),*)> for S
         where
             $($gen: SysArg + 'static),*,
             ($($gen),*): SysArgGroup,
-            Sys: SysArgetrizedSystem<($($gen),*)>,
-            Sys: Fn($($gen),*) + 'static
+            S: TypedSys<($($gen),*)>,
+            S: Fn($($gen),*) + 'static
         {
-            fn into_system(self, world: &mut World) -> impl System + 'static {
+            fn into_sys(self, world: &mut World) -> impl Sys + 'static {
                 self.into_container(world)
             }
 
-            fn into_boxed_system(self, world: &mut World) -> Box<dyn System> {
+            fn into_boxed_sys(self, world: &mut World) -> Box<dyn Sys> {
                 Box::new(self.into_container(world))
             }
         }
@@ -186,13 +186,13 @@ impl_system!(A, B, C, D, E, F, G, H);
 impl_system!(A, B, C, D, E, F, G, H, I);
 impl_system!(A, B, C, D, E, F, G, H, I, J);
 
-impl<P, F> System for SystemContainer<P, F>
+impl<P, F> Sys for SysContainer<P, F>
 where
     P: SysArg,
-    F: SysArgetrizedSystem<P>,
+    F: TypedSys<P>,
 {
     #[inline]
-    fn meta(&self) -> &SystemMeta {
+    fn meta(&self) -> &SysMeta {
         unsafe { &*self.meta.get().cast_const() }
     }
 
@@ -209,7 +209,7 @@ where
     }
 }
 
-impl<F: Fn(P::Output<'_>) + Sync, P: SysArg> SysArgetrizedSystem<P> for F {
+impl<F: Fn(P::Output<'_>) + Sync, P: SysArg> TypedSys<P> for F {
     fn call(&self, world: &World, state: &mut P::State) {
         let p = P::before_update(world, state);
         self(p);
@@ -223,28 +223,28 @@ impl<F: Fn(P::Output<'_>) + Sync, P: SysArg> SysArgetrizedSystem<P> for F {
     note = "check the system arguments of the system, are they all valid?",
     note = "examples of valid system arguments are `Query`, `Local`, `Res`, etc..."
 )]
-pub trait IntoSystem<P> {
-    fn into_system(self, world: &mut World) -> impl System + 'static;
-    fn into_boxed_system(self, world: &mut World) -> Box<dyn System>;
+pub trait IntoSys<P> {
+    fn into_sys(self, world: &mut World) -> impl Sys + 'static;
+    fn into_boxed_sys(self, world: &mut World) -> Box<dyn Sys>;
 }
 
 #[diagnostic::do_not_recommend]
-impl<F, P> IntoSystem<P> for F
+impl<F, P> IntoSys<P> for F
 where
     P: SysArg + 'static,
     F: Fn(P) + 'static,
-    F: SysArgetrizedSystem<P>,
+    F: TypedSys<P>,
 {
     // static lifetime is required to tell Rust that the returned system does not borrow the world.
-    fn into_system(self, world: &mut World) -> impl System + 'static {
+    fn into_sys(self, world: &mut World) -> impl Sys + 'static {
         self.into_container(world)
     }
 
-    fn into_boxed_system(self, world: &mut World) -> Box<dyn System> {
+    fn into_boxed_sys(self, world: &mut World) -> Box<dyn Sys> {
         Box::new(self.into_container(world))
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct SystemId(pub(crate) u32);
+pub struct SysId(pub(crate) u32);

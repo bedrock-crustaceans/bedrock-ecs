@@ -16,7 +16,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 
 use crate::{
     scheduler::ScheduleGraph,
-    system::{System, SystemId},
+    system::{Sys, SysId},
     world::World,
 };
 
@@ -62,7 +62,7 @@ impl Default for SchedulerTiming {
 
 #[derive(Default)]
 pub struct Scheduler {
-    pub(crate) systems: Vec<Box<dyn System>>,
+    pub(crate) systems: Vec<Box<dyn Sys>>,
     pub(crate) in_degrees: Vec<u32>,
     pub(crate) curr_in_degrees: Vec<AtomicU32>,
     pub(crate) graph: ScheduleGraph,

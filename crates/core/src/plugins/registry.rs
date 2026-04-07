@@ -21,13 +21,13 @@ use crate::{
         PluginError, PluginResult, WasmSystem,
         bindings::{
             self, Api,
-            bedrock_ecs::plugin::{host, system::SystemManifest, types::SystemId},
+            bedrock_ecs::plugin::{host, system::SystemManifest, types::SystemId as WasmSystemId},
             exports::bedrock_ecs::plugin::plugin::PluginManifest,
         },
     },
     prelude::ScheduleBuilder,
     scheduler::AccessDesc,
-    system::SystemMeta,
+    system::SysMeta,
     world::World,
 };
 
@@ -49,7 +49,7 @@ struct PluginStore {
     plugin_id: PluginId,
 
     /// Maps system IDs to names for debugging purposes.
-    system_map: HashMap<SystemId, String, BuildNoHashHasher<u32>>,
+    system_map: HashMap<WasmSystemId, String, BuildNoHashHasher<u32>>,
     stage: PluginStoreStage,
 
     /// Cyclical reference. This is used to create new strong references to the plugin
@@ -71,7 +71,7 @@ impl host::Host for PluginStore {
                         .expect("weak plugin reference was not set")
                         .upgrade()
                         .expect("no strong plugin references existed"),
-                    meta: SystemMeta {
+                    meta: SysMeta {
                         name: manifest.name,
                         last_ran: 0,
                     },

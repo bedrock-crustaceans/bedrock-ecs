@@ -7,7 +7,7 @@ use smallvec::SmallVec;
 
 use crate::component::ComponentId;
 use crate::resource::ResourceId;
-use crate::system::{System, SystemId};
+use crate::system::{Sys, SysId};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum AccessType {

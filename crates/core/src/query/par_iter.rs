@@ -95,7 +95,12 @@ impl<'query, Q: QueryGroup, F: Filter> ParallelIterator for ParallelQueryIter<'q
 }
 
 pub struct QueryProducer<'query, Q: QueryGroup, F: ArchetypalFilter> {
-    _marker: PhantomData<(&'query Q, F)>,
+    last_run_tick: u32,
+    current_tick: u32,
+    remaining: usize,
+    cache: &'query [TableCache<Q>],
+    base_ptrs: Q::BasePtrs,
+    filters: F::DynamicState,
 }
 
 impl<'query, Q: QueryGroup, F: ArchetypalFilter> Producer for QueryProducer<'query, Q, F> {

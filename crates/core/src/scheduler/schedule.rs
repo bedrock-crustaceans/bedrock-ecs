@@ -9,16 +9,16 @@ use rustc_hash::FxHashMap;
 
 use crate::plugins::WasmSystem;
 use crate::scheduler::{AccessDesc, AccessType, ScheduleGraph, Scheduler};
-use crate::system::{IntoSystem, SysArgGroup, System, SystemId, SystemMeta};
+use crate::system::{IntoSys, Sys, SysArgGroup, SysId, SysMeta};
 use crate::world::World;
 
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a valid system bundle",
-    label = "not a valid system bundle",
+    message = "`{Self}` is not a valid system group",
+    label = "not a valid system group",
     note = "ensure that each of the items in the tuple is a valid system",
-    note = "only tuples with up to 10 elements can be used as bundles"
+    note = "only tuples with up to 10 elements can be used as groups"
 )]
-pub trait SystemBundle<P> {
+pub trait SystemGroup<P> {
     /// Inserts this bundle into the schedule builder.
     fn insert_into(self, schedule: &mut ScheduleBuilder);
 }
@@ -28,15 +28,15 @@ macro_rules! impl_bundle {
         paste::paste! {
             #[allow(unused_parens)]
             #[diagnostic::do_not_recommend]
-            impl<$([<$gen Fun>]),*, $($gen),*> SystemBundle<($($gen),*)> for ($([<$gen Fun>]),*)
+            impl<$([<$gen Fun>]),*, $($gen),*> SystemGroup<($($gen),*)> for ($([<$gen Fun>]),*)
             where
-                $([<$gen Fun>]: IntoSystem<$gen> + 'static),*,
+                $([<$gen Fun>]: IntoSys<$gen> + 'static),*,
                 $($gen: SysArgGroup),*
             {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
                     let ($([<$gen:lower>]),*) = self;
                     $(
-                        let boxed = [<$gen:lower>].into_boxed_system(schedule.world);
+                        let boxed = [<$gen:lower>].into_boxed_sys(schedule.world);
                         schedule.systems.push(boxed);
                     )*
                 }
@@ -72,7 +72,7 @@ pub struct ScheduleBuilder<'w> {
     pub(crate) next_id: Arc<AtomicU32>,
 
     pub(crate) world: &'w mut World,
-    pub(crate) systems: Vec<Box<dyn System>>,
+    pub(crate) systems: Vec<Box<dyn Sys>>,
 }
 
 impl<'w> ScheduleBuilder<'w> {
@@ -88,14 +88,14 @@ impl<'w> ScheduleBuilder<'w> {
     pub fn add<L, G, P>(mut self, _label: L, systems: G) -> ScheduleBuilder<'w>
     where
         L: ScheduleLabel,
-        G: SystemBundle<P>,
+        G: SystemGroup<P>,
     {
         systems.insert_into(&mut self);
 
         self
     }
 
-    pub(crate) fn add_contained(&mut self, system: Box<dyn System>) {
+    pub(crate) fn add_contained(&mut self, system: Box<dyn Sys>) {
         self.systems.push(system);
     }
 

@@ -14,7 +14,7 @@ use crate::component::ComponentBundle;
 use crate::entity::{Entities, Entity, EntityMut, EntityRef};
 use crate::resource::{Resource, ResourceBundle, Resources};
 use crate::scheduler::{AccessDesc, AccessType, ScheduleBuilder};
-use crate::system::{IntoSystem, SysArg, System, SystemContainer, SystemMeta};
+use crate::system::{IntoSys, Sys, SysArg, SysContainer, SysMeta};
 
 pub struct World {
     pub(crate) archetypes: Archetypes,
@@ -151,8 +151,8 @@ impl World {
         ScheduleBuilder::new(self)
     }
 
-    pub fn run_system<P, S: IntoSystem<P>>(&mut self, system: S) {
-        let system = system.into_system(self);
+    pub fn run_system<P, S: IntoSys<P>>(&mut self, system: S) {
+        let system = system.into_sys(self);
         unsafe {
             system.call(self);
         }
@@ -197,7 +197,7 @@ unsafe impl SysArg for &World {
 
     fn after_update<'w>(_world: &World, _state: &mut Self::State) {}
 
-    fn init(_world: &mut World, _meta: &SystemMeta) {}
+    fn init(_world: &mut World, _meta: &SysMeta) {}
 }
 
 unsafe impl Send for World {}

@@ -8,7 +8,7 @@ use crate::entity::{Entity, EntityMeta};
 use crate::prelude::ComponentBundle;
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
-use crate::system::{SysArg, SystemMeta};
+use crate::system::{SysArg, SysMeta};
 #[cfg(debug_assertions)]
 use crate::util::debug::{BorrowEnforcer, ReadGuard, WriteGuard};
 use crate::world::World;
@@ -141,7 +141,7 @@ unsafe impl SysArg for Commands<'_> {
         SmallVec::new()
     }
 
-    fn init(_world: &mut World, _meta: &SystemMeta) {}
+    fn init(_world: &mut World, _meta: &SysMeta) {}
 
     fn before_update<'w>(world: &'w World, _state: &'w mut Self::State) -> Commands<'w> {
         let Some(commands) = &world.commands else {

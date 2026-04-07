@@ -6,7 +6,7 @@ use generic_array::{ArrayLength, GenericArray};
 
 use crate::scheduler::AccessDesc;
 use crate::sealed::Sealed;
-use crate::system::SystemMeta;
+use crate::system::SysMeta;
 use crate::world::World;
 
 #[cfg(not(feature = "generics"))]
@@ -56,7 +56,7 @@ pub unsafe trait SysArg {
     fn after_update(world: &World, state: &mut Self::State);
 
     /// Initialises the state of this system argument.
-    fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
+    fn init(world: &mut World, meta: &SysMeta) -> Self::State;
 }
 
 /// A collection of system arguments.
@@ -91,7 +91,7 @@ pub unsafe trait SysArgGroup {
     fn access(world: &mut World) -> SmallVec<[AccessDesc; INLINE_SIZE]>;
 
     /// Initializes the internal states of all system arguments in this collection.
-    fn init(world: &mut World, meta: &SystemMeta) -> Self::State;
+    fn init(world: &mut World, meta: &SysMeta) -> Self::State;
 }
 
 unsafe impl SysArgGroup for () {
@@ -114,7 +114,7 @@ unsafe impl SysArgGroup for () {
         SmallVec::new()
     }
 
-    fn init(_world: &mut World, _meta: &SystemMeta) {}
+    fn init(_world: &mut World, _meta: &SysMeta) {}
 }
 
 #[cfg(feature = "generics")]
@@ -171,7 +171,7 @@ macro_rules! impl_bundle {
                     feature = "tracing",
                     tracing::instrument(name = "SysArgGroup::init", skip_all)
                 )]
-                fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
+                fn init(world: &mut World, meta: &SysMeta) -> Self::State {
                     tracing::trace!("initialising {} system system argument state(s)", Self::AccessCount::USIZE);
 
                     // Run init on all system arguments in the bundle.
@@ -199,7 +199,7 @@ macro_rules! impl_bundle {
                 access
             }
 
-            fn init(world: &mut World, meta: &SystemMeta) -> Self::State {
+            fn init(world: &mut World, meta: &SysMeta) -> Self::State {
                 ($($gen::init(world, meta)),*)
             }
         }

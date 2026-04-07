@@ -4,7 +4,11 @@ use generic_array::typenum::U0;
 
 #[cfg(feature = "generics")]
 use crate::world::World;
-use crate::{scheduler::AccessDesc, sealed::Sealed, system::SysArg};
+use crate::{
+    scheduler::AccessDesc,
+    sealed::Sealed,
+    system::{SysArg, SysMeta},
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tick(pub(crate) u32);
@@ -17,12 +21,12 @@ impl Tick {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SystemTick {
+pub struct TickInfo {
     this_run: Tick,
     last_run: Tick,
 }
 
-impl SystemTick {
+impl TickInfo {
     /// The current world tick
     #[inline]
     pub fn this_run(&self) -> Tick {
@@ -37,12 +41,12 @@ impl SystemTick {
     }
 }
 
-unsafe impl SysArg for SystemTick {
+unsafe impl SysArg for TickInfo {
     #[cfg(feature = "generics")]
     type AccessCount = U0;
 
-    type State = SystemTick;
-    type Output<'a> = SystemTick;
+    type State = TickInfo;
+    type Output<'a> = TickInfo;
 
     #[cfg(feature = "generics")]
     fn access(_world: &mut World) -> GenericArray<AccessDesc, U0> {
@@ -54,7 +58,7 @@ unsafe impl SysArg for SystemTick {
         SmallVec::new()
     }
 
-    fn before_update<'w>(world: &'w World, state: &'w mut SystemTick) -> SystemTick {
+    fn before_update<'w>(world: &'w World, state: &'w mut TickInfo) -> TickInfo {
         state.this_run = Tick(world.current_tick);
 
         *state
@@ -64,8 +68,8 @@ unsafe impl SysArg for SystemTick {
         state.last_run = state.this_run;
     }
 
-    fn init(world: &mut World, _meta: &crate::system::SystemMeta) -> SystemTick {
-        SystemTick {
+    fn init(world: &mut World, _meta: &SysMeta) -> TickInfo {
+        TickInfo {
             last_run: Tick(0),
             this_run: Tick(world.current_tick),
         }

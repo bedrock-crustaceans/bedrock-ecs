@@ -9,7 +9,7 @@ use crate::{
         },
     },
     scheduler::{AccessDesc, AccessType},
-    system::{System, SystemId, SystemMeta},
+    system::{Sys, SysId, SysMeta},
     world::World,
 };
 
@@ -41,11 +41,11 @@ pub struct WasmSystem {
     pub plugin: Arc<Mutex<Plugin>>,
     pub id: u32,
     pub access: Vec<AccessDesc>,
-    pub meta: SystemMeta,
+    pub meta: SysMeta,
 }
 
-impl System for WasmSystem {
-    fn meta(&self) -> &SystemMeta {
+impl Sys for WasmSystem {
+    fn meta(&self) -> &SysMeta {
         &self.meta
     }
 
