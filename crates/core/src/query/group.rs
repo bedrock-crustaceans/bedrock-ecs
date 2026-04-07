@@ -90,7 +90,7 @@ pub unsafe trait QueryGroup: Sized {
     fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
 
     /// Offsets the base pointers by the given `n`. This is used to advance the iterator.
-    unsafe fn offset_ptrs(ptrs: &mut Self::BasePtrs, n: isize);
+    unsafe fn offset_ptrs(ptrs: Self::BasePtrs, n: isize) -> Self::BasePtrs;
 
     /// Fetches the elements at the specified `index` relative to the current pointers.
     unsafe fn fetch_relative<'w>(
@@ -180,7 +180,7 @@ pub unsafe trait QueryData {
 
     fn dangling() -> Self::BasePtr;
 
-    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize);
+    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr;
 
     unsafe fn fetch_relative<'w>(
         base: Self::BasePtr,
@@ -250,8 +250,8 @@ unsafe impl QueryData for Entity {
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
-        *base = unsafe { base.offset(n) }
+    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+        unsafe { base.offset(n) }
     }
 
     #[inline]
@@ -314,8 +314,8 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
-        *base = unsafe { base.offset(n) }
+    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+        unsafe { base.offset(n) }
     }
 
     #[inline]
@@ -393,8 +393,8 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: &mut Self::BasePtr, n: isize) {
-        *base = (unsafe { base.0.offset(n) }, unsafe { base.1.offset(n) });
+    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+        (unsafe { base.0.offset(n) }, unsafe { base.1.offset(n) })
     }
 
     #[inline]
@@ -469,10 +469,10 @@ macro_rules! impl_bundle {
                 }
 
                 #[inline]
-                unsafe fn offset_ptrs(($($gen),*): &mut ($($gen::BasePtr),*), n: isize) {
-                    $(
-                        unsafe { $gen::offset_ptr($gen, n) };
-                    )*
+                unsafe fn offset_ptrs(($($gen),*): ($($gen::BasePtr),*), n: isize) -> Self::BasePtrs {
+                    ($(
+                        unsafe { $gen::offset_ptr($gen, n) }
+                    ),*)
                 }
 
                 #[inline]

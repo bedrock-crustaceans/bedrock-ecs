@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
@@ -6,9 +7,10 @@ use std::ptr::NonNull;
 use smallvec::SmallVec;
 
 use crate::archetype::{Archetypes, Signature};
-use crate::component::{ComponentBundle, TrackerFilterImpl};
+use crate::component::ComponentBundle;
 use crate::prelude::Component;
 use crate::table::{ChangeTracker, Changes, Table};
+use crate::util::ConstNonNull;
 
 /// Marker trait for archetypal filters
 pub trait ArchetypalFilter: Filter {}
@@ -30,7 +32,7 @@ pub trait Filter: Send + 'static {
     ///
     /// This is important because an older version of the ECS stored all state in the iterator regardless,
     /// which caused performance issues due to register pressure.
-    type DynamicState: Send;
+    type DynamicState: Copy + Send;
 
     /// Which filtering method this filter uses.
     ///
@@ -82,6 +84,9 @@ pub trait Filter: Send + 'static {
 
     /// Creates a new iterator state.
     fn set_dynamic_state(table: &Table) -> Self::DynamicState;
+
+    /// Moves the dynamic state to another query item, relative to the current item.
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState;
 
     /// Creates a dangling but still aligned iterator state.
     fn dangling() -> Self::DynamicState;
@@ -135,6 +140,9 @@ impl Filter for () {
     #[inline]
     fn set_dynamic_state(table: &Table) {}
 
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+    }
+
     #[inline]
     fn dangling() -> Self::DynamicState {}
 }
@@ -146,7 +154,7 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterGroup: Send + 'static {
-    type DynamicState: Send;
+    type DynamicState: Copy + Send;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
     /// are dynamic, this will be set to dynamic.
@@ -182,6 +190,9 @@ pub trait FilterGroup: Send + 'static {
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool;
 
     fn set_dynamic_state(table: &Table) -> Self::DynamicState;
+
+    /// Moves the dynamic state to another query item, relative to the current item.
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState;
 
     fn dangling() -> Self::DynamicState;
 }
@@ -239,6 +250,10 @@ macro_rules! impl_filter_bundle {
             #[inline]
             fn set_dynamic_state(table: &Table) -> Self::DynamicState {
                 ($($gen::set_dynamic_state(table)),*)
+            }
+
+            unsafe fn offset_dynamic_state(($($gen),*): Self::DynamicState, offset: isize) -> Self::DynamicState {
+                ($($gen::offset_dynamic_state($gen, offset)),*)
             }
 
             #[inline]
@@ -304,6 +319,11 @@ impl<G: FilterGroup> Filter for Xor<G> {
     }
 
     #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+        G::offset_dynamic_state(state, offset)
+    }
+
+    #[inline]
     fn dangling() -> Self::DynamicState {
         G::dangling()
     }
@@ -352,6 +372,11 @@ impl<G: FilterGroup> Filter for Or<G> {
     }
 
     #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+        G::offset_dynamic_state(state, offset)
+    }
+
+    #[inline]
     fn dangling() -> Self::DynamicState {
         G::dangling()
     }
@@ -397,6 +422,11 @@ impl<G: FilterGroup> Filter for Not<G> {
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
         G::set_dynamic_state(table)
+    }
+
+    #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+        G::offset_dynamic_state(state, offset)
     }
 
     #[inline]
@@ -452,6 +482,12 @@ impl<T: ComponentBundle> Filter for With<T> {
     #[inline]
     fn set_dynamic_state(_table: &Table) {}
 
+    unsafe fn offset_dynamic_state(
+        _state: Self::DynamicState,
+        _offset: isize,
+    ) -> Self::DynamicState {
+    }
+
     #[inline]
     fn dangling() {}
 }
@@ -500,6 +536,10 @@ impl<T: ComponentBundle> Filter for Without<T> {
     fn set_dynamic_state(_table: &Table) {}
 
     #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+    }
+
+    #[inline]
     fn dangling() {}
 }
 
@@ -511,7 +551,7 @@ pub struct Added<T: Component> {
 
 impl<T: Component> Filter for Added<T> {
     /// A base pointer to the start of the change tracker.
-    type DynamicState = <T as ComponentBundle>::TrackerPtrs;
+    type DynamicState = ConstNonNull<u32>;
 
     const IS_ARCHETYPAL: bool = false;
 
@@ -533,17 +573,26 @@ impl<T: Component> Filter for Added<T> {
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        state.filter::<T>(last_run_tick)
+        let added = unsafe { *state.as_ptr() };
+        added >= last_run_tick
     }
 
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
-        T::get_added_tracker_ptrs(table)
+        let col = table
+            .get_column_by_type(&TypeId::of::<T>())
+            .expect("table did not have expected column");
+        col.added_base_ptr()
+    }
+
+    #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+        unsafe { state.offset(offset) }
     }
 
     #[inline]
     fn dangling() -> Self::DynamicState {
-        T::dangling_tracker_ptrs()
+        ConstNonNull::<u32>::dangling()
     }
 }
 
@@ -556,7 +605,7 @@ pub struct Changed<T: Component> {
 
 impl<T: Component> Filter for Changed<T> {
     /// A base pointer to the start of the change tracker.
-    type DynamicState = <T as ComponentBundle>::TrackerPtrs;
+    type DynamicState = ConstNonNull<u32>;
 
     const IS_ARCHETYPAL: bool = false;
 
@@ -578,16 +627,25 @@ impl<T: Component> Filter for Changed<T> {
 
     #[inline]
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool {
-        state.filter::<T>(last_run_tick)
+        let last_changed = unsafe { *state.as_ptr() };
+        last_changed >= last_run_tick
     }
 
     #[inline]
     fn set_dynamic_state(table: &Table) -> Self::DynamicState {
-        T::get_changed_tracker_ptrs(table)
+        let col = table
+            .get_column_by_type(&TypeId::of::<T>())
+            .expect("table did not have expected column");
+        col.changed_base_ptr()
+    }
+
+    #[inline]
+    unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
+        unsafe { state.offset(offset) }
     }
 
     #[inline]
     fn dangling() -> Self::DynamicState {
-        T::dangling_tracker_ptrs()
+        ConstNonNull::<u32>::dangling()
     }
 }

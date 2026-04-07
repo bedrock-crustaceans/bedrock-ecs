@@ -27,7 +27,7 @@ pub trait FragmentIterator<'t, Q: QueryGroup + 't, F: Filter>:
     Iterator<Item = Q::Output<'t>>
 {
     /// Creates a new iterator over the given cache.
-    fn from_state(world: &'t World, meta: &'t QueryState<Q, F>) -> Self;
+    fn from_state(state: &'t QueryState<Q, F>) -> Self;
 }
 
 pub struct QueryIter<'query, Q: QueryGroup, F: Filter> {
@@ -40,8 +40,8 @@ pub struct QueryIter<'query, Q: QueryGroup, F: Filter> {
 }
 
 impl<'query, Q: QueryGroup, F: Filter> FragmentIterator<'query, Q, F> for QueryIter<'query, Q, F> {
-    fn from_state(world: &'query World, meta: &'query QueryState<Q, F>) -> Self {
-        let mut cache = meta.cache.iter();
+    fn from_state(state: &'query QueryState<Q, F>) -> Self {
+        let mut cache = state.cache.iter();
 
         // Look up all column base pointers.
         let Some(first_cache) = cache.next() else {
@@ -50,8 +50,8 @@ impl<'query, Q: QueryGroup, F: Filter> FragmentIterator<'query, Q, F> for QueryI
 
         let table = unsafe { &*first_cache.table.as_ptr() };
         Self {
-            last_run_tick: meta.last_run_tick,
-            current_tick: world.current_tick,
+            last_run_tick: state.last_run_tick,
+            current_tick: state.current_tick,
             remaining: table.len(),
             cache,
             base_ptrs: Q::get_base_ptrs(table),
@@ -122,9 +122,9 @@ impl<'query, Q: QueryGroup, F: Filter> Iterator for QueryIter<'query, Q, F> {
         }
 
         let item = unsafe { Q::fetch_relative(self.base_ptrs, 0, self.current_tick) };
-        unsafe { Q::offset_ptrs(&mut self.base_ptrs, 1) };
-
         self.remaining -= 1;
+        self.base_ptrs = unsafe { Q::offset_ptrs(self.base_ptrs, 1) };
+
         return Some(item);
     }
 

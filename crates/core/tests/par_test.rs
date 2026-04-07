@@ -25,24 +25,36 @@ struct Rotation {
 struct Label;
 
 fn par_sys(query: Query<(&mut Position, &Velocity)>) {
-    query.par_iter().for_each(|(pos, vel)| {
-        for _ in 0..50 {
-            pos.x += vel.x.sin() * pos.y.cos();
-            pos.y += vel.y.cos() * pos.z.sin();
-            pos.z += (pos.x + pos.y).sqrt();
-        }
-    });
+    let sum = query.par_iter().map(|(pos, _)| pos.x).sum::<f32>();
+    println!("sum is: {sum}");
 }
 
 #[test]
 fn par_iter_test() {
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let fmt = tracing_subscriber::fmt::Layer::new()
+        .with_target(false)
+        .with_file(true)
+        .with_line_number(true)
+        .compact()
+        .with_filter(
+            tracing_subscriber::filter::Targets::new()
+                .with_target("bedrock_ecs", tracing::Level::TRACE),
+        );
+
+    tracing_subscriber::registry().with(fmt).init();
+
     let mut world = World::new();
 
-    for i in 0..500_000 {
+    println!("Spawning entities");
+    for i in 0..1_000 {
         world.spawn((
             Position {
-                x: i as f32 / 10_000.0,
-                y: i as f32 / 10_000.0,
+                x: i as f32,
+                y: 0.0,
                 z: 0.0,
             },
             Velocity {
@@ -53,7 +65,7 @@ fn par_iter_test() {
         ));
     }
 
-    for _ in 0..1_000 {
+    for i in 0..1_000 {
         world.spawn((
             Position {
                 x: i as f32,
@@ -68,11 +80,12 @@ fn par_iter_test() {
             Rotation { angle: 0.1 },
         ));
     }
+    println!("Running systems");
 
     let schedule = ScheduleBuilder::new(&mut world).add(Label, (par_sys));
     let mut scheduler = schedule.schedule();
 
-    let ticks = 10;
+    let ticks = 1;
     for _ in 0..ticks {
         scheduler.run(&mut world);
     }

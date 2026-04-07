@@ -60,7 +60,9 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     }
 
     #[inline]
-    unsafe fn offset_ptr(_base: &mut Self::BasePtr, _n: isize) {}
+    unsafe fn offset_ptr(base: Self::BasePtr, _n: isize) -> Self::BasePtr {
+        base
+    }
 
     #[inline]
     unsafe fn fetch_relative<'w>(

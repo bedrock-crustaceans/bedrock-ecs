@@ -92,12 +92,12 @@ impl<'w, Q: QueryGroup, F: Filter> Query<'w, Q, F> {
     /// retrieve items from the tables.
     #[inline]
     pub fn iter(&self) -> QueryIter<'_, Q, F> {
-        QueryIter::from_state(self.world, self.state)
+        QueryIter::from_state(self.state)
     }
 
     #[inline]
     pub fn par_iter(&self) -> ParallelQueryIter<'_, Q, F> {
-        ParallelQueryIter::from_state(self.world, self.state)
+        ParallelQueryIter::from_state(self.state)
     }
 }
 

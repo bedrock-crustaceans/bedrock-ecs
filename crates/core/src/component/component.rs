@@ -54,22 +54,11 @@ pub trait Component: Send + Sync + 'static {
     const STORAGE: StorageType = StorageType::Table;
 }
 
-/// Implements the functionality to compare ticks in the [`Added`] and [`Changed`] filters.
-///
-/// [`Added`]: crate::query::Added
-/// [`Changed`]: crate::query::Changed
-pub trait TrackerFilterImpl {
-    fn filter<T: Component>(&self, last_run_tick: u32) -> bool;
-}
-
 /// A collection of components used in a filter. This trait makes it possible to use tuples
 /// of components inside of filters rather than just a single component.
 ///
 /// It enables filters such as `With<(Health, Transform)>`.
 pub trait ComponentBundle: 'static + Send {
-    /// Requires `Send` to allow being sent to other threads in parallel iterators.
-    type TrackerPtrs: TrackerFilterImpl + Send;
-
     const LEN: usize;
 
     /// Whether this bundle contains the given type ID.
@@ -121,48 +110,14 @@ pub trait ComponentBundle: 'static + Send {
     ///
     /// This function does not drop the components.
     unsafe fn copy_from(table: &mut Table, row: ColumnRow) -> Self;
-
-    fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
-
-    fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs;
-
-    fn dangling_tracker_ptrs() -> Self::TrackerPtrs;
-}
-
-macro_rules! replace_with {
-    ($x:tt, $to:tt) => {
-        $to
-    };
 }
 
 /// Implements [`ComponentBundle`] for tuples of varying arities.
 macro_rules! impl_component_bundle {
     ($count:literal, $($gen:ident),*) => {
         paste::paste! {
-            pub struct [< ComponentTracker $count >]<$($gen:Component),*>($(ConstNonNull<replace_with!($gen, u32)>),*, PhantomData<($($gen),*)>);
-
-            impl<$($gen:Component),*> TrackerFilterImpl for [< ComponentTracker $count >]<$($gen),*> {
-                #[inline]
-                fn filter<T: Component>(&self, last_run_tick: u32) -> bool {
-                    let [< ComponentTracker $count >]($($gen),*, ..) = self;
-
-                    // Only try filtering if the given `T` is actually in this filter.
-                    $(
-                        if TypeId::of::<T>() == TypeId::of::<$gen>() {
-                            println!("{} vs. {}", unsafe { *$gen.as_ptr() }, last_run_tick);
-                            return unsafe { *$gen.as_ptr() } > last_run_tick
-                        }
-                    )*
-
-                    true
-                }
-            }
-
             #[allow(unused)]
             impl<$($gen:Component),*> ComponentBundle for ($($gen),*) {
-                // Using the `map_u32` macro to use `$gen` inside the repetition.
-                type TrackerPtrs = [< ComponentTracker $count >]<$($gen),*>;
-
                 const LEN: usize = (&[$( stringify!($gen) ),*] as &[&str]).len();
 
                 #[inline]
@@ -276,30 +231,6 @@ macro_rules! impl_component_bundle {
                             unsafe { std::ptr::read(ptr.cast::<$gen>().as_ptr()) }
                         }
                     ),*)
-                }
-
-                fn get_added_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
-                    [< ComponentTracker $count >]($(
-                        {
-                            let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
-                            col.added_base_ptr()
-                        }
-                    ),*, PhantomData)
-                }
-
-                fn get_changed_tracker_ptrs(table: &Table) -> Self::TrackerPtrs {
-                    [< ComponentTracker $count >]($(
-                        {
-                            let col = table.get_column_by_type(&TypeId::of::<$gen>()).expect("table did not have required column");
-                            col.changed_base_ptr()
-                        }
-                    ),*, PhantomData)
-                }
-
-                fn dangling_tracker_ptrs() -> Self::TrackerPtrs {
-                    [< ComponentTracker $count >]($(
-                        replace_with!($gen, { ConstNonNull::dangling() })
-                    ),*, PhantomData)
                 }
             }
         }
