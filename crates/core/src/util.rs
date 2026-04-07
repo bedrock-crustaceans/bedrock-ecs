@@ -1,6 +1,8 @@
 use std::{
     alloc::Layout,
+    cell::UnsafeCell,
     marker::PhantomData,
+    num::NonZero,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -17,44 +19,123 @@ macro_rules! create_tarray {
     }
 }
 
-/// Wraps a non-`Send` type to make it `Send`.
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SendWrapper<T>(pub T);
+#[derive(Debug, Default)]
+pub struct SyncUnsafeCell<T: Send + Sync>(UnsafeCell<T>);
 
-impl<T> Deref for SendWrapper<T> {
-    type Target = T;
+impl<T: Send + Sync> SyncUnsafeCell<T> {
+    #[inline]
+    pub fn new(value: T) -> Self {
+        Self(UnsafeCell::new(value))
+    }
 
-    fn deref(&self) -> &T {
-        &self.0
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
+    }
+
+    #[inline]
+    pub fn get(&self) -> *mut T {
+        self.0.get()
     }
 }
 
-impl<T> DerefMut for SendWrapper<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.0
-    }
-}
+unsafe impl<T: Send + Sync> Send for SyncUnsafeCell<T> {}
+unsafe impl<T: Send + Sync> Sync for SyncUnsafeCell<T> {}
 
-unsafe impl<T> Send for SendWrapper<T> {}
-
-pub trait AsConstNonNull<T: ?Sized> {
+pub trait AsConstNonNull<T: Send + Sync + ?Sized> {
     fn as_const_non_null(&self) -> ConstNonNull<T>;
 }
 
-impl<T> AsConstNonNull<T> for Vec<T> {
+impl<T: Send + Sync> AsConstNonNull<T> for Vec<T> {
     #[inline]
     fn as_const_non_null(&self) -> ConstNonNull<T> {
         unsafe { ConstNonNull::new_unchecked(self.as_ptr()) }
     }
 }
 
-impl<T> AsConstNonNull<T> for Box<T> {
+impl<T: Send + Sync + ?Sized> AsConstNonNull<T> for Box<T> {
     #[inline]
     fn as_const_non_null(&self) -> ConstNonNull<T> {
         unsafe { ConstNonNull::new_unchecked(self.as_ref() as *const T) }
     }
 }
+
+#[repr(transparent)]
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct MutNonNull<T: Send + Sync + ?Sized>(NonNull<T>);
+
+impl<T: Send + Sync + ?Sized> Clone for MutNonNull<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl<T: Send + Sync + ?Sized> Copy for MutNonNull<T> {}
+
+impl<T: Send + Sync + ?Sized> MutNonNull<T> {
+    /// Creates a new [`MutNonNull`], returning `None` if the pointer is null.
+    #[inline]
+    pub const fn new(ptr: *mut T) -> Option<Self> {
+        // `?` is not `const`-stable.
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Self(unsafe { NonNull::new_unchecked(ptr) }))
+        }
+    }
+
+    pub const fn cast<U: Send + Sync>(self) -> MutNonNull<U> {
+        MutNonNull(self.0.cast::<U>())
+    }
+
+    /// # Safety
+    ///
+    /// `ptr` must be non-null.
+    #[inline]
+    pub const unsafe fn new_unchecked(ptr: *mut T) -> Self {
+        Self(unsafe { NonNull::new_unchecked(ptr) })
+    }
+
+    #[inline]
+    pub const fn as_ptr(&self) -> *mut T {
+        self.0.as_ptr()
+    }
+}
+
+impl<T: Send + Sync> MutNonNull<T> {
+    pub const fn dangling() -> Self {
+        Self(NonNull::<T>::dangling())
+    }
+
+    #[inline]
+    pub const fn without_provenance(ptr: NonZero<usize>) -> Self {
+        Self(NonNull::without_provenance(ptr))
+    }
+
+    /// # Safety
+    ///
+    /// Same conditions as [`ptr::add`].
+    ///
+    /// [`ptr::add`]: std::ptr::add
+    #[inline]
+    pub const unsafe fn add(&self, n: usize) -> Self {
+        debug_assert!(n < isize::MAX as usize);
+
+        Self(unsafe { self.0.add(n) })
+    }
+}
+
+impl<T: Send + Sync> From<NonNull<T>> for MutNonNull<T> {
+    #[inline]
+    fn from(value: NonNull<T>) -> Self {
+        Self(value)
+    }
+}
+
+unsafe impl<T: Send + Sync> Send for MutNonNull<T> {}
+unsafe impl<T: Send + Sync> Sync for MutNonNull<T> {}
 
 /// [`NonNull`] but wrapping a `const` pointer instead.
 ///
@@ -64,18 +145,18 @@ impl<T> AsConstNonNull<T> for Box<T> {
 /// [`NonNull`]: std::ptr::NonNull
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub struct ConstNonNull<T: ?Sized>(NonNull<T>);
+pub struct ConstNonNull<T: Send + Sync + ?Sized>(NonNull<T>);
 
-impl<T: ?Sized> Clone for ConstNonNull<T> {
+impl<T: Send + Sync + ?Sized> Clone for ConstNonNull<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0)
     }
 }
 
-impl<T: ?Sized> Copy for ConstNonNull<T> {}
+impl<T: Send + Sync + ?Sized> Copy for ConstNonNull<T> {}
 
-impl<T: ?Sized> ConstNonNull<T> {
+impl<T: Send + Sync + ?Sized> ConstNonNull<T> {
     /// Creates a new [`ConstNonNull`], returning `None` if the pointer is null.
     #[inline]
     pub const fn new(ptr: *const T) -> Option<Self> {
@@ -101,9 +182,14 @@ impl<T: ?Sized> ConstNonNull<T> {
     }
 }
 
-impl<T> ConstNonNull<T> {
+impl<T: Send + Sync> ConstNonNull<T> {
     pub const fn dangling() -> Self {
         Self(NonNull::<T>::dangling())
+    }
+
+    #[inline]
+    pub const fn without_provenance(ptr: NonZero<usize>) -> Self {
+        Self(NonNull::without_provenance(ptr))
     }
 
     /// # Safety
@@ -119,14 +205,22 @@ impl<T> ConstNonNull<T> {
     }
 }
 
-impl<T> From<NonNull<T>> for ConstNonNull<T> {
+impl<T: Send + Sync> From<NonNull<T>> for ConstNonNull<T> {
     #[inline]
     fn from(value: NonNull<T>) -> Self {
         Self(value)
     }
 }
 
-unsafe impl<T> Send for ConstNonNull<T> {}
+impl<T: Send + Sync> From<MutNonNull<T>> for ConstNonNull<T> {
+    #[inline]
+    fn from(value: MutNonNull<T>) -> Self {
+        Self(value.0)
+    }
+}
+
+unsafe impl<T: Send + Sync> Send for ConstNonNull<T> {}
+unsafe impl<T: Send + Sync> Sync for ConstNonNull<T> {}
 
 pub trait LayoutExt {
     fn repeat_packed_ext(&self, n: usize) -> Option<Layout>;

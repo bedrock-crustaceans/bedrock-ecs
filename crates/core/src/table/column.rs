@@ -5,9 +5,10 @@ use std::marker::PhantomData;
 use std::num::NonZero;
 use std::ptr::NonNull;
 
+use crate::prelude::Component;
 use crate::query::Filter;
 use crate::table::ChangeTracker;
-use crate::util::{ConstNonNull, LayoutExt};
+use crate::util::{ConstNonNull, LayoutExt, MutNonNull};
 
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
@@ -60,7 +61,7 @@ pub struct Column {
     /// An optional pointer to the buffer that holds the Column data.
     ///
     /// This field is `None` if and only if `cap` is 0.
-    data: Option<NonNull<u8>>,
+    data: Option<MutNonNull<u8>>,
     /// The function that is called when an item is dropped.
     ///
     /// This field is `None` if the item does not require dropping, i.e.
@@ -102,7 +103,7 @@ impl Column {
         clippy::missing_panics_doc,
         reason = "this should realistically never happen and only exists for safety reasons"
     )]
-    pub unsafe fn push_from_ptr(&mut self, ptr: NonNull<u8>, current_tick: u32) {
+    pub unsafe fn push_from_ptr(&mut self, ptr: MutNonNull<u8>, current_tick: u32) {
         if self.layout.size() == 0 {
             // ZSTs do not need to be copied.
             self.len += 1;
@@ -172,7 +173,7 @@ impl Column {
         feature = "tracing",
         tracing::instrument(name = "Column::new", skip_all)
     )]
-    pub fn new<T: 'static>() -> Column {
+    pub fn new<T: Component>() -> Column {
         // The static requirement on `T` ensures that the type does not contain any references,
         // which could allow the column to outlive the component.
 
@@ -196,7 +197,7 @@ impl Column {
             );
 
             // Produce a valid non-null, aligned pointer for the ZST.
-            let ptr = NonNull::<T>::dangling().cast::<u8>();
+            let ptr = MutNonNull::<T>::dangling().cast::<u8>();
 
             Column {
                 #[cfg(debug_assertions)]
@@ -244,19 +245,19 @@ impl Column {
     }
 
     #[inline]
-    pub fn added_base_ptr_mut(&self) -> NonNull<u32> {
+    pub fn added_base_ptr_mut(&self) -> MutNonNull<u32> {
         let vec = unsafe { &*self.tracker.added.get() };
-        unsafe { NonNull::new_unchecked(vec.as_ptr().cast_mut()) }
+        unsafe { MutNonNull::new_unchecked(vec.as_ptr().cast_mut()) }
     }
 
     #[inline]
-    pub fn changed_base_ptr_mut(&self) -> NonNull<u32> {
+    pub fn changed_base_ptr_mut(&self) -> MutNonNull<u32> {
         let vec = unsafe { &*self.tracker.changed.get() };
-        unsafe { NonNull::new_unchecked(vec.as_ptr().cast_mut()) }
+        unsafe { MutNonNull::new_unchecked(vec.as_ptr().cast_mut()) }
     }
 
     #[inline]
-    pub fn base_ptr<T: 'static>(&self) -> NonNull<T> {
+    pub fn base_ptr<T: Component>(&self) -> MutNonNull<T> {
         assert_eq!(
             TypeId::of::<T>(),
             self.ty,
@@ -315,7 +316,7 @@ impl Column {
 
         // If this line panics, the `Drop` impl will be called with the unchanged pointer, hence
         // deallocating the data.
-        self.data = Some(NonNull::new(ptr).expect("Column::reserve allocation failed"));
+        self.data = Some(MutNonNull::new(ptr).expect("Column::reserve allocation failed"));
         self.cap = cap;
     }
 
@@ -325,7 +326,7 @@ impl Column {
     ///
     /// This function panics if the given generic `T` is not the same as the `T` that was used in the call
     /// to `Column::new`. This `T` is not stored in the `Column` type to prevent the runtime cost of dynamic dispatch.
-    pub fn push<T: 'static>(&mut self, data: T, current_tick: u32) {
+    pub fn push<T: Component>(&mut self, data: T, current_tick: u32) {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.write();
 
@@ -380,7 +381,7 @@ impl Column {
         clippy::missing_panics_doc,
         reason = "this should realistically never panic"
     )]
-    pub fn get_erased_ptr(&self, index: usize) -> Option<NonNull<u8>> {
+    pub fn get_erased_ptr(&self, index: usize) -> Option<MutNonNull<u8>> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
@@ -393,7 +394,7 @@ impl Column {
 
             // Safety: Alignment is always nonzero, even for ZSTs.
             let align = unsafe { NonZero::new_unchecked(self.layout.align()) };
-            return Some(NonNull::without_provenance(align));
+            return Some(MutNonNull::without_provenance(align));
         }
 
         let offset = self.layout.size() * index;
@@ -426,7 +427,7 @@ impl Column {
     /// # Panics
     ///
     /// This function panics if `T` is not the type that is contained in this table.
-    pub fn get_ptr<T: 'static>(&self, index: usize) -> Option<NonNull<T>> {
+    pub fn get_ptr<T: Component>(&self, index: usize) -> Option<MutNonNull<T>> {
         #[cfg(debug_assertions)]
         let _guard = self.enforcer.read();
 
@@ -441,7 +442,7 @@ impl Column {
         }
 
         if self.layout.size() == 0 {
-            return Some(NonNull::dangling());
+            return Some(MutNonNull::<T>::dangling());
         }
 
         let offset = self.layout.size() * index;

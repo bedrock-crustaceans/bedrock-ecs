@@ -47,7 +47,7 @@ pub enum StorageType {
 }
 
 /// A marker trait indicating that the implementor can be used as a component.
-pub trait Component: 'static + Send {
+pub trait Component: Send + Sync + 'static {
     // TODO: Add a tracking type so change tracking can be enabled or disabled for specific components.
     // TODO: Add a storage type constant so each component can decide whether it should be stored in a sparse set
     // or archetype table.

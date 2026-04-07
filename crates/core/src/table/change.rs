@@ -5,7 +5,8 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::util::ConstNonNull;
+use crate::util::{ConstNonNull, SyncUnsafeCell};
+
 #[cfg(debug_assertions)]
 use crate::util::debug::BorrowEnforcer;
 
@@ -102,11 +103,11 @@ pub struct ChangeTracker {
     /// Keeps track of the tick when a component was added.
     ///
     /// Parallel queries will use `split_at_mut` to split this vec into multiple mutable references.
-    pub(crate) added: UnsafeCell<Vec<u32>>,
+    pub(crate) added: SyncUnsafeCell<Vec<u32>>,
     /// Keeps track of the tick when a component was added.
     ///
     /// Parallel queries will use `split_at_mut` to split this vec into multiple mutable references.
-    pub(crate) changed: UnsafeCell<Vec<u32>>,
+    pub(crate) changed: SyncUnsafeCell<Vec<u32>>,
 }
 
 impl ChangeTracker {
@@ -116,8 +117,8 @@ impl ChangeTracker {
             #[cfg(debug_assertions)]
             enforcer: BorrowEnforcer::new(),
 
-            added: UnsafeCell::new(Vec::new()),
-            changed: UnsafeCell::new(Vec::new()),
+            added: SyncUnsafeCell::new(Vec::new()),
+            changed: SyncUnsafeCell::new(Vec::new()),
         }
     }
 
