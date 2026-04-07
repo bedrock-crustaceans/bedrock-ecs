@@ -43,7 +43,7 @@ pub unsafe trait QueryGroup: Sized {
 
     /// The tuple that is produced by this bundle. This is the type that iterators using
     /// this query will return.
-    type Output<'a>
+    type Output<'a>: Send
     where
         Self: 'a;
 
@@ -143,7 +143,7 @@ pub unsafe trait QueryData {
     /// like [`Has`] use it to output a completely different type.
     ///
     /// [`Has`]: crate::query::Has
-    type Output<'w>: 'w;
+    type Output<'w>: Send + 'w;
 
     /// The base pointer of this data.
     ///
