@@ -18,7 +18,7 @@ pub struct TableProducer<'query, Q: QueryGroup, F: Filter> {
     current_tick: u32,
     last_run_tick: u32,
     remaining: usize,
-    base: Q::BasePtrs,
+    base: Q::CurrPtrs,
     filters: F::DynamicState,
     _marker: PhantomData<&'query ()>,
 }
@@ -50,6 +50,8 @@ impl<'query, Q: QueryGroup + 'query, F: Filter> UnindexedProducer for TableProdu
 
         assert!(left_remaining < isize::MAX as usize);
 
+        tracing::trace!("split to {left_remaining} + {right_remaining}");
+
         let left = Self {
             remaining: left_remaining,
             ..self
@@ -78,13 +80,18 @@ pub struct SequentialTableIter<'query, Q: QueryGroup + 'query, F: Filter> {
     current_tick: u32,
     last_run_tick: u32,
     remaining: usize,
-    base: Q::BasePtrs,
+    base: Q::CurrPtrs,
     filters: F::DynamicState,
     _marker: PhantomData<&'query ()>,
 }
 
 impl<'query, Q: QueryGroup + 'query, F: Filter> SequentialTableIter<'query, Q, F> {
     pub fn from_producer(producer: TableProducer<'query, Q, F>) -> Self {
+        tracing::trace!(
+            "creating sequential iterator with {} items",
+            producer.remaining
+        );
+
         Self {
             current_tick: producer.current_tick,
             last_run_tick: producer.last_run_tick,
@@ -147,7 +154,27 @@ impl<'query, Q: QueryGroup + 'query, F: ArchetypalFilter> Producer for TableProd
     }
 
     fn split_at(self, index: usize) -> (Self, Self) {
-        todo!()
+        assert!(index < isize::MAX as usize);
+
+        let left = Self {
+            current_tick: self.current_tick,
+            last_run_tick: self.last_run_tick,
+            remaining: index,
+            base: self.base,
+            filters: self.filters,
+            _marker: PhantomData,
+        };
+
+        let right = Self {
+            current_tick: self.current_tick,
+            last_run_tick: self.last_run_tick,
+            remaining: self.remaining - index,
+            base: unsafe { Q::offset_ptrs(self.base, index as isize) },
+            filters: unsafe { F::offset_dynamic_state(self.filters, index as isize) },
+            _marker: PhantomData,
+        };
+
+        (left, right)
     }
 }
 
@@ -156,7 +183,7 @@ pub struct ParallelTableIter<'query, Q: QueryGroup + 'query, F: Filter> {
     current_tick: u32,
     last_run_tick: u32,
     remaining: usize,
-    base: Q::BasePtrs,
+    base: Q::CurrPtrs,
     filters: F::DynamicState,
     _marker: PhantomData<&'query ()>,
 }
@@ -198,30 +225,6 @@ impl<'query, Q: QueryGroup + 'query, F: Filter> ParallelIterator
         F::IS_ARCHETYPAL.then(|| self.unfiltered_len())
     }
 }
-
-impl<'query, Q: QueryGroup, F: ArchetypalFilter> IndexedParallelIterator
-    for ParallelTableIter<'query, Q, F>
-{
-    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
-        bridge(self, consumer)
-    }
-
-    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
-        todo!()
-    }
-
-    fn len(&self) -> usize {
-        self.unfiltered_len()
-    }
-}
-
-// impl<'query, Q: QueryGroup, F: ArchetypalFilter> ExactSizeIterator
-//     for ParallelTableIter<'query, Q, F>
-// {
-//     fn len(&self) -> usize {
-//         self.unfiltered_len()
-//     }
-// }
 
 pub struct ParallelQueryIter<'query, Q: QueryGroup, F: Filter> {
     pub(super) last_run_tick: u32,
@@ -268,18 +271,51 @@ impl<'query, Q: QueryGroup, F: Filter> ParallelIterator for ParallelQueryIter<'q
     }
 }
 
-impl<'query, Q: QueryGroup, F: ArchetypalFilter> IndexedParallelIterator
-    for ParallelQueryIter<'query, Q, F>
-{
-    fn drive<C: Consumer<Self::Item>>(self, consumer: C) -> C::Result {
-        todo!()
-    }
+// pub struct ArchetypeIter<'query, Q: QueryGroup, F: Filter> {
+//     pub(super) last_run_tick: u32,
+//     pub(super) current_tick: u32,
+//     pub(super) tables: &'query [TableCache<Q>],
+//     pub(super) _marker: PhantomData<F>,
+// }
 
-    fn with_producer<CB: ProducerCallback<Self::Item>>(self, callback: CB) -> CB::Output {
-        todo!()
-    }
+// pub struct ArchetypalProducer<'query, Q: QueryGroup, F: Filter> {
+//     pub(super) last_run_tick: u32,
+//     pub(super) current_tick: u32,
+//     pub(super) tables: &'query [TableCache<Q>],
+//     pub(super) _marker: PhantomData<F>,
+// }
 
-    fn len(&self) -> usize {
-        self.unfiltered_len()
-    }
-}
+// impl<'query, Q: QueryGroup, F: Filter> ArchetypalProducer<'query, Q, F> {
+//     pub fn from_iter(iter: ParallelQueryIter<'query, Q, F>) -> Self {
+//         Self {
+//             last_run_tick: iter.last_run_tick,
+//             current_tick: iter.current_tick,
+//             tables: iter.tables,
+//             _marker: PhantomData,
+//         }
+//     }
+// }
+
+// impl<'query, Q: QueryGroup, F: ArchetypalFilter> Iterator for ArchetypeIter<'query, Q, F> {
+//     type Item = Q::Output<'query>;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
+
+// impl<'query, Q: QueryGroup, F: ArchetypalFilter> DoubleEndedIterator
+//     for ArchetypeIter<'query, Q, F>
+// {
+//     fn next_back(&mut self) -> Option<Self::Item> {
+//         todo!()
+//     }
+// }
+
+// impl<'query, Q: QueryGroup, F: ArchetypalFilter> FusedIterator for ArchetypeIter<'query, Q, F> {}
+
+// impl<'query, Q: QueryGroup, F: ArchetypalFilter> ExactSizeIterator for ArchetypeIter<'query, Q, F> {
+//     fn len(&self) -> usize {
+//         self.tables.len()
+//     }
+// }

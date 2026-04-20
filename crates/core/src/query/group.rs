@@ -27,8 +27,8 @@ use crate::world::World;
 ///
 /// # Safety:
 ///
-/// The `access` method must correctly return the types this query uses.
-/// Incorrect implementation will lead to reference aliasing and inevitable UB.
+/// - `access` must return the resources used by this query. Forgetting to mention a resource will cause
+///   undefined behaviour through mutable aliasing.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid query type",
     label = "invalid query",
@@ -47,8 +47,10 @@ pub unsafe trait QueryGroup: Sized {
     where
         Self: 'a;
 
+    /// A list of pointers to the current result. For some more exotic types, these may not actually be pointers.
+    ///
     /// Needs to be `Send` and `Sync` to allow sending the base pointers to other threads in parallel iterators.
-    type BasePtrs: Copy + Send + Sync;
+    type CurrPtrs: Copy + Send + Sync;
 
     /// The size of the tuple.
     const LEN: usize;
@@ -72,12 +74,10 @@ pub unsafe trait QueryGroup: Sized {
     where
         Self: 't;
 
-    #[cfg(feature = "generics")]
     /// A list of resources that this query wants to access. This is forwarded to the scheduler
     /// to avoid conflicts and schedule optimally.
     fn access(reg: &mut TypeRegistry) -> GenericArray<AccessDesc, Self::AccessCount>;
 
-    #[cfg(feature = "generics")]
     /// Finds all required columns from a lookup table.
     ///
     /// The query is able to figure out which tables it should iterate over by itself.
@@ -87,32 +87,28 @@ pub unsafe trait QueryGroup: Sized {
     /// Internally this function calls [`map_column`] on each item in the bundle.
     ///
     /// [`map_column`]: QueryData::map_column
-    fn get_base_ptrs(table: &Table) -> Self::BasePtrs;
+    fn get_base_ptrs(table: &Table) -> Self::CurrPtrs;
 
     /// Offsets the base pointers by the given `n`. This is used to advance the iterator.
-    unsafe fn offset_ptrs(ptrs: Self::BasePtrs, n: isize) -> Self::BasePtrs;
+    ///
+    /// # Safety
+    ///
+    /// This follows the same safety conditions as [`ptr::add`].
+    ///
+    /// [`ptr::add`]: std::ptr
+    unsafe fn offset_ptrs(ptrs: Self::CurrPtrs, n: isize) -> Self::CurrPtrs;
 
     /// Fetches the elements at the specified `index` relative to the current pointers.
     unsafe fn fetch_relative<'w>(
-        ptrs: Self::BasePtrs,
+        ptrs: Self::CurrPtrs,
         offset: isize,
         current_tick: u32,
     ) -> Self::Output<'w>;
 
-    fn dangling() -> Self::BasePtrs;
-
-    #[cfg(not(feature = "generics"))]
-    /// A list of resources that this query wants to access. This is forwarded to the scheduler
-    /// to avoid conflicts and schedule optimally.
-    fn access(reg: &mut TypeRegistry) -> SmallVec<[AccessDesc; SysArg::INLINE_SIZE]>;
-
-    #[cfg(not(feature = "generics"))]
-    /// Finds all required columns from a lookup table.
+    /// Returns dangling, but well aligned pointers.
     ///
-    /// When the query cache updates, it will very quickly collect all tables that contain the desired components.
-    /// It however is not aware of the columns. This function then figures out which columns are useful
-    /// and in which order they should be queried.
-    fn cache_columns(lookup: &FxHashMap<TypeId, usize>) -> SmallVec<[usize; SysArg::INLINE_SIZE]>;
+    /// This used to create empty iterators that have no reference table to get their pointers from.
+    fn dangling() -> Self::CurrPtrs;
 }
 
 /// A reference that can be used in a query. This is either [`Entity`], or a mutable/immutable reference
@@ -161,29 +157,32 @@ pub unsafe trait QueryData {
     /// Needs to be `Send` and `Sync` to allow sending to other threads in parallel iterators.
     ///
     /// [`Has`]: crate::query::Has
-    type BasePtr: Copy + Send + Sync;
+    type CurrPtr: Copy + Send + Sync;
 
     const TY: QueryType;
 
     /// Returns the resource that this system argument accessess.
     fn access(reg: &mut TypeRegistry) -> AccessDesc;
 
-    // /// Finds the index of the column that contains this type, in the given table.
-    // ///
-    // /// # Panics
-    // ///
-    // /// This function panics when `Self` is an entity since entities are not stored in columns.
-    // /// It also panics if the column is not found.
-    // fn map_column(table: &Table) -> NonMaxUsize;
+    /// Obtains a pointer to the start of the column that this data is located.
+    fn get_base_ptr(table: &Table) -> Self::CurrPtr;
 
-    fn get_base_ptr(table: &Table) -> Self::BasePtr;
+    /// Returns a dangling, but well aligned pointer for this data.
+    ///
+    /// This is used to create empty iterators that have no reference table to get their pointers from.
+    fn dangling() -> Self::CurrPtr;
 
-    fn dangling() -> Self::BasePtr;
+    /// Offsets the data pointer by the given amount.
+    ///
+    /// This allows iterators to move back and forth in a column of data.
+    unsafe fn offset_ptr(base: Self::CurrPtr, n: isize) -> Self::CurrPtr;
 
-    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr;
-
+    /// Fetches data relative to the current pointer.
+    ///
+    /// Generally, iterators will fetch data at the current pointer. The double ended iterator implementation
+    /// for queries uses this to fetch the pointer at the end of the column instead.
     unsafe fn fetch_relative<'w>(
-        base: Self::BasePtr,
+        base: Self::CurrPtr,
         offset: isize,
         current_tick: u32,
     ) -> Self::Output<'w>;
@@ -228,7 +227,7 @@ impl QueryType {
 unsafe impl QueryData for Entity {
     type Deref = Entity;
     type Output<'w> = Entity;
-    type BasePtr = ConstNonNull<Entity>;
+    type CurrPtr = ConstNonNull<Entity>;
 
     const TY: QueryType = QueryType::Entity;
 
@@ -241,22 +240,22 @@ unsafe impl QueryData for Entity {
     }
 
     #[inline]
-    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+    fn get_base_ptr(table: &Table) -> Self::CurrPtr {
         table.entities.as_const_non_null()
     }
 
-    fn dangling() -> Self::BasePtr {
+    fn dangling() -> Self::CurrPtr {
         ConstNonNull::dangling()
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+    unsafe fn offset_ptr(base: Self::CurrPtr, n: isize) -> Self::CurrPtr {
         unsafe { base.offset(n) }
     }
 
     #[inline]
     unsafe fn fetch_relative<'w>(
-        base: Self::BasePtr,
+        base: Self::CurrPtr,
         offset: isize,
         _current_tick: u32,
     ) -> Self::Output<'w> {
@@ -292,7 +291,7 @@ unsafe impl QueryData for Entity {
 unsafe impl<T: Component> QueryData for &T {
     type Deref = T;
     type Output<'w> = &'w T;
-    type BasePtr = ConstNonNull<T>;
+    type CurrPtr = ConstNonNull<T>;
 
     const TY: QueryType = QueryType::Component;
 
@@ -305,7 +304,7 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+    fn get_base_ptr(table: &Table) -> Self::CurrPtr {
         let col = table
             .get_column_by_type(&TypeId::of::<T>())
             .expect("expected column not found in table");
@@ -314,13 +313,13 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+    unsafe fn offset_ptr(base: Self::CurrPtr, n: isize) -> Self::CurrPtr {
         unsafe { base.offset(n) }
     }
 
     #[inline]
     unsafe fn fetch_relative<'w>(
-        base: Self::BasePtr,
+        base: Self::CurrPtr,
         offset: isize,
         _current_tick: u32,
     ) -> Self::Output<'w> {
@@ -328,7 +327,7 @@ unsafe impl<T: Component> QueryData for &T {
     }
 
     #[inline]
-    fn dangling() -> Self::BasePtr {
+    fn dangling() -> Self::CurrPtr {
         ConstNonNull::dangling()
     }
 
@@ -366,7 +365,7 @@ unsafe impl<T: Component> QueryData for &mut T {
     type Deref = T;
     type Output<'w> = Mut<'w, T>;
     // base pointer for column + change detection
-    type BasePtr = (MutNonNull<T>, MutNonNull<u32>);
+    type CurrPtr = (MutNonNull<T>, MutNonNull<u32>);
 
     const TY: QueryType = QueryType::Component;
 
@@ -379,7 +378,7 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+    fn get_base_ptr(table: &Table) -> Self::CurrPtr {
         let col = table
             .get_column_by_type(&TypeId::of::<T>())
             .expect("expected column not found in table");
@@ -388,18 +387,18 @@ unsafe impl<T: Component> QueryData for &mut T {
     }
 
     #[inline]
-    fn dangling() -> Self::BasePtr {
+    fn dangling() -> Self::CurrPtr {
         (MutNonNull::dangling(), MutNonNull::dangling())
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: Self::BasePtr, n: isize) -> Self::BasePtr {
+    unsafe fn offset_ptr(base: Self::CurrPtr, n: isize) -> Self::CurrPtr {
         (unsafe { base.0.offset(n) }, unsafe { base.1.offset(n) })
     }
 
     #[inline]
     unsafe fn fetch_relative<'w>(
-        base: Self::BasePtr,
+        base: Self::CurrPtr,
         offset: isize,
         current_tick: u32,
     ) -> Self::Output<'w> {
@@ -439,7 +438,7 @@ unsafe impl<T: Component> QueryData for &mut T {
 macro_rules! impl_bundle {
     ($count:literal, $($gen:ident),*) => {
         paste::paste! {
-            #[allow(unused_parens)]
+            #[allow(unused_parens, non_snake_case)]
             #[diagnostic::do_not_recommend]
             unsafe impl<$($gen: QueryData),*> QueryGroup for ($($gen),*) {
                 type AccessCount = generic_array::typenum::[< U $count >];
@@ -447,7 +446,7 @@ macro_rules! impl_bundle {
                     Self: 't,
                     ($($gen),*): 't;
 
-                type BasePtrs = ($($gen::BasePtr),*);
+                type CurrPtrs = ($($gen::CurrPtr),*);
 
                 const LEN: usize = (&[$(stringify!($gen)),*] as &[&str]).len();
 
@@ -469,14 +468,14 @@ macro_rules! impl_bundle {
                 }
 
                 #[inline]
-                unsafe fn offset_ptrs(($($gen),*): ($($gen::BasePtr),*), n: isize) -> Self::BasePtrs {
+                unsafe fn offset_ptrs(($($gen),*): ($($gen::CurrPtr),*), n: isize) -> Self::CurrPtrs {
                     ($(
                         unsafe { $gen::offset_ptr($gen, n) }
                     ),*)
                 }
 
                 #[inline]
-                unsafe fn fetch_relative<'w>(($($gen),*): ($($gen::BasePtr),*), offset: isize, current_tick: u32) -> Self::Output<'w> where Self: 'w {
+                unsafe fn fetch_relative<'w>(($($gen),*): ($($gen::CurrPtr),*), offset: isize, current_tick: u32) -> Self::Output<'w> where Self: 'w {
                     ($(
                         unsafe { $gen::fetch_relative($gen, offset, current_tick) }
                     ),*)
@@ -496,7 +495,7 @@ macro_rules! impl_bundle {
                 }
 
                 #[inline]
-                fn dangling() -> Self::BasePtrs {
+                fn dangling() -> Self::CurrPtrs {
                     (
                         $(
                             $gen::dangling()
@@ -509,7 +508,7 @@ macro_rules! impl_bundle {
                     tracing::instrument(name = "QueryGroup::cache_columns", fields(size = $count), skip_all)
                 )]
                 #[inline]
-                fn get_base_ptrs(table: &Table) -> Self::BasePtrs {
+                fn get_base_ptrs(table: &Table) -> Self::CurrPtrs {
                     (
                         ($(
                             $gen::get_base_ptr(table)

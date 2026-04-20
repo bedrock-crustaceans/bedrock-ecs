@@ -39,7 +39,7 @@ pub struct Has<T: ComponentBundle> {
 unsafe impl<T: ComponentBundle> QueryData for Has<T> {
     type Deref = Has<T>;
     type Output<'w> = bool;
-    type BasePtr = bool;
+    type CurrPtr = bool;
 
     const TY: QueryType = QueryType::Has;
 
@@ -50,23 +50,23 @@ unsafe impl<T: ComponentBundle> QueryData for Has<T> {
         }
     }
 
-    fn get_base_ptr(table: &Table) -> Self::BasePtr {
+    fn get_base_ptr(table: &Table) -> Self::CurrPtr {
         todo!()
     }
 
     #[inline]
-    fn dangling() -> Self::BasePtr {
+    fn dangling() -> Self::CurrPtr {
         false
     }
 
     #[inline]
-    unsafe fn offset_ptr(base: Self::BasePtr, _n: isize) -> Self::BasePtr {
+    unsafe fn offset_ptr(base: Self::CurrPtr, _n: isize) -> Self::CurrPtr {
         base
     }
 
     #[inline]
     unsafe fn fetch_relative<'w>(
-        base: Self::BasePtr,
+        base: Self::CurrPtr,
         _offset: isize,
         _current_tick: u32,
     ) -> Self::Output<'w> {

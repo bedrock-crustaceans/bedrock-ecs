@@ -1,6 +1,6 @@
 use bedrock_ecs::{prelude::ScheduleBuilder, query::Query, world::World};
 use bedrock_ecs_derive::{Component, ScheduleLabel};
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 
 #[derive(Component, Debug, Clone)]
 struct Position {

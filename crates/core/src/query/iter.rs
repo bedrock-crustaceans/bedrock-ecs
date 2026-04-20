@@ -35,7 +35,7 @@ pub struct QueryIter<'query, Q: QueryGroup, F: Filter> {
     pub(crate) current_tick: u32,
     pub(crate) remaining: usize,
     pub(crate) cache: std::slice::Iter<'query, TableCache<Q>>,
-    pub(crate) base_ptrs: Q::BasePtrs,
+    pub(crate) base_ptrs: Q::CurrPtrs,
     pub(crate) filters: F::DynamicState,
 }
 

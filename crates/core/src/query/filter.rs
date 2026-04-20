@@ -12,10 +12,17 @@ use crate::prelude::Component;
 use crate::table::{ChangeTracker, Changes, Table};
 use crate::util::ConstNonNull;
 
-/// Marker trait for archetypal filters
+/// Marker trait for archetypal filters.
+///
+/// Filters that implement this trait will only scan table metadata and cache it in queries.
+/// This allows query iteration to be optimised since the amount of query results is known before iteration.
 pub trait ArchetypalFilter: Filter {}
 
 /// Marker trait for groups of archetypal filters.
+///
+/// Similar to [`ArchetypalFilter`] but for groups instead.
+///
+/// [`ArchetypalFilter`]
 pub trait ArchetypalFilterGroup: FilterGroup {}
 
 /// Implements the filtering functionality in queries.
@@ -86,6 +93,12 @@ pub trait Filter: Send + 'static {
     fn set_dynamic_state(table: &Table) -> Self::DynamicState;
 
     /// Moves the dynamic state to another query item, relative to the current item.
+    ///
+    /// # Safety
+    ///
+    /// This follows the same safety conditions as [`ptr::add`].
+    ///
+    /// [`ptr::add`]: std::ptr
     unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState;
 
     /// Creates a dangling but still aligned iterator state.
@@ -147,6 +160,8 @@ impl Filter for () {
     fn dangling() -> Self::DynamicState {}
 }
 
+impl ArchetypalFilter for () {}
+
 /// A tuple of [`Filter`]s.
 ///
 /// This enables using multiple togethers. A standalone tuple such as `(With<T>, Without<U>)` will perform
@@ -154,6 +169,9 @@ impl Filter for () {
 ///
 /// This is also used to implement the logical expressions such as [`Not`], [`Or`], [`Xor`], etc.
 pub trait FilterGroup: Send + 'static {
+    /// State that can be used inside of iterators.
+    ///
+    /// This should only be used when `IS_ARCHETYPAL` is false. Otherwise it has no effect.
     type DynamicState: Copy + Send;
 
     /// The filter method required to apply this filter bundle. If _any_ of the filters in the bundle
@@ -189,11 +207,23 @@ pub trait FilterGroup: Send + 'static {
     /// Apply all dynamic filters and AND them together.
     fn apply_dynamic(state: &Self::DynamicState, last_run_tick: u32) -> bool;
 
+    /// Creates a new dynamic state for the specified table.
+    ///
+    /// This is called when iteration begins and the iterator is preparing the dynamic filters.
+    ///
+    /// This is only called if `IS_ARCHETYPAL` is true.
     fn set_dynamic_state(table: &Table) -> Self::DynamicState;
 
     /// Moves the dynamic state to another query item, relative to the current item.
+    ///
+    /// # Safety
+    ///
+    /// This follows the same safety requirements as [`ptr::add`].
+    ///
+    /// [`ptr::add`]: std::ptr
     unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState;
 
+    /// Creates a dangling, but well aligned dynamic state.
     fn dangling() -> Self::DynamicState;
 }
 
@@ -253,7 +283,7 @@ macro_rules! impl_filter_bundle {
             }
 
             unsafe fn offset_dynamic_state(($($gen),*): Self::DynamicState, offset: isize) -> Self::DynamicState {
-                ($($gen::offset_dynamic_state($gen, offset)),*)
+                unsafe { ($($gen::offset_dynamic_state($gen, offset)),*) }
             }
 
             #[inline]

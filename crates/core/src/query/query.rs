@@ -46,7 +46,7 @@ impl<'w, Q: QueryGroup, F: Filter> Query<'w, Q, F> {
     /// [`QueryCache`] is persistent across runs by storing it in the system state.
     pub(crate) fn new(world: &'w World, state: &'w mut QueryState<Q, F>) -> Query<'w, Q, F> {
         // Update the plan cache
-        state.update(&world.archetypes);
+        state.before_update(&world.archetypes);
 
         Query { world, state }
     }
@@ -95,6 +95,13 @@ impl<'w, Q: QueryGroup, F: Filter> Query<'w, Q, F> {
         QueryIter::from_state(self.state)
     }
 
+    /// Creates a parallel iterator over the query results.
+    ///
+    /// Depending on the workload, each table in the query will be processed on a different thread.
+    /// With the possibility of one thread processing multiple tables.
+    ///
+    /// In case the tables are large, the tables themselves can also be split up into multiple chunks to be processed
+    /// by separate threads.
     #[inline]
     pub fn par_iter(&self) -> ParallelQueryIter<'_, Q, F> {
         ParallelQueryIter::from_state(self.state)
@@ -139,7 +146,7 @@ pub struct TableCache<Q: QueryGroup> {
     /// The index of the table in the archetypes container.
     pub table: ConstNonNull<Table>,
     /// The columns within this table that should be queried.
-    pub cols: Q::BasePtrs,
+    pub cols: Q::CurrPtrs,
 }
 
 /// A collection of columns in a table.
@@ -177,7 +184,8 @@ pub struct QueryState<Q: QueryGroup, F: Filter> {
 }
 
 impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
-    /// Creates a new query cache. This is only called when a system is first constructed.
+    /// Creates a new query state. This is only called when a system is first constructed and will be reused
+    /// when the system runs again.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(name = "QueryCache::new", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
@@ -212,7 +220,7 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
         feature = "tracing",
         tracing::instrument(name = "QueryCache::update", fields(query = std::any::type_name::<Q>(), filter = std::any::type_name::<F>()), skip_all)
     )]
-    pub(crate) fn update(&mut self, archetypes: &Archetypes) {
+    pub(crate) fn before_update(&mut self, archetypes: &Archetypes) {
         if self.generation != archetypes.generation() {
             // Rather than iterating over every single table again, just store the index where iteration stopped last generation
             // and only check the newly added tables. The old tables have not changed anyways.
@@ -245,7 +253,7 @@ impl<Q: QueryGroup, F: Filter> QueryState<Q, F> {
         Q::LEN
     }
 
-    /// The current generation of the cache. This corresponds to the archetype generation if the cache is up
+    /// The last archetype generation that this query has seen. This corresponds to the current archetype generation if the cache is up
     /// to date. If the generations do not match, the cache is refreshed on the next system call.
     ///
     /// If this is accessed inside of a system, it should always be up to date.
