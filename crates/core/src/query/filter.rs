@@ -350,7 +350,7 @@ impl<G: FilterGroup> Filter for Xor<G> {
 
     #[inline]
     unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
-        G::offset_dynamic_state(state, offset)
+        unsafe { G::offset_dynamic_state(state, offset) }
     }
 
     #[inline]
@@ -403,7 +403,7 @@ impl<G: FilterGroup> Filter for Or<G> {
 
     #[inline]
     unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
-        G::offset_dynamic_state(state, offset)
+        unsafe { G::offset_dynamic_state(state, offset) }
     }
 
     #[inline]
@@ -456,7 +456,7 @@ impl<G: FilterGroup> Filter for Not<G> {
 
     #[inline]
     unsafe fn offset_dynamic_state(state: Self::DynamicState, offset: isize) -> Self::DynamicState {
-        G::offset_dynamic_state(state, offset)
+        unsafe { G::offset_dynamic_state(state, offset) }
     }
 
     #[inline]

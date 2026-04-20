@@ -316,8 +316,7 @@ fn massive_world_stress_test() {
         .add(
             Combat,
             (
-                vitality_system,
-                poison_aura_system,
+                (vitality_system, poison_aura_system),
                 update_spatial_grid_system,
                 sync_point,
             ),

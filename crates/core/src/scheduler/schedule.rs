@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::marker::PhantomData;
 #[cfg(feature = "plugins")]
 use std::sync::Arc;
 #[cfg(feature = "plugins")]
@@ -9,8 +10,23 @@ use rustc_hash::FxHashMap;
 
 use crate::plugins::WasmSystem;
 use crate::scheduler::{AccessDesc, AccessType, ScheduleGraph, Scheduler};
-use crate::system::{IntoSys, Sys, SysArgGroup, SysId, SysMeta};
+use crate::system::{IntoSys, Sys, SysArgGroup, SysContainer, SysId, SysMeta, TypedSys};
 use crate::world::World;
+
+pub struct Chained<P: SysArgGroup, G: SystemGroup<P>> {
+    group: G,
+    _marker: PhantomData<P>,
+}
+
+// impl<P: SysArgGroup, G: IntoSys<P> + 'static> IntoSys<P> for Chained<P, G> {
+//     fn into_boxed_sys(self, world: &mut World) -> Box<dyn Sys> {
+//         self.group.into_boxed_sys(world)
+//     }
+
+//     fn into_sys(self, world: &mut World) -> impl Sys + 'static {
+//         self.group.
+//     }
+// }
 
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a valid system group",
@@ -21,23 +37,29 @@ use crate::world::World;
 pub trait SystemGroup<P> {
     /// Inserts this bundle into the schedule builder.
     fn insert_into(self, schedule: &mut ScheduleBuilder);
+
+    // fn chain<P1: SysArgGroup, G: SystemGroup<P1>>(self, after: G) -> Chained<P1, G>;
+}
+
+impl<P: SysArgGroup, S: IntoSys<P>> SystemGroup<P> for S {
+    fn insert_into(self, schedule: &mut ScheduleBuilder) {
+        schedule.systems.push(self.into_boxed_sys(schedule.world));
+    }
 }
 
 macro_rules! impl_bundle {
     ($($gen:ident),*) => {
         paste::paste! {
-            #[allow(unused_parens)]
+            #[allow(unused_parens, non_snake_case)]
             #[diagnostic::do_not_recommend]
-            impl<$([<$gen Fun>]),*, $($gen),*> SystemGroup<($($gen),*)> for ($([<$gen Fun>]),*)
+            impl<$([<$gen Func>]),*, $($gen),*> SystemGroup<($($gen),*)> for ($([<$gen Func>]),*)
             where
-                $([<$gen Fun>]: IntoSys<$gen> + 'static),*,
-                $($gen: SysArgGroup),*
+                $([<$gen Func>]: SystemGroup<$gen>),*
             {
                 fn insert_into(self, schedule: &mut ScheduleBuilder) {
-                    let ($([<$gen:lower>]),*) = self;
+                    let ($($gen),*) = self;
                     $(
-                        let boxed = [<$gen:lower>].into_boxed_sys(schedule.world);
-                        schedule.systems.push(boxed);
+                        $gen.insert_into(schedule);
                     )*
                 }
             }
@@ -45,7 +67,7 @@ macro_rules! impl_bundle {
     }
 }
 
-impl_bundle!(A);
+// impl_bundle!(A);
 impl_bundle!(A, B);
 impl_bundle!(A, B, C);
 impl_bundle!(A, B, C, D);
